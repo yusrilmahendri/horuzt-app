@@ -14,42 +14,43 @@ use Laravel\Sanctum\PersonalAccessToken;
 class RegisterController extends Controller
 {
     public function index(Request $request)
-    {   
-        $request->validate([
+    {
+        // Validasi input yang masuk
+        $validatedData = $request->validate([
             'name' => 'required|string|max:255',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8|confirmed',
-            'phone' => 'required|min:11',
+            'phone' => 'required|string|min:11',
         ]);
-
-        // Create a new user
-        $user = User::create([
-            'name' => $request->name,
-            'email' => $request->email,
-            'password' => Hash::make($request->password),
-            'phone' => $request->phone
-        ]);
-        // Assign role to user (optional)
-        $user->assignRole('user'); // You can assign any role
-
-        // Generate token
-        $token = $user->createToken('auth_token')->plainTextToken;
- 
-        if ($user) {
+    
+        try {
+            // Buat user baru
+            $user = User::create([
+                'name' => $validatedData['name'],
+                'email' => $validatedData['email'],
+                'password' => Hash::make($validatedData['password']),
+                'phone' => $validatedData['phone'],
+            ]);
+    
+            // Assign role to user (optional)
+            if (method_exists($user, 'assignRole')) {
+                $user->assignRole('user');
+            }
+    
+            // Generate token menggunakan Laravel Sanctum
             $token = $user->createToken('auth_token')->plainTextToken;
+    
+            // Kembalikan response jika berhasil
             return response()->json([
                 'user' => $user,
                 'access_token' => $token,
                 'token_type' => 'Bearer',
-            ]);
-        } else {
-            return response()->json(['error' => 'Failed to create user'], 500);
-        }
+            ], 201); // Menggunakan status code 201 untuk created
     
-        return response()->json([
-            'user' => $user,
-            'access_token' => $token,
-            'token_type' => 'Bearer',
-        ]);
+        } catch (\Exception $e) {
+            // Menangkap exception jika ada kesalahan
+            return response()->json(['error' => 'Failed to create user: ' . $e->getMessage()], 500);
+        }
     }
+    
 }

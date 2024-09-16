@@ -22,6 +22,8 @@ class AdminTableSeeder extends Seeder
         ]);
 
         $user->assignRole('admin');
+        $user->createToken('auth_token')->plainTextToken;
+        
         return $user;
     }
 }
