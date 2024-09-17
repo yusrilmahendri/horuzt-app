@@ -35,7 +35,7 @@ class LoginController extends Controller
     
         // Log out user
         public function logout(Request $request)
-        {
+        {   
             $request->user()->tokens()->delete();
     
             return response()->json([

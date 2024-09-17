@@ -16,12 +16,14 @@ use App\Http\Controllers\Auth\LoginController;
 |
 */
 
-Route::post('/register', [RegisterController::class, 'index']);
-Route::post('login', [LoginController::class, 'login']);
+Route::post('/v1/register', [RegisterController::class, 'index']);
+Route::post('/v1/login', [LoginController::class, 'login']);
 
-Route::middleware('auth:sanctum')->group(function () {
-    Route::post('logout', [AuthController::class, 'logout']);
+Route::group(['middleware' => ['auth:sanctum']], function () {
+    Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
+
+
 
 Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
     // Only accessible by users with 'admin' role
