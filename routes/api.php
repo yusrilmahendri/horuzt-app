@@ -4,6 +4,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\UserController;
 
 /*
 |--------------------------------------------------------------------------
@@ -17,24 +18,17 @@ use App\Http\Controllers\Auth\LoginController;
 */
 
 Route::post('/v1/register', [RegisterController::class, 'index']);
-Route::post('/v1/login', [LoginController::class, 'login']);
+Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
+
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
 
-
-
-Route::middleware(['auth:sanctum', 'role:admin'])->group(function () {
-    // Only accessible by users with 'admin' role
-    Route::get('admin/dashboard', function () {
-        return 'Welcome Admin';
+Route::group(['middleware' => ['role:user']], function () { 
+    Route::controller(UserController::class)->group(function(){
+        Route::get('/v1/user-profile', 'index')->name('index');
+        Route::post('/v1/user-profile/{user}', 'update')->name('update');
     });
-});
+ });
 
-Route::middleware(['auth:sanctum', 'role:user'])->group(function () {
-    // Only accessible by users with 'user' role
-    Route::get('user/dashboard', function () {
-        return 'Welcome user';
-    });
-});
