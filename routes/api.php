@@ -25,10 +25,15 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
 
+Route::group(['middleware' => ['role:admin']], function () { 
+    Route::controller(UserController::class)->group(function(){
+        Route::get('/v1/admin/get-users', 'index')->name('index');
+    });
+ });
+
 Route::group(['middleware' => ['role:user']], function () { 
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/user-profile', 'index')->name('index');
-        Route::post('/v1/user-profile/{user}', 'update')->name('update');
     });
  });
 

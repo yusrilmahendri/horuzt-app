@@ -17,32 +17,23 @@ class UserController extends Controller
 
     public function index() {
         $user = auth()->user();
-        if ($user) {
+        if ($user->hasRole('user')) {
             return new UserCollection(collect([$user]));
         }
+        if($user->hasRole('admin')){
+            $usersQuery = User::whereDoesntHave('roles', function($query) {
+                $query->where('name', 'admin');
+            });
+
+            $totalUsers = $usersQuery->count();
+            $users = $usersQuery->paginate(5);
+
+            return response()->json([
+                'user' => new UserCollection(collect([$user])),
+                'users' => new UserCollection($users),
+                'total_users' => $totalUsers
+            ]);
+        }
         return response()->json(['message' => 'User not found'], 404);
-    }
-
-    public function update(Request $request)
-    {
-        $user = Auth::user();
-
-        $validated = $request->validate([
-            'name' => 'required|string|max:255',
-            'email' => 'required|string|email|max:255|unique:users,email,' . $user->id,
-            'password' => 'required|string|min:8|confirmed',
-            'phone' => 'required|string|min:11',
-        ]);
-
-        $user->name = $validated['name'];
-        $user->email = $validated['email'];
-        $user->password = Hash::make($validated['password']);
-        $user->phone = $validated['phone'];
-        $user->save();
-
-        return response()->json([
-            'message' => 'User updated successfully!',
-            'data' => $user
-        ], 200);
     }
 }
