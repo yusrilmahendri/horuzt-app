@@ -15,9 +15,10 @@ class ThemasFactory extends Factory
      * @return array<string, mixed>
      */
     public function definition(): array
-    {
+    {   
         return [
-            //
+            'name' => fake()->name(),
+            'status' => ['aktif', 'tidak aktif'][array_rand(['aktif', 'tidak aktif'])],
         ];
     }
 }

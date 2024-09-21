@@ -5,6 +5,9 @@ use Illuminate\Support\Facades\Route;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\ThemaController;
+use App\Http\Controllers\CategoryController;
+use App\Http\Controllers\JenisThemaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -28,6 +31,16 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 Route::group(['middleware' => ['role:admin']], function () { 
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/admin/get-users', 'index')->name('index');
+      
+    });
+    Route::controller(ThemaController::class)->group(function() {
+        Route::get('/v1/admin/themas', 'index')->name('thema.index');
+    });
+    Route::controller(CategoryController::class)->group(function() {
+        Route::get('/v1/admin/categorys', 'index')->name('category.index');
+    });
+    Route::controller(JenisThemaController::class)->group(function() {
+        Route::get('/v1/admin/jenis-themas', 'index')->name('jenis.index');
     });
  });
 

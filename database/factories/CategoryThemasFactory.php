@@ -17,7 +17,10 @@ class CategoryThemasFactory extends Factory
     public function definition(): array
     {
         return [
-            //
+            'thema_video' => fake()->name(),
+            'slug_video' => fake()->name(),
+            'thema_website' => fake()->name(),
+            'slug_website' => fake()->name(),
         ];
     }
 }

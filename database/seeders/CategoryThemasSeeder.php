@@ -4,6 +4,7 @@ namespace Database\Seeders;
 
 use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
+use App\Models\CategoryThemas;
 
 class CategoryThemasSeeder extends Seeder
 {
@@ -12,6 +13,6 @@ class CategoryThemasSeeder extends Seeder
      */
     public function run(): void
     {
-        //
+        CategoryThemas::factory()->count(5)->create();
     }
 }
