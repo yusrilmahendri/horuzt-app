@@ -14,4 +14,8 @@ class JenisThemas extends Model
     public function category(){
         return $this->hasMany(Category::class);
     }
+
+    public function themas(){
+        return $this->belongsToMany(Themas::class, 'result_themas');
+    }
 }

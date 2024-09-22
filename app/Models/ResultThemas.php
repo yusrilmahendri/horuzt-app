@@ -13,16 +13,18 @@ class ResultThemas extends Model
     use HasFactory;
     protected $guarded = [];
 
-    public function user(){
-        return $this->belongsToMany(User::class);
+    public function user()
+    {
+        return $this->belongsTo(User::class, 'user_id');
     }
 
-    public function themas(){
-        return $this->belongsToMany(Themas::class);
+    public function thema()
+    {
+        return $this->belongsTo(Themas::class, 'thema_id');
     }
 
-    public function jenisThemas(){
-        return $this->belongsToMany(JenisThemas::class);
+    public function jenisThema()
+    {
+        return $this->belongsTo(JenisThemas::class, 'jenis_id');
     }
-    
 }

@@ -8,6 +8,7 @@ use App\Http\Controllers\UserController;
 use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\JenisThemaController;
+use App\Http\Controllers\ResultThemaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -41,6 +42,9 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
     Route::controller(JenisThemaController::class)->group(function() {
         Route::get('/v1/admin/jenis-themas', 'index')->name('jenis.index');
+    });
+    Route::controller(ResultThemaController::class)->group(function() {
+        Route::get('/v1/admin/result-themas', 'index')->name('result.index');
     });
  });
 
