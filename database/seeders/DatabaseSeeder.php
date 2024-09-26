@@ -18,5 +18,9 @@ class DatabaseSeeder extends Seeder
         $this->call(CategoryThemasSeeder::class);
         $this->call(JenisThemasSeeder::class);
         $this->call(ResultThemasSeeder::class);
+        $this->call(PaketNikahSeeder::class);
+        $this->call(BankSeeder::class);
+        $this->call(OrderSeeder::class);
+        $this->call(PembayaranSeeder::class);
     }
 }
