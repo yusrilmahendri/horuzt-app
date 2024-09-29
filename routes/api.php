@@ -10,6 +10,7 @@ use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\JenisThemaController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\PaketController;
+use App\Http\Controllers\BankController;
 
 /*
 |--------------------------------------------------------------------------
@@ -50,6 +51,7 @@ Route::group(['middleware' => ['role:admin']], function () {
     Route::controller(PaketController::class)->group(function() {
         Route::get('/v1/admin/paket-nikah', 'index')->name('paket.index');
     });
+    Route::get('/v1/admin/all-bank', [BankController::class, 'index'])->name('bank.index');
  });
 
 Route::group(['middleware' => ['role:user']], function () { 
