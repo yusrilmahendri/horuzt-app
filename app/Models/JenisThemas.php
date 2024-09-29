@@ -4,7 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use App\Models\Category;
+use App\Models\CategoryThemas;
 
 class JenisThemas extends Model
 {
@@ -12,7 +12,7 @@ class JenisThemas extends Model
     protected $guarded = [];
 
     public function category(){
-        return $this->hasMany(Category::class);
+        return $this->belongsTo(CategoryThemas::class);
     }
 
     public function themas(){

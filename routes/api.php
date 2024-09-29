@@ -9,6 +9,7 @@ use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\JenisThemaController;
 use App\Http\Controllers\ResultThemaController;
+use App\Http\Controllers\PaketController;
 
 /*
 |--------------------------------------------------------------------------
@@ -35,7 +36,7 @@ Route::group(['middleware' => ['role:admin']], function () {
       
     });
     Route::controller(ThemaController::class)->group(function() {
-        Route::get('/v1/admin/themas', 'index')->name('thema.index');
+        Route::get('/v1/admin/get-themas', 'index')->name('thema.index');
     });
     Route::controller(CategoryController::class)->group(function() {
         Route::get('/v1/admin/categorys', 'index')->name('category.index');
@@ -45,6 +46,9 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
     Route::controller(ResultThemaController::class)->group(function() {
         Route::get('/v1/admin/result-themas', 'index')->name('result.index');
+    });
+    Route::controller(PaketController::class)->group(function() {
+        Route::get('/v1/admin/paket-nikah', 'index')->name('paket.index');
     });
  });
 

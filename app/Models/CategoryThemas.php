@@ -12,6 +12,6 @@ class CategoryThemas extends Model
     protected $guarded = [];
 
     public function jenisThemas(){
-        return $this->belongsTo(JenisThemas::class);
+        return $this->hasMany(JenisThemas::class);
     }
 }

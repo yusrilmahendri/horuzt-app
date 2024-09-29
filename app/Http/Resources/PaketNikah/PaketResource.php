@@ -1,12 +1,11 @@
 <?php
 
-namespace App\Http\Resources\JenisThemas;
+namespace App\Http\Resources\PaketNikah;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
-use App\Http\Resources\CategoryThemas\CategoryResource;
 
-class JenisThemasResource extends JsonResource
+class PaketResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -17,11 +16,14 @@ class JenisThemasResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'category' => new CategoryResource($this->category),  
             'name' => $this->name,
             'price' => $this->price,
-            'preview' => $this->preview,
-            'url_thema' => $this->url_thema,
+            'masa_aktif' => $this->masa_aktif,
+            'buku_tamu' => $this->buku_tamu,
+            'kirim_wa' => $this->kirim_wa,
+            'kirim_hadiah' => $this->kirim_hadiah,
+            'tema_bebas' => $this->tema_bebas,
+            'import_data' => $this->import_data,
         ];
     }
 }
