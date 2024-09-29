@@ -9,6 +9,7 @@ use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use App\Models\Themas;
+use App\Models\Order;
 
 class User extends Authenticatable
 {
@@ -48,5 +49,9 @@ class User extends Authenticatable
 
     public function thema(){
         return $this->belongsToMany(Thema::class, 'result_themas');
+    }
+
+    public function order(){
+        return $this->hasMany(Order::class, 'orders');
     }
 }
