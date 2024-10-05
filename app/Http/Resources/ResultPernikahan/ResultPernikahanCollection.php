@@ -1,12 +1,11 @@
 <?php
 
-namespace App\Http\Resources\Pernikahan;
+namespace App\Http\Resources\ResultPernikahan;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
-use App\Http\Resources\Pernikahan\PernikahanResource;
 
-class PernikahanCollection extends ResourceCollection
+class ResultPernikahanCollection extends ResourceCollection
 {
     /**
      * Transform the resource collection into an array.
@@ -15,8 +14,6 @@ class PernikahanCollection extends ResourceCollection
      */
     public function toArray(Request $request): array
     {
-        return [
-            'data' => PernikahanResource::collection($this->collection),
-        ];
+        return parent::toArray($request);
     }
 }

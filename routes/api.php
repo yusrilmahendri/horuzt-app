@@ -13,6 +13,7 @@ use App\Http\Controllers\PaketController;
 use App\Http\Controllers\BankController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembayaranController;
+use App\Http\Controllers\PernikahanController;
 
 /*
 |--------------------------------------------------------------------------
@@ -58,6 +59,9 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
     Route::controller(PembayaranController::class)->group(function() {
         Route::get('/v1/admin/transaction-nikah', 'index')->name('transaction.index');
+    });
+    Route::controller(PernikahanController::class)->group(function() {
+        Route::get('/v1/admin/pernikahan', 'index')->name('transaction.index');
     });
     Route::get('/v1/admin/all-bank', [BankController::class, 'index'])->name('bank.index');
  });

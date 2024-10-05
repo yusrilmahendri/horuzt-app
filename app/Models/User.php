@@ -10,6 +10,7 @@ use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
 use App\Models\Themas;
 use App\Models\Order;
+use App\Models\Pernikahan;
 
 class User extends Authenticatable
 {
@@ -53,5 +54,9 @@ class User extends Authenticatable
 
     public function order(){
         return $this->hasMany(Order::class, 'orders');
+    }
+
+    public function pernikahan(){
+        return $this->hasOne(Pernikahan::class, 'user_id');
     }
 }
