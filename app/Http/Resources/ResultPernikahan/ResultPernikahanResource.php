@@ -4,6 +4,7 @@ namespace App\Http\Resources\ResultPernikahan;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use App\Http\Resources\Pernikahan\PernikahanResource;
 
 class ResultPernikahanResource extends JsonResource
 {
@@ -14,6 +15,12 @@ class ResultPernikahanResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        return [
+            'pernikahan' => new PernikahanResource($this->whenLoaded('pernikahan')),
+            'mempelai' => $this->whenLoaded('mempelai'),
+            'acara' => $this->whenLoaded('acara'),
+            'pengunjung' => $this->whenLoaded('pengunjung'),
+            'qoute' => $this->whenLoaded('qoute'),
+        ];
     }
 }

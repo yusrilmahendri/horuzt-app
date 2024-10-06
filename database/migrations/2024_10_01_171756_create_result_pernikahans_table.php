@@ -13,17 +13,17 @@ return new class extends Migration
     {
         Schema::create('result_pernikahans', function (Blueprint $table) {
             $table->id();
-            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('pernikahan_id');
             $table->unsignedBigInteger('mempelai_id');
             $table->unsignedBigInteger('acara_id');
             $table->unsignedBigInteger('pengunjung_id');
             $table->unsignedBigInteger('qoute_id');
             $table->timestamps();
 
-            $table->foreign('user_id')->references('id')->on('users');
+            $table->foreign('pernikahan_id')->references('id')->on('pernikahans');
             $table->foreign('mempelai_id')->references('id')->on('mempelais');
             $table->foreign('acara_id')->references('id')->on('acaras');
-            $table->foreign('pengunjung_id')->references('id')->on('pengujungs');
+            $table->foreign('pengunjung_id')->references('id')->on('pengunjungs');
             $table->foreign('qoute_id')->references('id')->on('qoutes');
         });
     }

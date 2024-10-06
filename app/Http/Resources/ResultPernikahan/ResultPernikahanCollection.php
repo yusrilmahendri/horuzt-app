@@ -4,6 +4,7 @@ namespace App\Http\Resources\ResultPernikahan;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\ResourceCollection;
+use App\Http\Resources\Pernikahan\PernikahanResource;
 
 class ResultPernikahanCollection extends ResourceCollection
 {
@@ -14,6 +15,8 @@ class ResultPernikahanCollection extends ResourceCollection
      */
     public function toArray(Request $request): array
     {
-        return parent::toArray($request);
+        return [
+            'pernikahan' => PernikahanResource::collection($this->pernikahan),
+        ];
     }
 }

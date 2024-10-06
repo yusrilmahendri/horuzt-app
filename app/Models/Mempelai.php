@@ -9,4 +9,6 @@ class Mempelai extends Model
 {
     use HasFactory;
     protected $guarded = [''];
+
+   
 }

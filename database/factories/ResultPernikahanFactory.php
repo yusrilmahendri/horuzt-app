@@ -3,10 +3,10 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
-use App\Models\User;
+use App\Models\Pernikahan;
 use App\Models\Mempelai;
 use App\Models\Acara;
-use App\Models\Pengujung;
+use App\Models\Pengunjung;
 use App\Models\Qoute;
 
 /**
@@ -22,10 +22,10 @@ class ResultPernikahanFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' =>  User::inRandomOrder()->first()->id,
+            'pernikahan_id' =>  Pernikahan::inRandomOrder()->first()->id,
             'mempelai_id' =>  Mempelai::inRandomOrder()->first()->id,
             'acara_id' => Acara::inRandomOrder()->first()->id,
-            'pengunjung_id' => Pengujung::inRandomOrder()->first()->id,
+            'pengunjung_id' => Pengunjung::inRandomOrder()->first()->id,
             'qoute_id' => Qoute::inRandomOrder()->first()->id,
         ];
     }
