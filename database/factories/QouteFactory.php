@@ -17,7 +17,7 @@ class QouteFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->name()
+            'name' => 'kenif si jago ayam'
         ];
     }
 }

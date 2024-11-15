@@ -19,9 +19,9 @@ class JenisThemasFactory extends Factory
     {   
         return [
             'category_id' => CategoryThemas::inRandomOrder()->first()->id,
-            'name' => fake()->name(),
+            'name' => 'on filter instagram',
             'price' => rand(1000, 10000),
-            'preview' => fake()->name(),
+            'preview' => '1',
             'url_thema' => 'https://picsum.photos',
 
         ];

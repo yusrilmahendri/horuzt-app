@@ -17,7 +17,7 @@ class ThemasFactory extends Factory
     public function definition(): array
     {   
         return [
-            'name' => fake()->name(),
+            'name' => 'pernikahan dini',
             'status' => ['aktif', 'tidak aktif'][array_rand(['aktif', 'tidak aktif'])],
         ];
     }

@@ -14,7 +14,8 @@ return new class extends Migration
         Schema::create('mempelais', function (Blueprint $table) {
             $table->id();
             $table->string('name');
-            $table->enum('gender' ,['wanita', 'pria']);
+            $table->enum('gender_pria' ,['wanita', 'pria'])->nullable();
+            $table->enum('gender_wanita' ,['wanita', 'pria'])->nullable();
             $table->timestamps();
         });
     }

@@ -16,10 +16,7 @@ class CategoryResource extends JsonResource
     {
         return [
             'id' => $this->id,
-            'thema_video' => $this->thema_video,
-            'slug_video' => $this->slug_video,
-            'thema_website' => $this->thema_website,
-            'slug_website' => $this->slug_website,
+            'name' => $this->name,
         ];
     }
 }

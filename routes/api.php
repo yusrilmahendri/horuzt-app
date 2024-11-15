@@ -15,6 +15,8 @@ use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PembayaranController;
 use App\Http\Controllers\PernikahanController;
 use App\Http\Controllers\ResultPernikahanController;
+use App\Http\Controllers\TestimoniController;
+use App\Http\Controllers\BukuTamuController;
 
 /*
 |--------------------------------------------------------------------------
@@ -67,12 +69,18 @@ Route::group(['middleware' => ['role:admin']], function () {
     Route::controller(ResultPernikahanController::class)->group(function() {
         Route::get('/v1/admin/result-pernikahan', 'index');
     });
+    Route::controller(TestimoniController::class)->group(function() {
+        Route::get('/v1/admin/result-testimoni', 'index');
+    });
+    Route::controller(BukuTamuController::class)->group(function() {
+        Route::get('/v1/admin/result-bukutamu', 'index');
+    });
     Route::get('/v1/admin/all-bank', [BankController::class, 'index'])->name('bank.index');
  });
 
 Route::group(['middleware' => ['role:user']], function () { 
     Route::controller(UserController::class)->group(function(){
-        Route::get('/v1/user-profile', 'index')->name('index');
+        Route::get('/v1/user-profile', 'index')->name('index-profile');
     });
  });
 

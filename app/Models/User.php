@@ -11,6 +11,8 @@ use Spatie\Permission\Traits\HasRoles;
 use App\Models\Themas;
 use App\Models\Order;
 use App\Models\Pernikahan;
+use App\Models\Testimoni;
+use App\Models\BukuTamu;
 
 class User extends Authenticatable
 {
@@ -58,5 +60,13 @@ class User extends Authenticatable
 
     public function pernikahan(){
         return $this->hasOne(Pernikahan::class, 'user_id');
+    }
+
+    public function testimoni(){
+        return $this->hasMany(Testimoni::class);
+    }
+
+    public function bukuTamu(){
+        return $this->hasMany(BukuTamu::class);
     }
 }

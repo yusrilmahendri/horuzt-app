@@ -19,10 +19,10 @@ class TestimoniFactory extends Factory
     {
         return [
             'user_id' => User::inRandomOrder()->first()->id,
-            'kota' => fake()->name(),
-            'provinsi' => fake()->name(),
-            'ulasan' => fake()->name(),
-            'status' => fake()->name(),
+            'kota' => 'Bantul',
+            'provinsi' => 'Jogja',
+            'ulasan' => 'sangat bagus dan adminya sangat ramah',
+            'status' => 'selesai',
         ];
     }
 }

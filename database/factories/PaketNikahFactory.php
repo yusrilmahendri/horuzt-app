@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Carbon\Carbon;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\PaketNikah>
@@ -17,13 +18,13 @@ class PaketNikahFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => fake()->name(),
+            'name' => 'golden',
             'price' => rand(1000, 10000),
-            'masa_aktif' => fake()->name(),
-            'buku_tamu' => fake()->name(),
-            'kirim_wa' => fake()->name(),
-            'kirim_hadiah' => fake()->name(),
-            'tema_bebas' => fake()->name(),
+            'masa_aktif' => Carbon::now()->format('Y-m-d'),
+            'buku_tamu' => '0',
+            'kirim_wa' => '1',
+            'kirim_hadiah' => '1',
+            'tema_bebas' => '0',
             'import_data' => 'https://picsum.photos',
 
         ];

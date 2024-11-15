@@ -21,12 +21,12 @@ class PembayaranFactory extends Factory
         return [
             'bank_id' =>  Bank::inRandomOrder()->first()->id,
             'order_id' =>  Order::inRandomOrder()->first()->id,
-            'status' => fake()->name(),
-            'nama_pemilik_rek' => fake()->name(),
-            'no_rek' => fake()->name(),
+            'status' => 'success',
+            'nama_pemilik_rek' => 'nevan wili kuswonto',
+            'no_rek' => '0806680684',
             'price' => rand(1000, 10000),
-            'va_number' => fake()->name(),
-            'type_channel' => fake()->name(), 
+            'va_number' => '',
+            'type_channel' => '', 
         ];
     }
 }

@@ -13,6 +13,6 @@ class ResultThemasSeeder extends Seeder
      */
     public function run(): void
     {
-        ResultThemas::factory()->count(5)->create();
+        ResultThemas::factory()->count(1)->create();
     }
 }

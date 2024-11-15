@@ -13,6 +13,6 @@ class BukuTamuSeeder extends Seeder
      */
     public function run(): void
     {
-        BukuTamu::factory()->count(10)->create();    
+        BukuTamu::factory()->count(1)->create();    
     }
 }

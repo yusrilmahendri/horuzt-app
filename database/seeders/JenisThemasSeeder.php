@@ -13,6 +13,6 @@ class JenisThemasSeeder extends Seeder
      */
     public function run(): void
     {
-        JenisThemas::factory()->count(5)->create();
+        JenisThemas::factory()->count(1)->create();
     }
 }

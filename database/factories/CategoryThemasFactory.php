@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use App\Models\CategoryThemas;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\CategoryThemas>
@@ -16,11 +17,16 @@ class CategoryThemasFactory extends Factory
      */
     public function definition(): array
     {
-        return [
-            'thema_video' => fake()->name(),
-            'slug_video' => fake()->name(),
-            'thema_website' => fake()->name(),
-            'slug_website' => fake()->name(),
+        $categories = [
+            ['name' => 'thema_video'],
+            ['name' => 'slug_video'],
+            ['name' => 'thema_website'],
+            ['name' => 'slug_website'],
         ];
+        
+        foreach ($categories as $category) {
+            CategoryThemas::create($category);
+        }
+        
     }
 }

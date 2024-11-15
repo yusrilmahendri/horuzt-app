@@ -13,6 +13,15 @@ class CategoryThemasSeeder extends Seeder
      */
     public function run(): void
     {
-        CategoryThemas::factory()->count(5)->create();
+        $categories = [
+            ['name' => 'thema_video'],
+            ['name' => 'slug_video'],
+            ['name' => 'thema_website'],
+            ['name' => 'slug_website'],
+        ];
+
+        foreach ($categories as $category) {
+            CategoryThemas::create($category);
+        }
     }
 }
