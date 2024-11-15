@@ -13,6 +13,6 @@ class PaketNikahSeeder extends Seeder
      */
     public function run(): void
     {
-        PaketNikah::factory()->count(5)->create();
+        PaketNikah::factory()->count(1)->create();
     }
 }

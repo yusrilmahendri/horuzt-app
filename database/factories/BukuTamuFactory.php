@@ -19,7 +19,7 @@ class BukuTamuFactory extends Factory
     {
         return [
             'user_id' => User::inRandomOrder()->first()->id,
-            'nama' => fake()->name(),
+            'nama' => 'arif leksono',
         ];
     }
 }

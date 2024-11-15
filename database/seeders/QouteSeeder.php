@@ -13,6 +13,6 @@ class QouteSeeder extends Seeder
      */
     public function run(): void
     {
-        Qoute::factory()->count(3)->create();
+        Qoute::factory()->count(1)->create();
     }
 }

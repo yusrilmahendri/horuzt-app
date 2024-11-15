@@ -13,6 +13,6 @@ class ThemasSeeder extends Seeder
      */
     public function run(): void
     {
-        Themas::factory()->count(5)->create();
+        Themas::factory()->count(1)->create();
     }
 }

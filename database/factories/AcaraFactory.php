@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use Carbon\Carbon;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Acara>
@@ -17,12 +18,12 @@ class AcaraFactory extends Factory
     public function definition(): array
     {
         return [
-            'nama_acara' => fake()->name(),
-            'waktu_mulai' => fake()->name(),
-            'tanggal_acara' => fake()->name(),
-            'set_countDown' => fake()->name(),
-            'alamat' => fake()->name(),
-            'maps' => fake()->name(),
+            'nama_acara' => 'Pernikahan nevan leksono',
+            'waktu_mulai' => Carbon::now()->format('H:i:s'),
+            'tanggal_acara' => Carbon::now()->format('Y-m-d'),
+            'set_countDown' => '',
+            'alamat' => 'Jl, Kaliurang. Yogyakarta.',
+            'maps' => 'https://maps.app.goo.gl/3ZiK9U3E9toMQTM69',
         ];
     }
 }

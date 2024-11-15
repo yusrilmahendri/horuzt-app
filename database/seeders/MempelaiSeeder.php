@@ -13,6 +13,9 @@ class MempelaiSeeder extends Seeder
      */
     public function run(): void
     {
-        Mempelai::factory()->count(3)->create();
+        Mempelai::factory()->male()->create();
+
+        // Insert 'female' with name 'kuswanti'
+        Mempelai::factory()->female()->create();
     }
 }

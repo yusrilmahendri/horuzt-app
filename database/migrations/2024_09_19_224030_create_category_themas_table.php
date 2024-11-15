@@ -13,10 +13,7 @@ return new class extends Migration
     {
         Schema::create('category_themas', function (Blueprint $table) {
             $table->id();
-            $table->string('thema_video');
-            $table->string('slug_video');
-            $table->string('thema_website');
-            $table->string('slug_website');
+            $table->string('name');
             $table->timestamps();
         });
     }
