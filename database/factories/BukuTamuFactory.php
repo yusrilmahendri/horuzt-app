@@ -20,6 +20,7 @@ class BukuTamuFactory extends Factory
         return [
             'user_id' => User::inRandomOrder()->first()->id,
             'nama' => 'arif leksono',
+            'pesan' => 'selamat broku, otw nyusul ya hehehe'
         ];
     }
 }

@@ -17,7 +17,8 @@ class BukuTamuResource extends JsonResource
     {
         return [
             'user' => new UserResource($this->user),
-            'nama' => $this->nama
+            'nama' => $this->nama,
+            'pesan' => $this->pesan,
         ];
     }
 }
