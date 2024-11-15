@@ -22,7 +22,6 @@ class TestimoniFactory extends Factory
             'kota' => 'Bantul',
             'provinsi' => 'Jogja',
             'ulasan' => 'sangat bagus dan adminya sangat ramah',
-            'status' => 'selesai',
         ];
     }
 }
