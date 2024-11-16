@@ -16,8 +16,6 @@ class BukuTamuController extends Controller
         $data = BukuTamu::paginate(5);
         return new BukuTamuCollection($data);
     }
-<<<<<<< HEAD
-=======
 
     public function deleteAll()
     {
@@ -36,5 +34,4 @@ class BukuTamuController extends Controller
         }
     }
 
->>>>>>> 067dd6d37f3e90bdb30b98d8da65384f01ce9070
 }
