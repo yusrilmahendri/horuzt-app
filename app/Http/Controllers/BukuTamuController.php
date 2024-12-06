@@ -13,25 +13,33 @@ class BukuTamuController extends Controller
     }  
 
     public function index(){
-        $data = BukuTamu::paginate(5);
+        $user = auth()->user();
+        $data = BukuTamu::where('user_id', $user->id)->get();
         return new BukuTamuCollection($data);
     }
 
     public function deleteAll()
-    {
-        BukuTamu::truncate();
+    {   
+        $user = auth()->user();
+        BukuTamu::where('user_id', $user->id)->delete();
         return response()->json(['message' => 'Semua data telah dihapus.'], 200);
     }
 
     public function deleteById($id)
     {
+        $user = auth()->user();
         $bukuTamu = BukuTamu::find($id);
+    
         if ($bukuTamu) {
-            $bukuTamu->delete();
-            return response()->json(['message' => 'Data berhasil dihapus.'], 200);
+            // Check if the record belongs to the logged-in user
+            if ($bukuTamu->user_id === $user->id) {
+                $bukuTamu->delete();
+                return response()->json(['message' => 'Data berhasil dihapus.'], 200);
+            } else {
+                return response()->json(['message' => 'Anda tidak memiliki akses untuk menghapus data ini.'], 403);
+            }
         } else {
             return response()->json(['message' => 'Data tidak ditemukan.'], 404);
         }
     }
-
 }
