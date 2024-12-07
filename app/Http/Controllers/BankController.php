@@ -13,7 +13,7 @@ class BankController extends Controller
     }  
 
     public function index(){
-        $data = Bank::paginate(5);
+        $data = Bank::get();
         return new BankCollection($data);
     }
 }

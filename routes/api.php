@@ -18,6 +18,7 @@ use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\BukuTamuController;
 use App\Http\Controllers\PengunjungController;
+use App\Http\Controllers\RekeningController;
 
 /*
 |--------------------------------------------------------------------------
@@ -32,6 +33,7 @@ use App\Http\Controllers\PengunjungController;
 
 Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
+Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
@@ -73,13 +75,15 @@ Route::group(['middleware' => ['role:admin']], function () {
     Route::controller(TestimoniController::class)->group(function() {
         Route::get('/v1/admin/result-testimoni', 'index');
     });
-    Route::get('/v1/admin/all-bank', [BankController::class, 'index'])->name('bank.index');
  });
 
 Route::group(['middleware' => ['role:user']], function () { 
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/user-profile', 'index')->name('index-profile');
     });
+    Route::controller(RekeningController::class)->group(function() {
+        Route::post('/v1/user/send-rekening', 'store');
+    }); 
     Route::controller(BukuTamuController::class)->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
         Route::delete('/v1/user/buku-tamu/delete-all', 'deleteAll');
