@@ -16,39 +16,67 @@ class RekeningController extends Controller
 
     public function store(Request $request)
     {
-        // Validasi input rekening
-        $rekeningRequest = $request->validate([
-            'kode_bank' => 'required',
-            'nomor_rekening' => 'required|min:3',  
-            'nama_pemilik' => 'required|min:3',     
-            'photo_rek' => 'required|image' // Ensure the photo is an image
-        ]);
+        // Ensure each input is treated as an array
+        $kodeBank = $request->input('kode_bank', []);
+        $nomorRekening = $request->input('nomor_rekening', []);
+        $namaPemilik = $request->input('nama_pemilik', []);
+        $photoRek = $request->file('photo_rek', []);
+    
+        // Check if all arrays have the same length
+        $count = count($kodeBank);
+        if (count($nomorRekening) !== $count || count($namaPemilik) !== $count || count($photoRek) !== $count) {
+            return response()->json([
+                'message' => 'Mismatch in the number of bank accounts data.',
+            ], 400);
+        }
     
         $userId = Auth::id();
+        $savedRekenings = [];
     
-        // Membuat instance Rekening baru
-        $rekening = new Rekening();
-        $rekening->user_id = $userId;
-        $rekening->nomor_rekening = $rekeningRequest['nomor_rekening'];  // Assign specific field
-        $rekening->nama_pemilik = $rekeningRequest['nama_pemilik'];        // Assign specific field
-        $rekening->kode_bank = $rekeningRequest['kode_bank'];              // Assign specific field
+        // Loop through the data and save each bank account
+        for ($i = 0; $i < $count; $i++) {
+            if (empty($kodeBank[$i]) || empty($nomorRekening[$i]) || empty($namaPemilik[$i]) || !isset($photoRek[$i])) {
+                return response()->json([
+                    'message' => 'Some required fields are missing for index ' . $i,
+                ], 400);
+            }
     
-        // Menyimpan photo_rek ke folder yang sesuai
-        $photoPath = $request->file('photo_rek')->store('photos', 'public');
-        $rekening->photo_rek = $photoPath;
+            // Create and save a new Rekening instance
+            $rekening = new Rekening();
+            $rekening->user_id = $userId;
+            $rekening->kode_bank = $kodeBank[$i];
+            $rekening->nomor_rekening = $nomorRekening[$i];
+            $rekening->nama_pemilik = $namaPemilik[$i];
     
-        // Menyimpan data rekening ke database
-        $rekening->save();
+            // Handle the file upload
+            if ($photoRek[$i]->isValid()) {
+                // Store the image and get its path
+                $photoPath = $photoRek[$i]->store('photos', 'public');
+                $rekening->photo_rek = $photoPath;
+            } else {
+                return response()->json([
+                    'message' => 'Invalid photo_rek file for index ' . $i,
+                ], 400);
+            }
     
-        // Mengembalikan respons jika berhasil
+            // Save the Rekening to the database
+            $rekening->save();
+    
+            // Add saved rekening to the response array
+            $savedRekenings[] = [
+                'kode_bank' => $rekening->kode_bank,
+                'nomor_rekening' => $rekening->nomor_rekening,
+                'nama_pemilik' => $rekening->nama_pemilik,
+                'photo_rek' => $rekening->photo_rek,
+            ];
+        }
+    
+        // Return the saved bank account data as response
         return response()->json([
-           'data' => [
-            'kode_bank' => $rekeningRequest['kode_bank'],
-            'nomor_rekening' => $rekeningRequest['nomor_rekening'],
-            'nama_pemilik' => $rekeningRequest['nama_pemilik'],
-            'photo_rek' => $rekening->photo_rek // Return the correct file path here
-           ],
-            'message' => 'Rekening berhasil ditambahkan!',
+            'data' => $savedRekenings,
+            'user_id' => $rekening->user_id,
+            'message' => 'Rekenings have been successfully added!',
         ], 201);
-    }    
+    }
+     
 }
