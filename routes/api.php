@@ -17,6 +17,7 @@ use App\Http\Controllers\PernikahanController;
 use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\BukuTamuController;
+use App\Http\Controllers\PengunjungController;
 
 /*
 |--------------------------------------------------------------------------
@@ -81,8 +82,13 @@ Route::group(['middleware' => ['role:user']], function () {
     });
     Route::controller(BukuTamuController::class)->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
-        Route::delete('/v1/buku-tamu/delete-all', 'deleteAll');
-        Route::delete('/v1/buku-tamu/{id}', 'deleteById');
+        Route::delete('/v1/user/buku-tamu/delete-all', 'deleteAll');
+        Route::delete('/v1/user/buku-tamu/{id}', 'deleteById');
+    });   
+    Route::controller(PengunjungController::class)->group(function () {
+        Route::get('/v1/user/result-pengunjung', 'index');
+        Route::delete('/v1/user/pengunjung/delete-all', 'deleteAll');
+        Route::delete('/v1/user/pengunjung/{id}', 'deleteById');
     });    
     Route::controller(TestimoniController::class)->group(function() {
         Route::post('/v1/user/post-testimoni', 'store')->name('testimoni.store');

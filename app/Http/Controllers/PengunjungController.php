@@ -4,20 +4,20 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\BukuTamu;
-use App\Http\Resources\Bukutamu\BukuTamuCollection;
+use App\Http\Resources\Bukutamu\PengunjungCollection;
 
-class BukuTamuController extends Controller
+
+class PengunjungController extends Controller
 {
     public function __construct(){
         $this->middleware('auth:sanctum');
     }  
 
     public function index(){
-        
         $data = BukuTamu::get();
         $user = auth()->user();
         $data = BukuTamu::where('user_id', $user->id)->get();
-        return new BukuTamuCollection($data);
+        return new PengunjungCollection($data);
     }
 
     public function deleteAll()
