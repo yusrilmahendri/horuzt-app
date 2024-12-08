@@ -19,6 +19,7 @@ use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\BukuTamuController;
 use App\Http\Controllers\PengunjungController;
 use App\Http\Controllers\RekeningController;
+use App\Http\Controllers\CeritaController;
 
 /*
 |--------------------------------------------------------------------------
@@ -94,6 +95,9 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::delete('/v1/user/pengunjung/delete-all', 'deleteAll');
         Route::delete('/v1/user/pengunjung/{id}', 'deleteById');
     });    
+    Route::controller(CeritaController::class)->group(function () {
+        Route::post('/v1/user/send-cerita', 'store');
+    });
     Route::controller(TestimoniController::class)->group(function() {
         Route::post('/v1/user/post-testimoni', 'store')->name('testimoni.store');
     });

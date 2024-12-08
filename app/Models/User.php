@@ -13,6 +13,7 @@ use App\Models\Order;
 use App\Models\Pernikahan;
 use App\Models\Testimoni;
 use App\Models\BukuTamu;
+use App\Models\Cerita;
 
 class User extends Authenticatable
 {
@@ -68,5 +69,9 @@ class User extends Authenticatable
 
     public function bukuTamu(){
         return $this->hasMany(BukuTamu::class);
+    }
+
+    public function cerita(){
+        return $this->hasmany(Cerita::class);
     }
 }

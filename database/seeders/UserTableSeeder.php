@@ -6,7 +6,7 @@ use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\User;
 
-class AdminTableSeeder extends Seeder
+class UserTableSeeder extends Seeder
 {
     /**
      * Run the database seeds.
@@ -14,12 +14,12 @@ class AdminTableSeeder extends Seeder
     public function run()
     {
         $user = User::create([
-            'email' => 'admin@gmail.com', 
+            'email' => 'yusrilmahendri@gmail.com',
+            'email_verified_at' => now(),
             'password' => bcrypt('12345678'),
             'email_verified_at' => now(),
         ]);
-
-        $user->assignRole('admin');
+        $user->assignRole('user');
         $user->createToken('auth_token')->plainTextToken;
         return $user;
     }
