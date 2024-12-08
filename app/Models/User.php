@@ -14,6 +14,7 @@ use App\Models\Pernikahan;
 use App\Models\Testimoni;
 use App\Models\BukuTamu;
 use App\Models\Cerita;
+use App\Models\Qoute;
 
 class User extends Authenticatable
 {
@@ -73,5 +74,9 @@ class User extends Authenticatable
 
     public function cerita(){
         return $this->hasmany(Cerita::class);
+    }
+
+    public function qoute(){
+        return $this->hasMany(Qoute::class);
     }
 }

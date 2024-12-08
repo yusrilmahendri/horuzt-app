@@ -3,6 +3,7 @@
 namespace Database\Factories;
 
 use Illuminate\Database\Eloquent\Factories\Factory;
+use App\Models\User;
 
 /**
  * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Qoute>
@@ -17,7 +18,9 @@ class QouteFactory extends Factory
     public function definition(): array
     {
         return [
-            'name' => 'kenif si jago ayam'
+            'user_id' => User::inRandomOrder()->first()->id,
+            'name' => 'kenif si jago ayam',
+            'qoute' => 'man jadda wajada'
         ];
     }
 }

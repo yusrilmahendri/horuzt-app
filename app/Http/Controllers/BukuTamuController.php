@@ -13,7 +13,6 @@ class BukuTamuController extends Controller
     }  
 
     public function index(){
-        
         $data = BukuTamu::get();
         $user = auth()->user();
         $data = BukuTamu::where('user_id', $user->id)->get();
@@ -28,7 +27,7 @@ class BukuTamuController extends Controller
     }
 
     public function deleteById($id)
-    {
+    {   
         $user = auth()->user();
         $bukuTamu = BukuTamu::find($id);
     

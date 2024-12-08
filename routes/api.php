@@ -20,6 +20,7 @@ use App\Http\Controllers\BukuTamuController;
 use App\Http\Controllers\PengunjungController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\CeritaController;
+use App\Http\Controllers\QouteController;
 
 /*
 |--------------------------------------------------------------------------
@@ -97,6 +98,9 @@ Route::group(['middleware' => ['role:user']], function () {
     });    
     Route::controller(CeritaController::class)->group(function () {
         Route::post('/v1/user/send-cerita', 'store');
+    });
+    Route::controller(QouteController::class)->group(function() {
+        Route::post('/v1/user/send-qoute', 'store');
     });
     Route::controller(TestimoniController::class)->group(function() {
         Route::post('/v1/user/post-testimoni', 'store')->name('testimoni.store');
