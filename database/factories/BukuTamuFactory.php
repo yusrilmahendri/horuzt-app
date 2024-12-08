@@ -18,9 +18,10 @@ class BukuTamuFactory extends Factory
     public function definition(): array
     {
         return [
-            'user_id' => User::inRandomOrder()->first()->id,
-            'nama' => 'arif leksono',
-            'pesan' => 'selamat broku, otw nyusul ya hehehe'
+            // 'user_id' => User::inRandomOrder()->first()->id,
+            'user_id' => 3,
+            'nama' => $this->name,
+            'pesan' => $this->pesan
         ];
     }
 }
