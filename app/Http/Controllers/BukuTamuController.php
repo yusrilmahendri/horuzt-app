@@ -12,13 +12,6 @@ class BukuTamuController extends Controller
         $this->middleware('auth:sanctum');
     }  
 
-    // public function index(){
-    //     $data = BukuTamu::get();
-    //     $user = auth()->user();
-    //     $data = BukuTamu::where('user_id', $user->id)->get();
-    //     return new BukuTamuCollection($data);
-    // }
-
     public function index(Request $request)
     {
         $user = auth()->user();
