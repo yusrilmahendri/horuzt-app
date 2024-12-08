@@ -20,7 +20,7 @@ class BukuTamuFactory extends Factory
         return [
             // 'user_id' => User::inRandomOrder()->first()->id,
             'user_id' => 3,
-            'nama' => $this->name,
+            'nama' => $this->nama,
             'pesan' => $this->pesan
         ];
     }
