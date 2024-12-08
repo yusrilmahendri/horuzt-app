@@ -18,8 +18,8 @@ class BukuTamuResource extends JsonResource
         return [
             'id' => $this->id,
             'user' => new UserResource($this->user),
-            'nama' => $this->faker->name(),
-            'pesan' => $this->faker->name(),
+            'nama' => $this->nama,
+            'pesan' => $this->pesan,
         ];
     }
 }
