@@ -35,11 +35,11 @@ class QouteController extends Controller
             return response()->json([
                 'message' => 'Qoute berhasil disimpan!',
                 'data' => $qoute,
-            ], 201); // HTTP status 201 untuk "Created"
+            ], 201); 
         } else {
             return response()->json([
                 'message' => 'Terjadi kesalahan saat menyimpan qoute.',
-            ], 500); // HTTP status 500 untuk "Internal Server Error"
+            ], 500); 
         }
     }
     
