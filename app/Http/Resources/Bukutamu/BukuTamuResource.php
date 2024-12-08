@@ -16,7 +16,7 @@ class BukuTamuResource extends JsonResource
     public function toArray(Request $request): array
     {
         return [
-            'id_ucapan' => $this->id,
+            'id' => $this->id,
             'user' => new UserResource($this->user),
             'nama' => $this->nama,
             'pesan' => $this->pesan,
