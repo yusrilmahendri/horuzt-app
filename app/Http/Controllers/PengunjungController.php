@@ -13,10 +13,24 @@ class PengunjungController extends Controller
         $this->middleware('auth:sanctum');
     }  
 
-    public function index(){
-        $data = BukuTamu::get();
+    public function index(Request $request)
+    {
         $user = auth()->user();
-        $data = BukuTamu::where('user_id', $user->id)->get();
+
+        // Start with the query for the authenticated user
+        $query = BukuTamu::where('user_id', $user->id);
+
+        // Apply search filter if the 'search' query parameter exists
+        if ($request->has('search') && $request->search) {
+            $query->where('nama', 'like', '%' . $request->search . '%');
+        }
+
+        // Get the limit from query parameters or default to 10
+        $limit = $request->get('limit', 10); // Default limit is 10
+
+        // Paginate the results
+        $data = $query->paginate($limit);
+
         return new PengunjungCollection($data);
     }
 
