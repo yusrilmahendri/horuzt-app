@@ -15,6 +15,7 @@ use App\Models\Testimoni;
 use App\Models\BukuTamu;
 use App\Models\Cerita;
 use App\Models\Qoute;
+use App\Models\Galery;
 
 class User extends Authenticatable
 {
@@ -78,5 +79,9 @@ class User extends Authenticatable
 
     public function qoute(){
         return $this->hasMany(Qoute::class);
+    }
+
+    public function gallery(){
+        return $this->hasMany(Galery::class);
     }
 }
