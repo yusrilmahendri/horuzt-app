@@ -20,6 +20,6 @@ class Rekening extends Model
     // Relationship to the Bank
     public function bank()
     {
-        return $this->belongsTo(Bank::class);
+        return $this->belongsTo(Bank::class, 'kode_bank', 'id');
     }
 }

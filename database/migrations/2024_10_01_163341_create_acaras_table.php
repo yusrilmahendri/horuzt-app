@@ -13,13 +13,16 @@ return new class extends Migration
     {
         Schema::create('acaras', function (Blueprint $table) {
             $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('countdown_acara')->nullable();
             $table->string('nama_acara');
-            $table->string('waktu_mulai');
             $table->string('tanggal_acara');
-            $table->string('set_countDown')->nullable();
+            $table->string('start_acara');
+            $table->string('end_acara');
             $table->string('alamat');
-            $table->text('maps');
+            $table->text('link_maps');
             $table->timestamps();
+            $table->foreign('user_id')->references('id')->on('users');
         });
     }
 

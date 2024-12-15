@@ -7,6 +7,9 @@ use App\Models\User;
 use App\Models\Bank;
 use App\Models\Rekening;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Resources\Rekening\RekeningCollection;
+use App\Http\Resources\Rekening\RekeningResource;
+use Illuminate\Validation\ValidationException;
 
 class RekeningController extends Controller
 {
@@ -14,69 +17,130 @@ class RekeningController extends Controller
         $this->middleware('auth:sanctum');
     }  
 
+    public function index(){
+        $userId = Auth::id();
+        $rekenings = Rekening::where('user_id', $userId)->with('bank')->get();
+
+        return new RekeningCollection($rekenings);
+    }
+
+ 
     public function store(Request $request)
     {
-        // Ensure each input is treated as an array
-        $kodeBank = $request->input('kode_bank', []);
-        $nomorRekening = $request->input('nomor_rekening', []);
-        $namaPemilik = $request->input('nama_pemilik', []);
-        $photoRek = $request->file('photo_rek', []);
+        try {
+            $validated = $request->validate([
+                'kode_bank' => 'required|array',
+                'kode_bank.*' => 'required|integer',
+                'nomor_rekening' => 'required|array',
+                'nomor_rekening.*' => 'required|string',
+                'nama_pemilik' => 'required|array',
+                'nama_pemilik.*' => 'required|string',
+                'photo_rek' => 'required|array',
+                'photo_rek.*' => 'required|file|mimes:jpeg,png,jpg|max:2048',
+            ]);
     
-        // Check if all arrays have the same length
-        $count = count($kodeBank);
-        if (count($nomorRekening) !== $count || count($namaPemilik) !== $count || count($photoRek) !== $count) {
+            $count = count($validated['kode_bank']);
+            $userId = Auth::id();
+            $savedRekenings = [];
+    
+            for ($i = 0; $i < $count; $i++) {
+                $rekening = new Rekening();
+                $rekening->user_id = $userId;
+                $rekening->kode_bank = $validated['kode_bank'][$i];
+                $rekening->nomor_rekening = $validated['nomor_rekening'][$i];
+                $rekening->nama_pemilik = $validated['nama_pemilik'][$i];
+    
+                if ($validated['photo_rek'][$i]->isValid()) {
+                    $photoPath = $validated['photo_rek'][$i]->store('photos', 'public');
+                    $rekening->photo_rek = $photoPath;
+                }
+    
+                $rekening->save();
+    
+                $savedRekenings[] = [
+                    'kode_bank' => $rekening->kode_bank,
+                    'nomor_rekening' => $rekening->nomor_rekening,
+                    'nama_pemilik' => $rekening->nama_pemilik,
+                    'photo_rek' => asset('storage/' . $rekening->photo_rek),
+                ];
+            }
+    
             return response()->json([
-                'message' => 'Mismatch in the number of bank accounts data.',
-            ], 400);
+                'data' => $savedRekenings,
+                'message' => 'Rekenings have been successfully added!',
+            ], 201);
+    
+        } catch (ValidationException $e) {
+            return response()->json([
+                'errors' => $e->errors(),
+                'message' => 'Validation failed!',
+            ], 422);
         }
-    
-        $userId = Auth::id();
-        $savedRekenings = [];
-    
-        // Loop through the data and save each bank account
-        for ($i = 0; $i < $count; $i++) {
-            if (empty($kodeBank[$i]) || empty($nomorRekening[$i]) || empty($namaPemilik[$i]) || !isset($photoRek[$i])) {
-                return response()->json([
-                    'message' => 'Some required fields are missing for index ' . $i,
-                ], 400);
-            }
-    
-            // Create and save a new Rekening instance
-            $rekening = new Rekening();
-            $rekening->user_id = $userId;
-            $rekening->kode_bank = $kodeBank[$i];
-            $rekening->nomor_rekening = $nomorRekening[$i];
-            $rekening->nama_pemilik = $namaPemilik[$i];
-    
-            // Handle the file upload
-            if ($photoRek[$i]->isValid()) {
-                // Store the image and get its path
-                $photoPath = $photoRek[$i]->store('photos', 'public');
-                $rekening->photo_rek = $photoPath;
-            } else {
-                return response()->json([
-                    'message' => 'Invalid photo_rek file for index ' . $i,
-                ], 400);
-            }
-    
-            // Save the Rekening to the database
-            $rekening->save();
-    
-            // Add saved rekening to the response array
-            $savedRekenings[] = [
-                'kode_bank' => $rekening->kode_bank,
-                'nomor_rekening' => $rekening->nomor_rekening,
-                'nama_pemilik' => $rekening->nama_pemilik,
-                'photo_rek' => $rekening->photo_rek,
-            ];
-        }
-    
-        // Return the saved bank account data as response
-        return response()->json([
-            'data' => $savedRekenings,
-            'user_id' => $rekening->user_id,
-            'message' => 'Rekenings have been successfully added!',
-        ], 201);
     }
-     
+    
+    
+    public function update(Request $request)
+    {
+        try {
+            // Validate the request
+            $validated = $request->validate([
+                'rekenings' => 'required|array',
+                'rekenings.*.id' => 'required|integer|exists:rekenings,id',
+                'rekenings.*.kode_bank' => 'required|integer',
+                'rekenings.*.nomor_rekening' => 'required|string',
+                'rekenings.*.nama_pemilik' => 'required|string',
+                'rekenings.*.photo_rek' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
+            ]);
+    
+            $userId = Auth::id();
+            $updatedRekenings = [];
+    
+            foreach ($validated['rekenings'] as $index => $data) {
+                $rekening = Rekening::where('id', $data['id'])
+                    ->where('user_id', $userId)
+                    ->first();
+    
+                if ($rekening) {
+                    $rekening->kode_bank = $data['kode_bank'];
+                    $rekening->nomor_rekening = $data['nomor_rekening'];
+                    $rekening->nama_pemilik = $data['nama_pemilik'];
+    
+                    // Handle file upload
+                    if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
+                        $photoPath = $data['photo_rek']->store('photos', 'public');
+                        $rekening->photo_rek = $photoPath;
+                    }
+    
+                    $rekening->save();
+                    $updatedRekenings[] = new RekeningResource($rekening);
+                } else {
+                    // Add an error note if the record does not exist
+                    return response()->json([
+                        'message' => "Rekening ID {$data['id']} at index {$index} not found or does not belong to the user.",
+                    ], 404);
+                }
+            }
+    
+            // Return success response
+            return response()->json([
+                'data' => count($updatedRekenings) == 1
+                    ? $updatedRekenings[0]
+                    : $updatedRekenings,
+                'message' => 'Rekenings updated successfully!',
+            ], 200);
+    
+        } catch (ValidationException $e) {
+            // Handle validation errors and return the failed field names and messages
+            return response()->json([
+                'message' => 'Validation failed. Please check the form inputs.',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            // Handle any other unexpected errors
+            return response()->json([
+                'message' => 'An error occurred while updating the records.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
 }

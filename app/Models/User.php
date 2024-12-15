@@ -16,6 +16,7 @@ use App\Models\BukuTamu;
 use App\Models\Cerita;
 use App\Models\Qoute;
 use App\Models\Galery;
+use App\Models\Acara;
 
 class User extends Authenticatable
 {
@@ -83,5 +84,9 @@ class User extends Authenticatable
 
     public function gallery(){
         return $this->hasMany(Galery::class);
+    }
+
+    public function acara(){
+        return $this->hasmany(Acara::class);
     }
 }

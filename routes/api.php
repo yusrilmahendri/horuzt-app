@@ -22,6 +22,7 @@ use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\CeritaController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\GaleryController;
+use App\Http\Controllers\AcaraController;
 
 /*
 |--------------------------------------------------------------------------
@@ -86,6 +87,8 @@ Route::group(['middleware' => ['role:user']], function () {
     });
     Route::controller(RekeningController::class)->group(function() {
         Route::post('/v1/user/send-rekening', 'store');
+        Route::get('/v1/user/get-rekening', 'index');
+        Route::put('/v1/user/update-rekening', 'update');
     }); 
     Route::controller(BukuTamuController::class)->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
@@ -108,6 +111,9 @@ Route::group(['middleware' => ['role:user']], function () {
     });
     Route::controller(GaleryController::class)->group(function() {
         Route::post('/v1/user/submission-galery', 'store');
+    });
+    Route::controller(AcaraController::class)->group(function() {
+        Route::post('/v1/user/submission-acara', 'store');
     });
  });
 
