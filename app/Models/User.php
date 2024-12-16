@@ -17,6 +17,7 @@ use App\Models\Cerita;
 use App\Models\Qoute;
 use App\Models\Galery;
 use App\Models\Acara;
+use App\Models\Ucapan;
 
 class User extends Authenticatable
 {
@@ -88,5 +89,9 @@ class User extends Authenticatable
 
     public function acara(){
         return $this->hasmany(Acara::class);
+    }
+
+    public function ucapan(){
+        return $this->hasmany(Ucapan::class);
     }
 }

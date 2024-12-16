@@ -6,9 +6,9 @@ use Illuminate\Database\Eloquent\Factories\Factory;
 use App\Models\User;
 
 /**
- * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\BukuTamu>
+ * @extends \Illuminate\Database\Eloquent\Factories\Factory<\App\Models\Ucapan>
  */
-class BukuTamuFactory extends Factory
+class UcapanFactory extends Factory
 {
     /**
      * Define the model's default state.
@@ -18,9 +18,9 @@ class BukuTamuFactory extends Factory
     public function definition(): array
     {
         return [
-            // 'user_id' => User::inRandomOrder()->first()->id,
             'user_id' => 2,
             'nama' => $this->faker->name(),
+            'pesan' => $this->faker->name()
         ];
     }
 }

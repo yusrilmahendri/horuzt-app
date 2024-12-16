@@ -1,12 +1,12 @@
 <?php
 
-namespace App\Http\Resources\Bukutamu;
+namespace App\Http\Resources\Ucapan;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use App\Http\Resources\User\UserResource;
 
-class BukuTamuResource extends JsonResource
+class UcapanResource extends JsonResource
 {
     /**
      * Transform the resource into an array.
@@ -19,6 +19,7 @@ class BukuTamuResource extends JsonResource
             'id' => $this->id,
             'user' => new UserResource($this->user),
             'nama' => $this->nama,
+            'pesan' => $this->pesan,
         ];
     }
 }
