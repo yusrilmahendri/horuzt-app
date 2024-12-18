@@ -20,6 +20,7 @@ class PengunjungResource extends JsonResource
             'id' => $this->id,
             'user' => new UserResource($this->user),
             'nama' => $this->nama,
+            'pesan' => $this->pesan,
             'tanggal' => Carbon::parse($this->created_at)->format('Y-m-d H:i:s'),
         ];
     }

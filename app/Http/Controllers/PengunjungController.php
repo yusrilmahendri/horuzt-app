@@ -3,8 +3,8 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
-use App\Models\BukuTamu;
 use App\Http\Resources\Bukutamu\PengunjungCollection;
+use App\Models\Ucapan;
 
 
 class PengunjungController extends Controller
@@ -18,7 +18,7 @@ class PengunjungController extends Controller
         $user = auth()->user();
 
         // Start with the query for the authenticated user
-        $query = BukuTamu::where('user_id', $user->id);
+        $query = Ucapan::where('user_id', $user->id);
 
         // Apply search filter if the 'search' query parameter exists
         if ($request->has('search') && $request->search) {

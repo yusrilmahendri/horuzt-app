@@ -17,7 +17,6 @@ use App\Http\Controllers\PernikahanController;
 use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\BukuTamuController;
-use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\PengunjungController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\CeritaController;
@@ -96,7 +95,7 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::delete('/v1/user/buku-tamu/delete-all', 'deleteAll');
         Route::delete('/v1/user/buku-tamu/{id}', 'deleteById');
     });   
-    Route::controller(UcapanController::class)->group(function () {
+    Route::controller(PengunjungController::class)->group(function () {
         Route::get('/v1/user/result-pengunjung', 'index');
         Route::delete('/v1/user/pengunjung/delete-all', 'deleteAll');
         Route::delete('/v1/user/pengunjung/{id}', 'deleteById');
