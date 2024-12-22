@@ -116,7 +116,8 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::get('/v1/user/acara', 'index');
         Route::post('/v1/user/submission-countdown', 'storeCountDown');
         Route::post('/v1/user/submission-acara', 'store');
-
+        Route::put('/v1/user/update-countdown/{id}', 'updateCountDown');
+        Route::put('/v1/user/update-acara', 'updateAcara');
     });
  });
 
