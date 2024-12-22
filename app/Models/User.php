@@ -94,4 +94,8 @@ class User extends Authenticatable
     public function ucapan(){
         return $this->hasmany(Ucapan::class);
     }
+
+    public function CountdownAcara(){
+        return $this->hasMany(CountdownAcara::class);
+    }
 }

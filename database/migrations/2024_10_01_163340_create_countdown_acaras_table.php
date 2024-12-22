@@ -11,19 +11,12 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('acaras', function (Blueprint $table) {
+        Schema::create('countdown_acaras', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
-            $table->unsignedBigInteger('countdown_id')->nullable();
-            $table->string('nama_acara');
-            $table->string('tanggal_acara');
-            $table->string('start_acara');
-            $table->string('end_acara');
-            $table->string('alamat');
-            $table->text('link_maps');
+            $table->string('name_countdown');
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
-            $table->foreign('countdown_id')->references('id')->on('countdown_acaras');
         });
     }
 
@@ -32,6 +25,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('acaras');
+        Schema::dropIfExists('countdown_acaras');
     }
 };
