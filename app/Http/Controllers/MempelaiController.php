@@ -6,12 +6,19 @@ use Illuminate\Http\Request;
 use App\Models\Mempelai;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
+use App\Http\Resources\Mempelai\MempelaiCollection;
 
 class MempelaiController extends Controller
 {
     public function __construct()
     {
         $this->middleware('auth:sanctum');
+    }
+
+    public function index(){
+        $userId = Auth::id();
+        $mempelai = Mempelai::where('user_id', $userId)->get();
+        return new MempelaiCollection($mempelai);
     }
 
     public function store(Request $request)
@@ -111,6 +118,74 @@ class MempelaiController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Terjadi kesalahan saat menyimpan data.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function updateMempelai(Request $request, $id)
+    {
+        try {
+            $mempelai = Mempelai::findOrFail($id);
+
+            $validatedData = $request->validate([
+                'photo_pria' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'photo_wanita' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'name_lengkap_pria' => 'nullable|string|max:255',
+                'name_lengkap_wanita' => 'nullable|string|max:255',
+                'name_panggilan_pria' => 'nullable|string|max:255',
+                'name_panggilan_wanita' => 'nullable|string|max:255',
+                'ayah_pria' => 'nullable|string|max:255',
+                'ayah_wanita' => 'nullable|string|max:255',
+                'ibu_pria' => 'nullable|string|max:255',
+                'ibu_wanita' => 'nullable|string|max:255',
+            ]);
+
+            if ($request->hasFile('photo_pria')) {
+                $validatedData['photo_pria'] = $request->file('photo_pria')->store('photos', 'public');
+            }
+
+            if ($request->hasFile('photo_wanita')) {
+                $validatedData['photo_wanita'] = $request->file('photo_wanita')->store('photos', 'public');
+            }
+
+            $mempelai->update($validatedData);
+
+            return response()->json([
+                'message' => 'Data Mempelai berhasil diperbarui.',
+                'data' => $mempelai,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Terjadi kesalahan saat memperbarui data.',
+                'error' => $e->getMessage(),
+            ], 500);
+        }
+    }
+
+    public function updateCoverMempelai(Request $request, $id)
+    {
+        try {
+            $mempelai = Mempelai::findOrFail($id);
+
+            $validatedData = $request->validate([
+                'cover_photo' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'urutan_mempelai' => 'nullable|string|max:255',
+            ]);
+
+            if ($request->hasFile('cover_photo')) {
+                $validatedData['cover_photo'] = $request->file('cover_photo')->store('photos', 'public');
+            }
+
+            $mempelai->update($validatedData);
+
+            return response()->json([
+                'message' => 'Cover Mempelai berhasil diperbarui.',
+                'data' => $mempelai,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Terjadi kesalahan saat memperbarui cover.',
                 'error' => $e->getMessage(),
             ], 500);
         }

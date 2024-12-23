@@ -122,8 +122,11 @@ Route::group(['middleware' => ['role:user']], function () {
     });
 
     Route::controller(MempelaiController::class)->group(function() {
+        Route::get('/v1/user/get-mempelai', 'index');
         Route::post('/v1/user/submission-mempelai', 'store');
         Route::post('/v1/user/submission-cover-mempelai', 'storeMempelai');
+        Route::put('/v1/user/submission-update/mempelai/{id}', [MempelaiController::class, 'updateMempelai']);
+        Route::put('/v1/user/submission-update/cover/{id}', [MempelaiController::class, 'updateCoverMempelai']);
     });
  });
 
