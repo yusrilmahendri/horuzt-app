@@ -18,6 +18,7 @@ use App\Models\Qoute;
 use App\Models\Galery;
 use App\Models\Acara;
 use App\Models\Ucapan;
+use App\Models\Mempelai;
 
 class User extends Authenticatable
 {
@@ -97,5 +98,9 @@ class User extends Authenticatable
 
     public function CountdownAcara(){
         return $this->hasMany(CountdownAcara::class);
+    }
+
+    public function mempelai(){
+        return $this->hasMany(Mempelai::class);
     }
 }

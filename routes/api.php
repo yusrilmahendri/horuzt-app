@@ -23,6 +23,7 @@ use App\Http\Controllers\CeritaController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\AcaraController;
+use App\Http\Controllers\MempelaiController;
 
 /*
 |--------------------------------------------------------------------------
@@ -118,6 +119,11 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/submission-acara', 'store');
         Route::put('/v1/user/update-countdown/{id}', 'updateCountDown');
         Route::put('/v1/user/update-acara', 'updateAcara');
+    });
+
+    Route::controller(MempelaiController::class)->group(function() {
+        Route::post('/v1/user/submission-mempelai', 'store');
+        Route::post('/v1/user/submission-cover-mempelai', 'storeMempelai');
     });
  });
 
