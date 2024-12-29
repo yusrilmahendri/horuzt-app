@@ -17,7 +17,7 @@ return new class extends Migration
             $table->unsignedBigInteger('kode_bank');
             $table->string('nomor_rekening');
             $table->string('nama_pemilik');
-            $table->string('photo_rek');
+            $table->binary('photo_rek')->nullable();
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
             $table->foreign('kode_bank')->references('id')->on('banks');

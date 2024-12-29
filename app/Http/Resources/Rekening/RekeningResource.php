@@ -20,7 +20,8 @@ class RekeningResource extends JsonResource
             'bank_name' => $this->bank ? $this->bank->name : null, // Include bank name
             'nomor_rekening' => $this->nomor_rekening,
             'nama_pemilik' => $this->nama_pemilik,
-            'photo_rek' => $this->photo_rek ? asset('storage/photos' . $this->photo_rek) : null, // Public URL for the photo
+           // 'photo_rek' => $this->photo_rek ? asset('storage/photos' . $this->photo_rek) : null, // Public URL for the photo
+            'photo_rek' => $this->photo_rek ? 'data:image/jpeg;base64,' . base64_encode($this->photo_rek) : null, // Convert binary to Base64
             'created_at' => $this->created_at->toDateTimeString(),
         ];
     }
