@@ -19,6 +19,7 @@ use App\Models\Galery;
 use App\Models\Acara;
 use App\Models\Ucapan;
 use App\Models\Mempelai;
+use App\Models\Setting;
 
 class User extends Authenticatable
 {
@@ -102,5 +103,9 @@ class User extends Authenticatable
 
     public function mempelai(){
         return $this->hasMany(Mempelai::class);
+    }
+
+    public function setting(){
+        return $this->hasMany(Setting::class);
     }
 }

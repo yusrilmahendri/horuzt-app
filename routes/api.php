@@ -24,6 +24,7 @@ use App\Http\Controllers\QouteController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\MempelaiController;
+use App\Http\Controllers\SettingController;
 
 /*
 |--------------------------------------------------------------------------
@@ -127,6 +128,15 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/submission-cover-mempelai', 'storeMempelai');
         Route::put('/v1/user/submission-update/mempelai/{id}', [MempelaiController::class, 'updateMempelai']);
         Route::put('/v1/user/submission-update/cover/{id}', [MempelaiController::class, 'updateCoverMempelai']);
+    });
+
+    Route::controller(SettingController::class)->group(function(){
+        Route::post('/v1/user/settings/domain', 'storeDomainToken');
+        Route::post('/v1/user/settings/music', 'storeMusic');
+        Route::post('/v1/user/settings/salam', 'storeSalam');
+
+        Route::get('/v1/user/music/download/{id}', 'downloadMusic');
+        Route::get('/v1/user/music/stream/{id}', 'streamMusic');
     });
  });
 
