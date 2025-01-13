@@ -41,72 +41,38 @@ class SettingController extends Controller
         }
     }
 
-public function storeMusic(Request $request)
-{
-    // Retrieve the raw uploaded file
-    $file = $request->file('musik');
+    public function storeMusic(Request $request)
+    {
+        try {
+            $validatedData = $request->validate([
+                'musik' => 'required|file|mimes:mp3,wav,ogg|max:10240',
+            ]);
 
-    if ($file) {
-        \Log::info('File detected:', [
-            'original_name' => $file->getClientOriginalName(),
-            'mime_type' => $file->getClientMimeType(),
-            'size' => $file->getSize(),
-        ]);
+            if ($request->hasFile('musik')) {
+                $file = $request->file('musik');
+                $filePath = $file->store('public/music');
 
-        return response()->json([
-            'original_name' => $file->getClientOriginalName(),
-            'mime_type' => $file->getClientMimeType(),
-            'size' => $file->getSize(),
-        ]);
-    } else {
-        \Log::info('No file detected in the request');
-        return response()->json(['error' => 'No file uploaded'], 400);
-    }
-}
+                // Save the file path to the database
+                $user = Auth::user();
+                $setting = Setting::updateOrCreate(
+                    ['user_id' => $user->id],
+                    ['musik' => $filePath]
+                );
 
-
-
-    public function storeMusics(Request $request)
-    {   
-         if ($request->hasFile('musik')) {
-        $file = $request->file('musik');
-        return response()->json([
-            'original_name' => $file->getClientOriginalName(),
-            'mime_type' => $file->getClientMimeType(),
-            'size' => $file->getSize(),
-        ]);
-    } else {
-        return response()->json(['error' => 'No file uploaded'], 400);
+                return response()->json([
+                    'Message' => 'Music file uploaded successfully.',
+                    'file_path' => $filePath,
+                    'testimoni' => $setting,
+                ], 200);
+            } else {
+                return response()->json(['error' => 'No file uploaded'], 400);
+            }
+        } catch (\Exception $e) {
+            \Log::error('File upload failed', ['error' => $e->getMessage()]);
+            return response()->json(['error' => 'Failed to upload music file.', 'details' => $e->getMessage()], 500);
+        }
     }
 
-        // $user = Auth::user();
-
-        // // Validate the uploaded file
-        // $validatedData = $request->validate([
-        //     'musik' => 'nullable|file|mimes:mp3,wav,aac,ogg,flac,m4a,wma,aiff|max:10240', // Up to 10MB
-        // ]);
-
-        // // Check if the setting exists or create a new one
-        // $setting = Setting::firstOrNew(['user_id' => $user->id]);
-
-        // if ($request->hasFile('musik')) {
-        //     $file = $request->file('musik');
-        //     $filename = time() . '_' . $file->getClientOriginalName(); // Generate a unique filename
-        //     $path = $file->storeAs('/musik', $filename, 'public'); // Save file to 'storage/app/public/uploads/music'
-        //     $setting->musik = $path; // Save the file path to the database
-        // }
-
-        // if ($setting->save()) {
-        //     return response()->json([
-        //         'Message' => 'Music file successfully uploaded and saved.',
-        //         'data' => $setting,
-        //     ], 200);
-        // } else {
-        //     return response()->json([
-        //         'Message' => 'Failed to save the music file!',
-        //     ], 500);
-        // }
-    }
 
 
      public function storeSalam(Request $request)
