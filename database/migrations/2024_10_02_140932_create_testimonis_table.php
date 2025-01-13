@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('kota');
             $table->string('provinsi');
             $table->text('ulasan');
+            $table->boolean('status')->default(0);
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
         });

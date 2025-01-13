@@ -69,6 +69,35 @@ class TestimoniController extends Controller
         }
     }
 
+    public function update(Request $request, $id)
+    {
+        // Validate the 'status' field
+        $validatedData = $request->validate([
+            'status' => 'required|boolean', // Ensure 'status' is required and a boolean (1 or 0)
+        ]);
+
+        // Find the Testimoni by ID
+        $testimoni = Testimoni::find($id);
+
+        // Check if the Testimoni exists
+        if (!$testimoni) {
+            return response()->json([
+                'message' => 'Data tidak ditemukan.',
+            ], 404);
+        }
+
+        // Update the 'status' field
+        $testimoni->status = $validatedData['status'];
+        $testimoni->save();
+
+        // Return success response
+        return response()->json([
+            'message' => 'Status berhasil diperbarui.',
+            'testimoni' => $testimoni,
+        ], 200);
+    }
+
+
     public function deleteAll()
     {
         // Check if there are any records to delete
