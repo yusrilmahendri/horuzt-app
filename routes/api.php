@@ -47,6 +47,15 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 });
 
 Route::group(['middleware' => ['role:admin']], function () { 
+
+    Route::controller(TestimoniController::class)->group(function() {
+        Route::get('/v1/admin/testimoni', 'index');
+        Route::delete('/v1/admin/testimoni/delete-all', 'deleteAll');
+        Route::delete('/v1/admin/testimoni/{id}', 'deleteById');
+    });
+
+
+
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/admin/get-users', 'index')->name('index');
       

@@ -13,8 +13,35 @@ class TestimoniController extends Controller
         $this->middleware('auth:sanctum');
     }  
 
-    public function index(){
-        $data = Testimoni::paginate(5);
+    public function index(Request $request)
+    {
+        $query = Testimoni::query();
+
+        // Check if the authenticated user is an admin
+        if (auth()->user()->role === 'admin') {
+            $query->whereHas('user', function ($q) {
+                $q->where('role', 'user');
+            });
+        }
+
+        // Apply search filter if provided
+        if ($request->has('search') && $request->search) {
+            $searchTerm = $request->search;
+            $query->where(function ($q) use ($searchTerm) {
+                $q->where('provinsi', 'LIKE', "%{$searchTerm}%")
+                ->orWhere('ulasan', 'LIKE', "%{$searchTerm}%");
+            });
+        }
+
+        // Set default limit to 10 if not provided
+        $limit = $request->has('limit') && is_numeric($request->limit) 
+            ? $request->limit 
+            : 10;
+
+        // Paginate the results with the calculated limit
+        $data = $query->paginate($limit);
+
+        // Return the paginated and filtered results
         return new TestimoniCollection($data);
     }
 
@@ -40,5 +67,40 @@ class TestimoniController extends Controller
                 'Message' => 'Ulasan anda gagal dikirimkan!',
             ], 500);
         }
+    }
+
+    public function deleteAll()
+    {
+        // Check if there are any records to delete
+        $testimoniesCount = Testimoni::count();
+        if ($testimoniesCount > 0) {
+            // Delete all records
+            Testimoni::truncate();
+
+            return response()->json([
+                'message' => 'Semua data berhasil dihapus.',
+            ], 200);
+        }
+
+        return response()->json([
+            'message' => 'Tidak ada data untuk dihapus.',
+        ], 404);
+    }
+
+
+    public function deleteById($id)
+    {
+        $testimoni = Testimoni::find($id);
+        if ($testimoni) {
+            $testimoni->delete();
+
+            return response()->json([
+                'message' => 'Data berhasil dihapus.',
+            ], 200);
+        }
+
+        return response()->json([
+            'message' => 'Data tidak ditemukan.',
+        ], 404);
     }
 }
