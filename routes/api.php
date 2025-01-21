@@ -54,13 +54,13 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::delete('/v1/admin/testimoni/delete-all', 'deleteAll');
         Route::delete('/v1/admin/testimoni/{id}', 'deleteById');
     });
-
-
-
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/admin/get-users', 'index')->name('index');
       
     });
+
+
+    
     Route::controller(ThemaController::class)->group(function() {
         Route::get('/v1/admin/get-themas', 'index')->name('thema.index');
     });
@@ -146,6 +146,8 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/settings/salam', 'storeSalam');
         Route::get('/v1/user/music/download/{id}', 'downloadMusic');
         Route::get('/v1/user/music/stream/{id}', 'streamMusic');
+        Route::post('/v1/user/submission-filter', 'create');
+        Route::put('/v1/user/submission-filter-update', 'update');
     });
  });
 

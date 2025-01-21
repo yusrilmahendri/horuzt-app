@@ -29,7 +29,7 @@ class UserController extends Controller
             $users = $usersQuery->paginate(5);
 
             return response()->json([
-                'user' => new UserCollection(collect([$user])),
+                'admin' => new UserCollection(collect([$user])),
                 'users' => new UserCollection($users),
                 'total_users' => $totalUsers
             ]);

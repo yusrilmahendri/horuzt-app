@@ -7,6 +7,7 @@ use App\Models\Setting;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Storage;
 use App\Models\User;
+use App\Models\FilterUndangan;
 
 class SettingController extends Controller
 {
@@ -139,4 +140,62 @@ class SettingController extends Controller
 
         return response()->json(['error' => 'No music file associated with this setting.'], 404);
     }
+
+    public function create(Request $request)
+    {
+        $user = Auth::user();
+
+        // Buat data baru
+        $filterUndangan = FilterUndangan::create([
+            'user_id' => $user->id,
+            'halaman_sampul' => $request->halaman_sampul,
+            'halaman_mempelai' => $request->halaman_mempelai,
+            'halaman_acara' => $request->halaman_acara,
+            'halaman_ucapan' => $request->halaman_ucapan,
+            'halaman_galery' => $request->halaman_galery,
+            'halaman_cerita' => $request->halaman_cerita,
+            'halaman_lokasi' => $request->halaman_lokasi,
+            'halaman_prokes' => $request->halaman_prokes,
+            'halaman_send_gift' => $request->halaman_send_gift,
+            'halaman_qoute' => $request->halaman_qoute,
+        ]);
+
+        return response()->json([
+            'message' => 'Data berhasil dibuat.',
+            'data' => $filterUndangan
+        ], 201);
+    }
+
+
+    public function update(Request $request)
+    {
+        $user = Auth::user();
+
+        $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
+
+        if (!$filterUndangan) {
+            return response()->json(['message' => 'Data tidak ditemukan.'], 404);
+        }
+
+        $filterUndangan->forceFill([
+            'halaman_sampul' => $request->halaman_sampul,
+            'halaman_mempelai' => $request->halaman_mempelai,
+            'halaman_acara' => $request->halaman_acara,
+            'halaman_ucapan' => $request->halaman_ucapan,
+            'halaman_galery' => $request->halaman_galery,
+            'halaman_cerita' => $request->halaman_cerita,
+            'halaman_lokasi' => $request->halaman_lokasi,
+            'halaman_prokes' => $request->halaman_prokes,
+            'halaman_send_gift' => $request->halaman_send_gift,
+            'halaman_qoute' => $request->halaman_qoute,
+        ])->save();
+
+        return response()->json([
+            'message' => 'Data berhasil diperbarui.',
+            'data' => $filterUndangan
+        ], 200);
+    }
+
+
+
 }

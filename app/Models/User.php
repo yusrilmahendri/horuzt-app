@@ -20,6 +20,7 @@ use App\Models\Acara;
 use App\Models\Ucapan;
 use App\Models\Mempelai;
 use App\Models\Setting;
+use App\Models\FilterUndangan;
 
 class User extends Authenticatable
 {
@@ -107,5 +108,9 @@ class User extends Authenticatable
 
     public function setting(){
         return $this->hasMany(Setting::class);
+    }
+
+    public function filterUndangan(){
+        return $this->hasMany(FilterUndangan::class);
     }
 }
