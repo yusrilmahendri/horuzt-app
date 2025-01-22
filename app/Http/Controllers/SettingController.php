@@ -74,8 +74,6 @@ class SettingController extends Controller
         }
     }
 
-
-
      public function storeSalam(Request $request)
     {
         $validatedData = $request->validate([
@@ -143,28 +141,36 @@ class SettingController extends Controller
 
     public function create(Request $request)
     {
-        $user = Auth::user();
+        $user = Auth::user(); // Mendapatkan user yang sedang login
 
-        // Buat data baru
-        $filterUndangan = FilterUndangan::create([
-            'user_id' => $user->id,
-            'halaman_sampul' => $request->halaman_sampul,
-            'halaman_mempelai' => $request->halaman_mempelai,
-            'halaman_acara' => $request->halaman_acara,
-            'halaman_ucapan' => $request->halaman_ucapan,
-            'halaman_galery' => $request->halaman_galery,
-            'halaman_cerita' => $request->halaman_cerita,
-            'halaman_lokasi' => $request->halaman_lokasi,
-            'halaman_prokes' => $request->halaman_prokes,
-            'halaman_send_gift' => $request->halaman_send_gift,
-            'halaman_qoute' => $request->halaman_qoute,
-        ]);
+        // Tentukan nilai default jika tidak dikirim dari request
+        $defaultData = [
+            'halaman_sampul' => $request->input('halaman_sampul', 0),
+            'halaman_mempelai' => $request->input('halaman_mempelai', 0),
+            'halaman_acara' => $request->input('halaman_acara', 0),
+            'halaman_ucapan' => $request->input('halaman_ucapan', 0),
+            'halaman_galery' => $request->input('halaman_galery', 0),
+            'halaman_cerita' => $request->input('halaman_cerita', 0),
+            'halaman_lokasi' => $request->input('halaman_lokasi', 0),
+            'halaman_prokes' => $request->input('halaman_prokes', 0),
+            'halaman_send_gift' => $request->input('halaman_send_gift', 0),
+            'halaman_qoute' => $request->input('halaman_qoute', 0),
+        ];
+
+        // Gunakan firstOrCreate untuk memastikan tidak ada duplikasi
+        $filterUndangan = FilterUndangan::firstOrCreate(
+            ['user_id' => $user->id], // Kondisi pencarian
+            $defaultData // Data default untuk dibuat
+        );
 
         return response()->json([
-            'message' => 'Data berhasil dibuat.',
+            'message' => $filterUndangan->wasRecentlyCreated
+                ? 'Data berhasil dibuat.'
+                : 'Data sudah ada sebelumnya.',
             'data' => $filterUndangan
-        ], 201);
+        ], $filterUndangan->wasRecentlyCreated ? 201 : 200);
     }
+
 
 
     public function update(Request $request)
