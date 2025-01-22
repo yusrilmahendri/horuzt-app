@@ -47,7 +47,7 @@ class MempelaiController extends Controller
             $photoWanitaPath = $request->hasFile('photo_wanita') 
                 ? $request->file('photo_wanita')->store('photos', 'public') 
                 : ($existingMempelai->photo_wanita ?? null);
-
+//
             if ($existingMempelai) {
                 $existingMempelai->update(array_merge($validatedData, [
                     'photo_pria' => $photoPriaPath,
