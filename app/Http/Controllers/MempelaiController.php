@@ -15,9 +15,26 @@ class MempelaiController extends Controller
         $this->middleware('auth:sanctum');
     }
 
-    public function index(){
+    // Helper function to convert photo paths to URLs
+    private function transformPhotoUrls($mempelai)
+    {
+        $mempelai->photo_pria = $mempelai->photo_pria ? url('storage/' . $mempelai->photo_pria) : null;
+        $mempelai->photo_wanita = $mempelai->photo_wanita ? url('storage/' . $mempelai->photo_wanita) : null;
+        $mempelai->cover_photo = $mempelai->cover_photo ? url('storage/' . $mempelai->cover_photo) : null;
+
+        return $mempelai;
+    }
+
+    public function index()
+    {
         $userId = Auth::id();
         $mempelai = Mempelai::where('user_id', $userId)->get();
+
+        // Transform photo paths to URLs for each mempelai
+        $mempelai = $mempelai->map(function ($item) {
+            return $this->transformPhotoUrls($item);
+        });
+
         return new MempelaiCollection($mempelai);
     }
 
@@ -47,7 +64,7 @@ class MempelaiController extends Controller
             $photoWanitaPath = $request->hasFile('photo_wanita') 
                 ? $request->file('photo_wanita')->store('photos', 'public') 
                 : ($existingMempelai->photo_wanita ?? null);
-//
+
             if ($existingMempelai) {
                 $existingMempelai->update(array_merge($validatedData, [
                     'photo_pria' => $photoPriaPath,
@@ -55,8 +72,8 @@ class MempelaiController extends Controller
                 ]));
 
                 return response()->json([
-                    'message' => 'Data tambahan mempelai berhasil disimpan',
-                    'data' => $existingMempelai,
+                    'message' => 'Data tambahan mempelai berhasil disimpan.',
+                    'data' => $this->transformPhotoUrls($existingMempelai),
                 ], 200);
             } else {
                 $mempelai = Mempelai::create(array_merge($validatedData, [
@@ -67,7 +84,7 @@ class MempelaiController extends Controller
 
                 return response()->json([
                     'message' => 'Data Mempelai berhasil disimpan.',
-                    'data' => $mempelai,
+                    'data' => $this->transformPhotoUrls($mempelai),
                 ], 201);
             }
         } catch (\Exception $e) {
@@ -123,45 +140,6 @@ class MempelaiController extends Controller
         }
     }
 
-    public function updateMempelai(Request $request, $id)
-    {
-        try {
-            $mempelai = Mempelai::findOrFail($id);
-
-            $validatedData = $request->validate([
-                'photo_pria' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'photo_wanita' => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'name_lengkap_pria' => 'nullable|string|max:255',
-                'name_lengkap_wanita' => 'nullable|string|max:255',
-                'name_panggilan_pria' => 'nullable|string|max:255',
-                'name_panggilan_wanita' => 'nullable|string|max:255',
-                'ayah_pria' => 'nullable|string|max:255',
-                'ayah_wanita' => 'nullable|string|max:255',
-                'ibu_pria' => 'nullable|string|max:255',
-                'ibu_wanita' => 'nullable|string|max:255',
-            ]);
-
-            if ($request->hasFile('photo_pria')) {
-                $validatedData['photo_pria'] = $request->file('photo_pria')->store('photos', 'public');
-            }
-
-            if ($request->hasFile('photo_wanita')) {
-                $validatedData['photo_wanita'] = $request->file('photo_wanita')->store('photos', 'public');
-            }
-
-            $mempelai->update($validatedData);
-
-            return response()->json([
-                'message' => 'Data Mempelai berhasil diperbarui.',
-                'data' => $mempelai,
-            ], 200);
-        } catch (\Exception $e) {
-            return response()->json([
-                'message' => 'Terjadi kesalahan saat memperbarui data.',
-                'error' => $e->getMessage(),
-            ], 500);
-        }
-    }
 
     public function updateCoverMempelai(Request $request, $id)
     {
@@ -174,6 +152,9 @@ class MempelaiController extends Controller
             ]);
 
             if ($request->hasFile('cover_photo')) {
+                if ($mempelai->cover_photo) {
+                    \Storage::disk('public')->delete($mempelai->cover_photo);
+                }
                 $validatedData['cover_photo'] = $request->file('cover_photo')->store('photos', 'public');
             }
 
@@ -181,7 +162,7 @@ class MempelaiController extends Controller
 
             return response()->json([
                 'message' => 'Cover Mempelai berhasil diperbarui.',
-                'data' => $mempelai,
+                'data' => $this->transformPhotoUrls($mempelai),
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
