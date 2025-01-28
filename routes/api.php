@@ -148,6 +148,7 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::get('/v1/user/music/stream/{id}', 'streamMusic');
         Route::post('/v1/user/submission-filter', 'create');
         Route::put('/v1/user/submission-filter-update', 'update');
+        Route::get('/v1/user/list-data-setting', 'index');
     });
  });
 

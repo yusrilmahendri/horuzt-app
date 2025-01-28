@@ -16,6 +16,26 @@ class SettingController extends Controller
         $this->middleware('auth:sanctum');
     }
 
+
+  public function index()
+    {
+        $user = Auth::user();
+
+        // Ambil data Setting dan FilterUndangan berdasarkan user_id
+        $setting = Setting::where('user_id', $user->id)->first();
+        $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
+
+        if (!$setting && !$filterUndangan) {
+            return response()->json(['message' => 'Data setting dan filter undangan tidak ditemukan.'], 404);
+        }
+
+        return response()->json([
+            'message' => 'Data ditemukan.',
+            'setting' => $setting,
+            'filter_undangan' => $filterUndangan
+        ], 200);
+    }
+
        public function storeDomainToken(Request $request)
     {
         $user = Auth::user();

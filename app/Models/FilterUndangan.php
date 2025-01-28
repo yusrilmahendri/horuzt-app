@@ -23,7 +23,6 @@ class FilterUndangan extends Model
         'halaman_qoute',
     ];
 
-
     public function user(){
         return $this->belongsTo(User::class);
     }
