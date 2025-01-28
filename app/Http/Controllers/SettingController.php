@@ -16,7 +16,6 @@ class SettingController extends Controller
         $this->middleware('auth:sanctum');
     }
 
-
   public function index()
     {
         $user = Auth::user();

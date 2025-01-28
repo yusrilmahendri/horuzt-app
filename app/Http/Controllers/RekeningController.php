@@ -50,23 +50,17 @@ class RekeningController extends Controller
                 $rekening->nomor_rekening = $validated['nomor_rekening'][$i];
                 $rekening->nama_pemilik = $validated['nama_pemilik'][$i];
     
-                // if ($validated['photo_rek'][$i]->isValid()) {
-                //     $photoPath = $validated['photo_rek'][$i]->store('photos', 'public');
-                //     $rekening->photo_rek = $photoPath;
-                // }
-            if ($validated['photo_rek'][$i]->isValid()) {
-                // Store the binary content
-                $rekening->photo_rek = file_get_contents($validated['photo_rek'][$i]);
-            }
+                if ($validated['photo_rek'][$i]->isValid()) {
+                    $photoPath = $validated['photo_rek'][$i]->store('photos', 'public');
+                    $rekening->photo_rek = $photoPath;
+                }
                 $rekening->save();
     
                 $savedRekenings[] = [
                     'kode_bank' => $rekening->kode_bank,
                     'nomor_rekening' => $rekening->nomor_rekening,
                     'nama_pemilik' => $rekening->nama_pemilik,
-                    'photo_rek' => 'data:' . $validated['photo_rek'][$i]->getMimeType() . ';base64,' . base64_encode($rekening->photo_rek),
-    
-                    // 'photo_rek' => asset('storage/' . $rekening->photo_rek),
+                    'photo_rek' => asset('storage/' . $rekening->photo_rek),
                 ];
             }
     
@@ -111,16 +105,10 @@ class RekeningController extends Controller
                     $rekening->nama_pemilik = $data['nama_pemilik'];
     
                     // Handle file upload
-                    // if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
-                    //     $photoPath = $data['photo_rek']->store('photos', 'public');
-                    //     $rekening->photo_rek = $photoPath;
-                    // }
                     if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
-                    // Read the file contents as binary
-                    $binaryPhoto = file_get_contents($data['photo_rek']);
-                    $rekening->photo_rek = $binaryPhoto;
-                }
-    
+                        $photoPath = $data['photo_rek']->store('photos', 'public');
+                        $rekening->photo_rek = $photoPath;
+                    }
                     $rekening->save();
                     $updatedRekenings[] = new RekeningResource($rekening);
                 } else {
