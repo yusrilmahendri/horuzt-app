@@ -171,37 +171,48 @@ class SettingController extends Controller
         ], $filterUndangan->wasRecentlyCreated ? 201 : 200);
     }
 
-
-
     public function update(Request $request)
-    {
+    {   
         $user = Auth::user();
-
         $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
 
         if (!$filterUndangan) {
             return response()->json(['message' => 'Data tidak ditemukan.'], 404);
         }
 
-        $filterUndangan->forceFill([
-            'halaman_sampul' => $request->halaman_sampul,
-            'halaman_mempelai' => $request->halaman_mempelai,
-            'halaman_acara' => $request->halaman_acara,
-            'halaman_ucapan' => $request->halaman_ucapan,
-            'halaman_galery' => $request->halaman_galery,
-            'halaman_cerita' => $request->halaman_cerita,
-            'halaman_lokasi' => $request->halaman_lokasi,
-            'halaman_prokes' => $request->halaman_prokes,
-            'halaman_send_gift' => $request->halaman_send_gift,
-            'halaman_qoute' => $request->halaman_qoute,
-        ])->save();
 
-        return response()->json([
-            'message' => 'Data berhasil diperbarui.',
-            'data' => $filterUndangan
-        ], 200);
+        // Validasi request dengan default 0 jika tidak dikirim
+        $validatedData = $request->validate([
+            'halaman_sampul' => 'nullable|integer',
+            'halaman_mempelai' => 'nullable|integer',
+            'halaman_acara' => 'nullable|integer',
+            'halaman_ucapan' => 'nullable|integer',
+            'halaman_galery' => 'nullable|integer',
+            'halaman_cerita' => 'nullable|integer',
+            'halaman_lokasi' => 'nullable|integer',
+            'halaman_prokes' => 'nullable|integer',
+            'halaman_send_gift' => 'nullable|integer',
+            'halaman_qoute' => 'nullable|integer',
+        ]);
+
+        // Pastikan data tidak null
+        $filterUndangan->update([
+            'halaman_sampul' => $request->input('halaman_sampul', $filterUndangan->halaman_sampul),
+            'halaman_mempelai' => $request->input('halaman_mempelai', $filterUndangan->halaman_mempelai),
+            'halaman_acara' => $request->input('halaman_acara', $filterUndangan->halaman_acara),
+            'halaman_ucapan' => $request->input('halaman_ucapan', $filterUndangan->halaman_ucapan),
+            'halaman_galery' => $request->input('halaman_galery', $filterUndangan->halaman_galery),
+            'halaman_cerita' => $request->input('halaman_cerita', $filterUndangan->halaman_cerita),
+            'halaman_lokasi' => $request->input('halaman_lokasi', $filterUndangan->halaman_lokasi),
+            'halaman_prokes' => $request->input('halaman_prokes', $filterUndangan->halaman_prokes),
+            'halaman_send_gift' => $request->input('halaman_send_gift', $filterUndangan->halaman_send_gift),
+            'halaman_qoute' => $request->input('halaman_qoute', $filterUndangan->halaman_qoute),
+        ]);
+
+            return response()->json([
+                'data' => $filterUndangan,
+                'message' => 'Data filter berhasil diperbarui.',
+            ], 200);
     }
-
-
 
 }

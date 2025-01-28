@@ -9,7 +9,19 @@ use App\Models\User;
 class FilterUndangan extends Model
 {
     use HasFactory;
-    protected $guarded = [''];
+    protected $fillable = [
+        'user_id',
+        'halaman_sampul',
+        'halaman_mempelai',
+        'halaman_acara',
+        'halaman_ucapan',
+        'halaman_galery',
+        'halaman_cerita',
+        'halaman_lokasi',
+        'halaman_prokes',
+        'halaman_send_gift',
+        'halaman_qoute',
+    ];
 
 
     public function user(){
