@@ -20,7 +20,7 @@ class CorsMiddleware
         $response->headers->set('Access-Control-Allow-Origin', '*');
         $response->headers->set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
         $response->headers->set('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
-
+        
         if ($request->isMethod('OPTIONS')) {
             return response()->json('{"method":"OPTIONS"}', Response::HTTP_OK, $response->headers->all());
         }
