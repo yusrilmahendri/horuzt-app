@@ -47,7 +47,10 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 });
 
 Route::group(['middleware' => ['role:admin']], function () { 
-    Route::get('/v1/all-tagihan', [SettingControllerAdmin::class, 'masterTagihan'])->name('tagihan.transaction');
+    Route::controller(SettingControllerAdmin::class)->group(function() {
+        Route::get('/v1/all-tagihan', 'masterTagihan');
+        Route::post('/v1/admin/send-midtrans', 'storeMidtrans');
+    });
 
     Route::controller(TestimoniController::class)->group(function() {
         Route::get('/v1/admin/testimoni', 'index');
@@ -59,6 +62,11 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::get('/v1/admin/get-users', 'index')->name('index');
       
     });
+    Route::controller(RekeningController::class)->group(function() {
+        Route::post('/v1/user/send-rekening', 'store');
+        Route::get('/v1/user/get-rekening', 'index');
+        Route::put('/v1/user/update-rekening', 'update');
+    }); 
 
 
     
