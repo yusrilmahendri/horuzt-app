@@ -35,8 +35,8 @@ class RekeningController extends Controller
                 'nomor_rekening.*' => 'required|string',
                 'nama_pemilik' => 'required|array',
                 'nama_pemilik.*' => 'required|string',
-                'photo_rek' => 'required|array',
-                'photo_rek.*' => 'required|file|mimes:jpeg,png,jpg|max:2048',
+                'photo_rek' => 'nullable|array|file|mimes:jpeg,png,jpg|max:2048',
+                'photo_rek.*' => 'file|mimes:jpeg,png,jpg|max:2048',
             ]);
     
             $count = count($validated['kode_bank']);

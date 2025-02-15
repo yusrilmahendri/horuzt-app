@@ -60,15 +60,18 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::delete('/v1/admin/testimoni/delete-all', 'deleteAll');
         Route::delete('/v1/admin/testimoni/{id}', 'deleteById');
     });
+    Route::controller(RekeningController::class)->group(function() {
+        Route::post('/v1/admin/send-rekening', 'store');
+        Route::get('/v1/admin/get-rekening', 'index');
+        Route::put('/v1/admin/update-rekening', 'update');
+    }); 
+
+
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/admin/get-users', 'index')->name('index');
       
     });
-    Route::controller(RekeningController::class)->group(function() {
-        Route::post('/v1/user/send-rekening', 'store');
-        Route::get('/v1/user/get-rekening', 'index');
-        Route::put('/v1/user/update-rekening', 'update');
-    }); 
+
 
 
     
