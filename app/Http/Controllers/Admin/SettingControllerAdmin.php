@@ -8,6 +8,7 @@ use App\Models\MetodeTransaction;
 use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
 use App\Models\MidtransTransaction;
 use Illuminate\Support\Facades\Auth;
+use App\Models\PaketUndangan;
 
 class SettingControllerAdmin extends Controller
 {
@@ -55,4 +56,56 @@ class SettingControllerAdmin extends Controller
                 ], 500);
         }
     }
+
+    public function indexPaket(){
+        $pakets = PaketUndangan::all(); // Ambil semua data paket undangan
+        return response()->json([
+            'message' => 'Data paket undangan yang tersedia saat ini.!',
+            'data' => $pakets
+        ], 200);
+    }
+
+    public function updatePaket(Request $request, $id)
+    {
+       
+        // Cari paket berdasarkan ID
+        $paket = PaketUndangan::find($id);
+
+        // Jika tidak ditemukan, kembalikan response 404
+        if (!$paket) {
+            return response()->json([
+                'message' => 'Paket tidak ditemukan'
+            ], 404);
+        }
+
+        // Validasi input
+        $request->validate([
+            'name_paket' => 'required|string',
+            'price' => 'required|numeric',
+            'masa_aktif' => 'required|integer',
+            'halaman_buku' => 'boolean',
+            'kirim_wa' => 'boolean',
+            'bebas_pilih_tema' => 'boolean',
+            'kirim_hadiah' => 'boolean',
+            'import_data' => 'boolean',
+        ]);
+
+        // Update data
+        $paket->update([
+            'name_paket' => $request->name_paket,
+            'price' => $request->price,
+            'masa_aktif' => $request->masa_aktif,
+            'halaman_buku' => $request->halaman_buku,
+            'kirim_wa' => $request->kirim_wa,
+            'bebas_pilih_tema' => $request->bebas_pilih_tema,
+            'kirim_hadiah' => $request->kirim_hadiah,
+            'import_data' => $request->import_data,
+        ]);
+
+        return response()->json([
+            'message' => 'Paket berhasil diperbarui',
+            'data' => $paket
+        ], 200);
+    }
+
 }

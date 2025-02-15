@@ -50,6 +50,8 @@ Route::group(['middleware' => ['role:admin']], function () {
     Route::controller(SettingControllerAdmin::class)->group(function() {
         Route::get('/v1/all-tagihan', 'masterTagihan');
         Route::post('/v1/admin/send-midtrans', 'storeMidtrans');
+        Route::get('/v1/admin/paket-undangan', 'indexPaket');
+        Route::put('/v1/admin/paket-undangan/{id}', 'updatePaket');
     });
 
     Route::controller(TestimoniController::class)->group(function() {
