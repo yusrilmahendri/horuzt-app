@@ -26,6 +26,7 @@ use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\MempelaiController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
+use App\Http\Controllers\Admin\transactionTagihanController;
 
 /*
 |--------------------------------------------------------------------------
@@ -52,8 +53,8 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::post('/v1/admin/send-midtrans', 'storeMidtrans');
         Route::get('/v1/admin/paket-undangan', 'indexPaket');
         Route::put('/v1/admin/paket-undangan/{id}', 'updatePaket');
+        Route::post('/v1/admin/method-transaction', 'storeMethodTransaction');
     });
-
     Route::controller(TestimoniController::class)->group(function() {
         Route::get('/v1/admin/testimoni', 'index');
         Route::put('/v1/admin/testimoni/{id}/update-status', 'update');
@@ -71,9 +72,6 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::get('/v1/admin/get-users', 'index')->name('index');
       
     });
-
-
-
     
     Route::controller(ThemaController::class)->group(function() {
         Route::get('/v1/admin/get-themas', 'index')->name('thema.index');

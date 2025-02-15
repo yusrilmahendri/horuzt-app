@@ -9,19 +9,39 @@ use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
 use App\Models\MidtransTransaction;
 use Illuminate\Support\Facades\Auth;
 use App\Models\PaketUndangan;
+use App\Models\TransactionTagihan;
 
 class SettingControllerAdmin extends Controller
 {
-    public function __construct()
+   public function __construct()
     {
         $this->middleware('auth:sanctum');
     }
+
 
     public function masterTagihan(){
         $data = MetodeTransaction::get();
         return new TagihanTransactionCollection($data);
     }
 
+    public function storeMethodTransaction(Request $request){
+          // Validasi Input
+        $request->validate([
+            'metodeTransactions_id' => 'required|exists:metode_transactions,id',
+        ]);
+
+        // Simpan data ke database
+        $transaction = TransactionTagihan::create([
+            'user_id' => Auth::id(), // Ambil ID user yang sedang login
+            'metodeTransactions_id' => $request->metodeTransactions_id,
+        ]);
+
+        // Return response sukses
+        return response()->json([
+            'message' => 'Metode transaksi berhasil dibuat!',
+            'data' => $transaction
+        ], 201);
+    }
 
     public function storeMidtrans(Request $request){
     
