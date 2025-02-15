@@ -25,6 +25,7 @@ use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\MempelaiController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\Admin\SettingControllerAdmin;
 
 /*
 |--------------------------------------------------------------------------
@@ -41,12 +42,12 @@ Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 
-
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
 
 Route::group(['middleware' => ['role:admin']], function () { 
+    Route::get('/v1/all-tagihan', [SettingControllerAdmin::class, 'masterTagihan'])->name('tagihan.transaction');
 
     Route::controller(TestimoniController::class)->group(function() {
         Route::get('/v1/admin/testimoni', 'index');

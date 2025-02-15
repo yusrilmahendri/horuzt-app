@@ -32,6 +32,7 @@ class DatabaseSeeder extends Seeder
         // $this->call(TestimoniSeeder::class);
         $this->call(BukuTamuSeeder::class);
         $this->call(UcapanSeeder::class);
+        $this->call(MetodeTransactionSeeder::class);
         // $this->call(CeritaSeeder::class);
     }
 }
