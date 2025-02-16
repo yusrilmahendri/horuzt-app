@@ -113,4 +113,8 @@ class User extends Authenticatable
     public function filterUndangan(){
         return $this->hasMany(FilterUndangan::class);
     }
+
+    public function invitation() {
+        return $this->hasOne(Invitation::class);
+    }
 }

@@ -27,7 +27,7 @@ use App\Http\Controllers\MempelaiController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\Admin\transactionTagihanController;
-
+use App\Http\Controllers\InvitationController;
 /*
 |--------------------------------------------------------------------------
 | API Routes
@@ -42,10 +42,16 @@ use App\Http\Controllers\Admin\transactionTagihanController;
 Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
+Route::get('/v1/admin/paket-undangan', [SettingControllerAdmin::class, 'indexPaket'])->name('index.paket');
+
+Route::controller(InvitationController::class)->group(function() {
+    Route::post('/v1/one-step', 'storeStepOne');
+});
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
+
 
 Route::group(['middleware' => ['role:admin']], function () { 
     Route::controller(SettingControllerAdmin::class)->group(function() {
