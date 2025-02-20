@@ -47,6 +47,8 @@ Route::get('/v1/admin/paket-undangan', [SettingControllerAdmin::class, 'indexPak
 Route::controller(InvitationController::class)->group(function() {
     Route::post('/v1/one-step', 'storeStepOne');
     Route::post('/v1/two-step', 'storeStepTwo');
+    Route::post('/v1/three-step', 'storeStepThree');
+    Route::post('/v1/for-step', 'storeStepFor');
 });
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
