@@ -45,6 +45,7 @@ Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index')
 Route::get('/v1/admin/paket-undangan', [SettingControllerAdmin::class, 'indexPaket'])->name('index.paket');
 
 Route::controller(InvitationController::class)->group(function() {
+    Route::get('/v1/master-tagihan', 'masterTagihan');
     Route::post('/v1/one-step', 'storeStepOne');
     Route::post('/v1/two-step', 'storeStepTwo');
     Route::post('/v1/three-step', 'storeStepThree');

@@ -14,17 +14,24 @@ use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\Galery;
 use App\Models\Cerita;
+use App\Models\MetodeTransaction;
+use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
 
 
 class InvitationController extends Controller
-{
+{   
+    public function masterTagihan(){
+        $data = MetodeTransaction::get();
+        return new TagihanTransactionCollection($data);
+    }
+
     public function storeStepOne(Request $request){
         $validated = $request->validate([
             'email' => 'required|email|unique:users,email',
             'password' => 'required|min:6',
             'phone' => 'required|string',
             'paket_undangan_id' => 'required|exists:paket_undangans,id',
-            'domain' => 'required|string|unique:settings,domain'
+            'domain' => 'required|string|unique:settings,domain',
         ]);
 
         try {
@@ -35,6 +42,7 @@ class InvitationController extends Controller
                 'email' => $validated['email'],
                 'password' => Hash::make($validated['password']), // Gunakan bcrypt
                 'phone' => $validated['phone'],
+                'kode_pemesanan' => '#' . mt_rand(1000000000, 9999999999)
             ]);
 
             if (method_exists($user, 'assignRole')) {
@@ -211,6 +219,4 @@ class InvitationController extends Controller
             'message' => 'Step 4 berhasil disimpan',
         ]);
     }
-
-
 }

@@ -19,8 +19,21 @@ class SettingControllerAdmin extends Controller
     }
 
 
-    public function masterTagihan(){
-        $data = MetodeTransaction::get();
+    public function masterTagihan() {
+        $user = Auth::user();
+
+        $query = MetodeTransaction::query();
+
+        if ($user->hasRole('admin')) {
+            // Jika admin, sembunyikan "Trial"
+            $query->where('name', '!=', 'Trial');
+        } else {
+            // Jika bukan admin, sembunyikan "Tripay"
+            $query->where('name', '!=', 'Tripay');
+        }
+
+        $data = $query->get();
+
         return new TagihanTransactionCollection($data);
     }
 

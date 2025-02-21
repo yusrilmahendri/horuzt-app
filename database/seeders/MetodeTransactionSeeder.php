@@ -25,6 +25,10 @@ class MetodeTransactionSeeder extends Seeder
             [
                 'id' => 3,
                 'name' => 'Midtrans'
+            ],
+             [
+                'id' => 4,
+                'name' => 'Trial'
             ]
         ]);
     }
