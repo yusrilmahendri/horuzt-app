@@ -118,6 +118,7 @@ Route::group(['middleware' => ['role:admin']], function () {
 Route::group(['middleware' => ['role:user']], function () { 
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/user-profile', 'index')->name('index-profile');
+        Route::put('/v1/submission-update/user-profile', 'update');
     });
     Route::controller(RekeningController::class)->group(function() {
         Route::post('/v1/user/send-rekening', 'store');
