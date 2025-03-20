@@ -69,6 +69,7 @@ class SettingControllerAdmin extends Controller
         // Simpan data ke database dengan user yang sedang login
         $midtrans = MidtransTransaction::create([
             'user_id' => Auth::id(), // Mengambil user yang sedang login
+            'method_transaction' => $request->metodeTransactions_id,
             'url' => $request->url,
             'server_key' => $request->server_key,
             'client_key' => $request->client_key,
