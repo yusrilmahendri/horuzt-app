@@ -57,7 +57,7 @@ class SettingControllerAdmin extends Controller
     }
 
     public function storeMidtrans(Request $request){
-    
+
       // Validasi request
         $request->validate([
             'url' => 'required|url',
@@ -69,12 +69,13 @@ class SettingControllerAdmin extends Controller
         // Simpan data ke database dengan user yang sedang login
         $midtrans = MidtransTransaction::create([
             'user_id' => Auth::id(), // Mengambil user yang sedang login
+            // 'id_master_method' => MetodeTransaction::id(),
             'url' => $request->url,
             'server_key' => $request->server_key,
             'client_key' => $request->client_key,
             'metode_production' => $request->metode_production,
         ]);
-        
+
 
         if($midtrans){
             return response()->json([
@@ -100,7 +101,7 @@ class SettingControllerAdmin extends Controller
 
     public function updatePaket(Request $request, $id)
     {
-       
+
         // Cari paket berdasarkan ID
         $paket = PaketUndangan::find($id);
 

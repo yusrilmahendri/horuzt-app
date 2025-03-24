@@ -15,7 +15,7 @@ class RekeningController extends Controller
 {
     public function __construct(){
         $this->middleware('auth:sanctum');
-    }  
+    }
 
     public function index(){
         $userId = Auth::id();
@@ -24,7 +24,7 @@ class RekeningController extends Controller
         return new RekeningCollection($rekenings);
     }
 
- 
+
     public function store(Request $request)
     {
         try {
@@ -35,40 +35,49 @@ class RekeningController extends Controller
                 'nomor_rekening.*' => 'required|string',
                 'nama_pemilik' => 'required|array',
                 'nama_pemilik.*' => 'required|string',
-                'photo_rek' => 'nullable|array|file|mimes:jpeg,png,jpg|max:2048',
-                'photo_rek.*' => 'file|mimes:jpeg,png,jpg|max:2048',
+                'photo_rek' => 'nullable|array', // Hapus 'file' dari sini
+                'photo_rek.*' => 'nullable|file|mimes:jpeg,png,jpg|max:2048', // Validasi setiap elemen array
             ]);
-    
+
             $count = count($validated['kode_bank']);
             $userId = Auth::id();
             $savedRekenings = [];
-    
+
+            // dd($bank);
+
             for ($i = 0; $i < $count; $i++) {
+                $bank = Bank::where('kode_bank', $request->kode_bank[$i])->first();
+
+
                 $rekening = new Rekening();
                 $rekening->user_id = $userId;
                 $rekening->kode_bank = $validated['kode_bank'][$i];
+                $rekening->nama_bank = $bank->name;
                 $rekening->nomor_rekening = $validated['nomor_rekening'][$i];
                 $rekening->nama_pemilik = $validated['nama_pemilik'][$i];
-    
-                if ($validated['photo_rek'][$i]->isValid()) {
+
+                // Pastikan indeks photo_rek ada sebelum mengaksesnya
+                if (!empty($validated['photo_rek'][$i]) && $validated['photo_rek'][$i]->isValid()) {
                     $photoPath = $validated['photo_rek'][$i]->store('photos', 'public');
                     $rekening->photo_rek = $photoPath;
                 }
+
                 $rekening->save();
-    
+
                 $savedRekenings[] = [
                     'kode_bank' => $rekening->kode_bank,
+                    'nama_bank' => $bank->name,
                     'nomor_rekening' => $rekening->nomor_rekening,
                     'nama_pemilik' => $rekening->nama_pemilik,
-                    'photo_rek' => asset('storage/' . $rekening->photo_rek),
+                    'photo_rek' => $rekening->photo_rek ? asset('storage/' . $rekening->photo_rek) : null,
                 ];
             }
-    
+
             return response()->json([
                 'data' => $savedRekenings,
                 'message' => 'Rekenings have been successfully added!',
             ], 201);
-    
+
         } catch (ValidationException $e) {
             return response()->json([
                 'errors' => $e->errors(),
@@ -76,8 +85,9 @@ class RekeningController extends Controller
             ], 422);
         }
     }
-    
-    
+
+
+
     public function update(Request $request)
     {
         try {
@@ -90,20 +100,20 @@ class RekeningController extends Controller
                 'rekenings.*.nama_pemilik' => 'required|string',
                 'rekenings.*.photo_rek' => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
             ]);
-    
+
             $userId = Auth::id();
             $updatedRekenings = [];
-    
+
             foreach ($validated['rekenings'] as $index => $data) {
                 $rekening = Rekening::where('id', $data['id'])
                     ->where('user_id', $userId)
                     ->first();
-    
+
                 if ($rekening) {
                     $rekening->kode_bank = $data['kode_bank'];
                     $rekening->nomor_rekening = $data['nomor_rekening'];
                     $rekening->nama_pemilik = $data['nama_pemilik'];
-    
+
                     // Handle file upload
                     if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
                         $photoPath = $data['photo_rek']->store('photos', 'public');
@@ -118,7 +128,7 @@ class RekeningController extends Controller
                     ], 404);
                 }
             }
-    
+
             // Return success response
             return response()->json([
                 'data' => count($updatedRekenings) == 1
@@ -126,7 +136,7 @@ class RekeningController extends Controller
                     : $updatedRekenings,
                 'message' => 'Rekenings updated successfully!',
             ], 200);
-    
+
         } catch (ValidationException $e) {
             // Handle validation errors and return the failed field names and messages
             return response()->json([

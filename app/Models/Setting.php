@@ -18,7 +18,7 @@ class Setting extends Model
         'salam_atas',
         'salam_bawah',
     ];
-    
+
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');

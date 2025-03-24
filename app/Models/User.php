@@ -21,10 +21,15 @@ use App\Models\Ucapan;
 use App\Models\Mempelai;
 use App\Models\Setting;
 use App\Models\FilterUndangan;
+use App\Models\KodePemesanan;
+
+
 
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasFactory;
+
 
     /**
      * The attributes that are mass assignable.
@@ -59,8 +64,18 @@ class User extends Authenticatable
         'password' => 'hashed',
     ];
 
+    public function kodePemesanan()
+    {
+        return $this->hasOne(KodePemesanan::class, 'kode_pemesanan', 'kode_pemesanan');
+    }
+
+    public function getDomain()
+    {
+        return $this->hasOne(Setting::class, 'domain', 'domain');
+    }
+
     public function thema(){
-        return $this->belongsToMany(Thema::class, 'result_themas');
+        return $this->belongsToMany(Themas::class, 'result_themas');
     }
 
     public function order(){
@@ -107,8 +122,18 @@ class User extends Authenticatable
         return $this->hasMany(Mempelai::class);
     }
 
+    public function mempelaiOne()
+    {
+        return $this->hasOne(Mempelai::class, 'user_id', 'id');
+    }
+
     public function setting(){
         return $this->hasMany(Setting::class);
+    }
+
+    public function settingOne()
+    {
+        return $this->hasOne(Setting::class, 'user_id', 'id');
     }
 
     public function filterUndangan(){
