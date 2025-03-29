@@ -89,7 +89,7 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
 
     Route::controller(UserController::class)->group(function(){
-        Route::get('/v1/admin/get-users', 'index')->name('index');
+        Route::get('/v1/admin/get-users', 'index');
     });
 
     Route::controller(ThemaController::class)->group(function() {
@@ -183,16 +183,16 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::get('/v1/user/list-data-setting', 'index');
     });
     Route::controller(ThemaController::class)->group(function() {
-        Route::get('/v1/user/get-themas', 'index')->name('thema.index');
+        Route::get('/v1/user/get-themas', 'index')->name('user.thema.index');
     });
     Route::controller(CategoryController::class)->group(function() {
-        Route::get('/v1/user/categorys', 'index')->name('category.index');
+        Route::get('/v1/user/categorys', 'index')->name('user.category.index');
     });
     Route::controller(JenisThemaController::class)->group(function() {
-        Route::get('/v1/user/jenis-themas', 'index')->name('jenis.index');
+        Route::get('/v1/user/jenis-themas', 'index')->name('user.jenis.index');
     });
     Route::controller(ResultThemaController::class)->group(function() {
-        Route::get('/v1/user/result-themas', 'index')->name('result.index');
+        Route::get('/v1/user/result-themas', 'index')->name('user.result.index');
     });
  });
 
