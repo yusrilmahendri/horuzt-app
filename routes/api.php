@@ -21,6 +21,7 @@ use App\Http\Controllers\PengunjungController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\CeritaController;
 use App\Http\Controllers\QouteController;
+use App\Http\Controllers\MethodePembayaran;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\MempelaiController;
@@ -48,21 +49,25 @@ Route::controller(InvitationController::class)->group(function() {
     Route::get('/v1/master-tagihan', 'masterTagihan');
     Route::post('/v1/one-step', 'storeStepOne');
     Route::post('/v1/two-step', 'storeStepTwo');
-    Route::put('/v1/update-step-two', 'updateStepTwo');
     Route::post('/v1/three-step', 'storeStepThree');
-    Route::post('/v1/four-step', 'storeStepFor');
-    Route::put('/v1/updated-four-step', 'updateStepFor');
+    Route::post('/v1/for-step', 'storeStepFor');
+});
+
+Route::controller(MethodePembayaran::class)->group(function(){
+    Route::get('/v1/admin/get-methode-transaction', 'index')->name('index');
+    Route::get('/v1/list-methode-transaction/all', 'getAllMethodeTransactions');
+    Route::get('/v1/list-paket-undangan', 'getPaketUndangan');
 });
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
 
-
 Route::group(['middleware' => ['role:admin']], function () {
     Route::controller(SettingControllerAdmin::class)->group(function() {
         Route::get('/v1/all-tagihan', 'masterTagihan');
         Route::post('/v1/admin/send-midtrans', 'storeMidtrans');
+        Route::post('/v1/admin/send-tripay', 'storeTripay');
         Route::get('/v1/admin/paket-undangan', 'indexPaket');
         Route::put('/v1/admin/paket-undangan/{id}', 'updatePaket');
         Route::post('/v1/admin/method-transaction', 'storeMethodTransaction');
@@ -74,13 +79,13 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::delete('/v1/admin/testimoni/{id}', 'deleteById');
     });
     Route::controller(RekeningController::class)->group(function() {
-        Route::post('/v1/admin/send-rekening', action: 'store');
+        Route::post('/v1/admin/send-rekening', 'store');
         Route::get('/v1/admin/get-rekening', 'index');
         Route::put('/v1/admin/update-rekening', 'update');
     });
 
-    Route::controller(SettingController::class)->group(function(){
-        Route::put('/v1/admin/settings/domain-updated', 'updateDomainByOldName');
+    Route::controller(MempelaiController::class)->group(function() {
+        Route::put('/v1/admin/update/status-bayar', 'updateStatusBayar');
     });
 
     Route::controller(UserController::class)->group(function(){
@@ -107,9 +112,6 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
     Route::controller(PembayaranController::class)->group(function() {
         Route::get('/v1/admin/transaction-nikah', 'index')->name('transaction.index');
-        Route::post('/v1/admin/metode-pembayaran-manual', action: 'storeIdMethodTransaction');
-        Route::get('/v1/admin/metode-pembayaran-manual-detail', action: 'getBankDetails');
-        Route::get('/v1/admin/dashboard/data-user', 'getDashboard');
     });
     Route::controller(PernikahanController::class)->group(function() {
         Route::get('/v1/admin/pernikahan', 'index')->name('pernikahan.index');
@@ -124,7 +126,7 @@ Route::group(['middleware' => ['role:admin']], function () {
 
 Route::group(['middleware' => ['role:user']], function () {
     Route::controller(UserController::class)->group(function(){
-        Route::get('/v1/user-profile', 'index')->name('index-profile');
+        Route::get('/v1/user-profile', 'userProfile');
         Route::put('/v1/submission-update/user-profile', 'update');
     });
     Route::controller(RekeningController::class)->group(function() {
@@ -162,10 +164,6 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::put('/v1/user/update-acara', 'updateAcara');
     });
 
-    Route::controller(PembayaranController::class)->group(function() {
-        Route::post('/v1/user/kode-pemesanan', action: 'storeKodePesanan');
-        Route::get('/v1/user/metode-pembayaran', action: 'getRekening');
-    });
     Route::controller(MempelaiController::class)->group(function() {
         Route::get('/v1/user/get-mempelai', 'index');
         Route::post('/v1/user/submission-mempelai', 'store');
@@ -183,6 +181,18 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/submission-filter', 'create');
         Route::put('/v1/user/submission-filter-update', 'update');
         Route::get('/v1/user/list-data-setting', 'index');
+    });
+    Route::controller(ThemaController::class)->group(function() {
+        Route::get('/v1/user/get-themas', 'index')->name('thema.index');
+    });
+    Route::controller(CategoryController::class)->group(function() {
+        Route::get('/v1/user/categorys', 'index')->name('category.index');
+    });
+    Route::controller(JenisThemaController::class)->group(function() {
+        Route::get('/v1/user/jenis-themas', 'index')->name('jenis.index');
+    });
+    Route::controller(ResultThemaController::class)->group(function() {
+        Route::get('/v1/user/result-themas', 'index')->name('result.index');
     });
  });
 

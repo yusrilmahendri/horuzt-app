@@ -11,13 +11,13 @@ return new class extends Migration
      */
     public function up(): void
     {
-        Schema::create('midtrans_transactions', function (Blueprint $table) {
+        Schema::create('tripay_transactions', function (Blueprint $table) {
             $table->id();
             $table->unsignedBigInteger('user_id');
-            $table->string('url');
-            $table->string('server_key');
-            $table->string('client_key');
-            $table->string('metode_production');
+            $table->string('url_tripay');
+            $table->string('private_key');
+            $table->string('api_key');
+            $table->string('kode_merchant');
             $table->string('methode_pembayaran');
             $table->string('id_methode_pembayaran');
             $table->timestamps();
@@ -30,6 +30,6 @@ return new class extends Migration
      */
     public function down(): void
     {
-        Schema::dropIfExists('midtrans_transactions');
+        Schema::dropIfExists('tripay_transactions');
     }
 };

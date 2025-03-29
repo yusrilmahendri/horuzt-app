@@ -17,6 +17,8 @@ return new class extends Migration
             $table->unsignedBigInteger('kode_bank');
             $table->string('nomor_rekening');
             $table->string('nama_pemilik');
+            $table->string('methode_pembayaran');
+            $table->string('id_methode_pembayaran');
             $table->binary('photo_rek')->nullable();
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');

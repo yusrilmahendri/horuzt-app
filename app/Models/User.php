@@ -1,35 +1,28 @@
 <?php
-
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
+use App\Models\Acara;
+use App\Models\BukuTamu;
+use App\Models\Cerita;
+use App\Models\FilterUndangan;
+use App\Models\Galery;
+use App\Models\Mempelai;
+use App\Models\Order;
+use App\Models\Pernikahan;
+use App\Models\Qoute;
+use App\Models\Setting;
+use App\Models\Testimoni;
+use App\Models\Ucapan;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
 use Laravel\Sanctum\HasApiTokens;
 use Spatie\Permission\Traits\HasRoles;
-use App\Models\Themas;
-use App\Models\Order;
-use App\Models\Pernikahan;
-use App\Models\Testimoni;
-use App\Models\BukuTamu;
-use App\Models\Cerita;
-use App\Models\Qoute;
-use App\Models\Galery;
-use App\Models\Acara;
-use App\Models\Ucapan;
-use App\Models\Mempelai;
-use App\Models\Setting;
-use App\Models\FilterUndangan;
-use App\Models\KodePemesanan;
-
-
 
 class User extends Authenticatable
 {
     use HasApiTokens, HasFactory, Notifiable, HasRoles;
-    use HasFactory;
-
 
     /**
      * The attributes that are mass assignable.
@@ -41,7 +34,7 @@ class User extends Authenticatable
         'email',
         'password',
         'phone',
-        'kode_pemesanan'
+        'kode_pemesanan',
     ];
 
     /**
@@ -61,86 +54,96 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password' => 'hashed',
+        'password'          => 'hashed',
     ];
 
-    public function kodePemesanan()
+    public function thema()
     {
-        return $this->hasOne(KodePemesanan::class, 'kode_pemesanan', 'kode_pemesanan');
+        return $this->belongsToMany(Thema::class, 'result_themas');
     }
 
-    public function getDomain()
+    public function order()
     {
-        return $this->hasOne(Setting::class, 'domain', 'domain');
-    }
-
-    public function thema(){
-        return $this->belongsToMany(Themas::class, 'result_themas');
-    }
-
-    public function order(){
         return $this->hasMany(Order::class, 'orders');
     }
 
-    public function pernikahan(){
+    public function pernikahan()
+    {
         return $this->hasOne(Pernikahan::class, 'user_id');
     }
 
-    public function testimoni(){
+    public function testimoni()
+    {
         return $this->hasMany(Testimoni::class);
     }
 
-    public function bukuTamu(){
+    public function bukuTamu()
+    {
         return $this->hasMany(BukuTamu::class);
     }
 
-    public function cerita(){
+    public function cerita()
+    {
         return $this->hasmany(Cerita::class);
     }
 
-    public function qoute(){
+    public function qoute()
+    {
         return $this->hasMany(Qoute::class);
     }
 
-    public function gallery(){
+    public function gallery()
+    {
         return $this->hasMany(Galery::class);
     }
 
-    public function acara(){
+    public function acara()
+    {
         return $this->hasmany(Acara::class);
     }
 
-    public function ucapan(){
+    public function ucapan()
+    {
         return $this->hasmany(Ucapan::class);
     }
 
-    public function CountdownAcara(){
+    public function CountdownAcara()
+    {
         return $this->hasMany(CountdownAcara::class);
     }
 
-    public function mempelai(){
+    public function mempelai()
+    {
         return $this->hasMany(Mempelai::class);
     }
 
     public function mempelaiOne()
     {
-        return $this->hasOne(Mempelai::class, 'user_id', 'id');
+        return $this->hasOne(Mempelai::class, 'user_id');
     }
 
-    public function setting(){
+    public function setting()
+    {
         return $this->hasMany(Setting::class);
     }
 
     public function settingOne()
     {
-        return $this->hasOne(Setting::class, 'user_id', 'id');
+        return $this->hasOne(Setting::class, 'user_id');
     }
 
-    public function filterUndangan(){
+    public function filterUndangan()
+    {
         return $this->hasMany(FilterUndangan::class);
     }
 
-    public function invitation() {
+    public function invitation()
+    {
         return $this->hasOne(Invitation::class);
+    }
+
+    public function invitationOne()
+    {
+        return $this->hasOne(Invitation::class, 'user_id');
     }
 }

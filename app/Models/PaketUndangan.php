@@ -11,6 +11,8 @@ class PaketUndangan extends Model
     use HasFactory;
     protected $guarded = [''];
 
+    protected $table = 'paket_undangans';
+
     public function invitations() {
         return $this->hasMany(Invitation::class);
     }

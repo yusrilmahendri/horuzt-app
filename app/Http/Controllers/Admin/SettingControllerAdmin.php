@@ -1,25 +1,25 @@
 <?php
-
 namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use App\Models\MetodeTransaction;
 use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
+use App\Models\MetodeTransaction;
 use App\Models\MidtransTransaction;
-use Illuminate\Support\Facades\Auth;
 use App\Models\PaketUndangan;
 use App\Models\TransactionTagihan;
+use App\Models\TripayTransaction;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class SettingControllerAdmin extends Controller
 {
-   public function __construct()
+    public function __construct()
     {
         $this->middleware('auth:sanctum');
     }
 
-
-    public function masterTagihan() {
+    public function masterTagihan()
+    {
         $user = Auth::user();
 
         $query = MetodeTransaction::query();
@@ -37,66 +37,108 @@ class SettingControllerAdmin extends Controller
         return new TagihanTransactionCollection($data);
     }
 
-    public function storeMethodTransaction(Request $request){
-          // Validasi Input
+    public function storeMethodTransaction(Request $request)
+    {
+        // Validasi Input
         $request->validate([
             'metodeTransactions_id' => 'required|exists:metode_transactions,id',
         ]);
 
         // Simpan data ke database
         $transaction = TransactionTagihan::create([
-            'user_id' => Auth::id(), // Ambil ID user yang sedang login
+            'user_id'               => Auth::id(), // Ambil ID user yang sedang login
             'metodeTransactions_id' => $request->metodeTransactions_id,
         ]);
 
         // Return response sukses
         return response()->json([
             'message' => 'Metode transaksi berhasil dibuat!',
-            'data' => $transaction
+            'data'    => $transaction,
         ], 201);
     }
 
-    public function storeMidtrans(Request $request){
+    public function storeMidtrans(Request $request)
+    {
 
-      // Validasi request
+        // Validasi request
         $request->validate([
-            'url' => 'required|url',
-            'server_key' => 'required|string',
-            'client_key' => 'required|string',
-            'metode_production' => 'required|string',
+            'url'                    => 'required|url',
+            'server_key'             => 'required|string',
+            'client_key'             => 'required|string',
+            'metode_production'      => 'required|string',
+            'methode_pembayaran'    => 'required|string',
+            'id_methode_pembayaran' => 'required|string',
         ]);
 
         // Simpan data ke database dengan user yang sedang login
         $midtrans = MidtransTransaction::create([
-            'user_id' => Auth::id(), // Mengambil user yang sedang login
-            // 'id_master_method' => MetodeTransaction::id(),
-            'method_transaction' => $request->metodeTransactions_id,
-            'url' => $request->url,
-            'server_key' => $request->server_key,
-            'client_key' => $request->client_key,
-            'metode_production' => $request->metode_production,
+            'user_id'                => Auth::id(), // Mengambil user yang sedang login
+            'method_transaction'     => $request->metodeTransactions_id,
+            'url'                    => $request->url,
+            'server_key'             => $request->server_key,
+            'client_key'             => $request->client_key,
+            'metode_production'      => $request->metode_production,
+            'methode_pembayaran'    => $request->methode_pembayaran,
+            'id_methode_pembayaran' => $request->id_methode_pembayaran,
         ]);
 
-
-        if($midtrans){
+        if ($midtrans) {
             return response()->json([
                 'message' => 'Setting Pembayaran Midtrans berhasil disimpan',
-                'data' => $midtrans
-        ], 201);
-        }
-        else{
+                'data'    => $midtrans,
+            ], 201);
+        } else {
             return response()->json([
                 'message' => 'Setting Pembayaran Midtrans tidak berhasil disimpan',
-                'data' => $midtrans
-                ], 500);
+                'data'    => $midtrans,
+            ], 500);
         }
     }
 
-    public function indexPaket(){
+    public function storeTripay(Request $request)
+    {
+
+        // Validasi request
+        $request->validate([
+            'url_tripay'             => 'required|url',
+            'private_key'            => 'required|string',
+            'api_key'                => 'required|string',
+            'kode_merchant'          => 'required|string',
+            'methode_pembayaran'    => 'required|string',
+            'id_methode_pembayaran' => 'required|string',
+        ]);
+
+        // Simpan data ke database dengan user yang sedang login
+        $midtrans = TripayTransaction::create([
+            'user_id'                => Auth::id(), // Mengambil user yang sedang login
+            'method_transaction'     => $request->metodeTransactions_id,
+            'url_tripay'             => $request->url_tripay,
+            'private_key'            => $request->private_key,
+            'api_key'                => $request->api_key,
+            'kode_merchant'          => $request->kode_merchant,
+            'methode_pembayaran'    => $request->methode_pembayaran,
+            'id_methode_pembayaran' => $request->id_methode_pembayaran,
+        ]);
+
+        if ($midtrans) {
+            return response()->json([
+                'message' => 'Setting Pembayaran Tripay berhasil disimpan',
+                'data'    => $midtrans,
+            ], 201);
+        } else {
+            return response()->json([
+                'message' => 'Setting Pembayaran Tripay tidak berhasil disimpan',
+                'data'    => $midtrans,
+            ], 500);
+        }
+    }
+
+    public function indexPaket()
+    {
         $pakets = PaketUndangan::all(); // Ambil semua data paket undangan
         return response()->json([
             'message' => 'Data paket undangan yang tersedia saat ini.!',
-            'data' => $pakets
+            'data'    => $pakets,
         ], 200);
     }
 
@@ -107,39 +149,39 @@ class SettingControllerAdmin extends Controller
         $paket = PaketUndangan::find($id);
 
         // Jika tidak ditemukan, kembalikan response 404
-        if (!$paket) {
+        if (! $paket) {
             return response()->json([
-                'message' => 'Paket tidak ditemukan'
+                'message' => 'Paket tidak ditemukan',
             ], 404);
         }
 
         // Validasi input
         $request->validate([
-            'name_paket' => 'required|string',
-            'price' => 'required|numeric',
-            'masa_aktif' => 'required|integer',
-            'halaman_buku' => 'boolean',
-            'kirim_wa' => 'boolean',
+            'name_paket'       => 'required|string',
+            'price'            => 'required|numeric',
+            'masa_aktif'       => 'required|integer',
+            'halaman_buku'     => 'boolean',
+            'kirim_wa'         => 'boolean',
             'bebas_pilih_tema' => 'boolean',
-            'kirim_hadiah' => 'boolean',
-            'import_data' => 'boolean',
+            'kirim_hadiah'     => 'boolean',
+            'import_data'      => 'boolean',
         ]);
 
         // Update data
         $paket->update([
-            'name_paket' => $request->name_paket,
-            'price' => $request->price,
-            'masa_aktif' => $request->masa_aktif,
-            'halaman_buku' => $request->halaman_buku,
-            'kirim_wa' => $request->kirim_wa,
+            'name_paket'       => $request->name_paket,
+            'price'            => $request->price,
+            'masa_aktif'       => $request->masa_aktif,
+            'halaman_buku'     => $request->halaman_buku,
+            'kirim_wa'         => $request->kirim_wa,
             'bebas_pilih_tema' => $request->bebas_pilih_tema,
-            'kirim_hadiah' => $request->kirim_hadiah,
-            'import_data' => $request->import_data,
+            'kirim_hadiah'     => $request->kirim_hadiah,
+            'import_data'      => $request->import_data,
         ]);
 
         return response()->json([
             'message' => 'Paket berhasil diperbarui',
-            'data' => $paket
+            'data'    => $paket,
         ], 200);
     }
 

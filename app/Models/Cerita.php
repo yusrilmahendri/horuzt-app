@@ -12,6 +12,6 @@ class Cerita extends Model
     protected $table = 'ceritas';
 
     public function user(){
-        return $this->belongsTo(User::class);
+        return $this->belongsTo(User::class, 'user_id');
     }
 }

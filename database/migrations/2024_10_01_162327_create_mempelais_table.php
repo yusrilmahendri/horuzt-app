@@ -26,6 +26,8 @@ return new class extends Migration
             $table->string('ayah_wanita')->nullable();
             $table->string('ibu_pria')->nullable();
             $table->string('ibu_wanita')->nullable();
+            $table->string('status')->nullable();
+            $table->string(column: 'kd_status')->nullable();
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
         });
