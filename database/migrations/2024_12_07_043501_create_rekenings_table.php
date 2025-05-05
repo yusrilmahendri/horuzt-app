@@ -17,6 +17,7 @@ return new class extends Migration
             $table->string('kode_bank');
             $table->string('email');
             $table->string('nomor_rekening');
+            $table->string('nama_bank');
             $table->string('nama_pemilik');
             $table->string('methode_pembayaran');
             $table->string('id_methode_pembayaran');
