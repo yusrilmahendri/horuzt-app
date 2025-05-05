@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->string('kode_bank');
+            $table->string('email');
             $table->string('nomor_rekening');
             $table->string('nama_pemilik');
             $table->string('methode_pembayaran');
