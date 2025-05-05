@@ -17,6 +17,7 @@ class RekeningResource extends JsonResource
         return [
             'id' => $this->id,
             'kode_bank' => $this->kode_bank,
+            'email' => $this->email,
             'bank_name' => $this->bank ? $this->bank->name : null, // Include bank name
             'nomor_rekening' => $this->nomor_rekening,
             'nama_pemilik' => $this->nama_pemilik,
