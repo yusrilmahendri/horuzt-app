@@ -45,8 +45,9 @@ class RekeningController extends Controller
             $userEmail           = Auth::user()->email;
             $idMethodePembayaran = MetodeTransaction::pluck('id')->first();
             $methodePembayaran   = MetodeTransaction::pluck('name')->first();
-            $namaBank            = Bank::where('id', $validated['kode_bank'])->pluck('name')->first();
+            $namaBank            = Bank::where('kode_bank', $validated['kode_bank'])->pluck('name')->first();
             $savedRekenings      = [];
+
 
             for ($i = 0; $i < $count; $i++) {
                 $rekening                        = new Rekening();
