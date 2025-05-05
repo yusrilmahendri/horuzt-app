@@ -125,6 +125,9 @@ Route::group(['middleware' => ['role:admin']], function () {
  });
 
 Route::group(['middleware' => ['role:user']], function () {
+    Route::controller(PaketController::class)->group(function() {
+        Route::get('/v1/user/paket-nikah', 'index')->name('paket.index');
+    });
     Route::controller(UserController::class)->group(function(){
         Route::get('/v1/user-profile', 'userProfile');
         Route::put('/v1/submission-update/user-profile', 'update');
