@@ -30,7 +30,7 @@ class RekeningController extends Controller
         try {
             $validated = $request->validate([
                 'kode_bank'        => 'required|array',
-                'kode_bank.*'      => 'required|integer',
+                'kode_bank.*'      => 'required|string',
                 'nomor_rekening'   => 'required|array',
                 'nomor_rekening.*' => 'required|string',
                 'nama_pemilik'     => 'required|array',
