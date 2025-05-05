@@ -22,7 +22,6 @@ return new class extends Migration
             $table->binary('photo_rek')->nullable();
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
-            $table->foreign('kode_bank')->references('id')->on('banks');
         });
     }
 
