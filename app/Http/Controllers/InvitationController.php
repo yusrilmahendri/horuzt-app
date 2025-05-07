@@ -81,11 +81,11 @@ class InvitationController extends Controller
                             'paket_undangan_id' => $validated['paket_undangan_id'],
                         ]
                     );
-
+                    $token = $user->createToken('auth_token')->plainTextToken;
                     return response()->json([
                         'message'    => 'Step 1 berhasil diperbarui',
                         'user'       => $user,
-                        'token'      => null,
+                        'token'      => $token,
                         'user_id'    => $user->id,
                         'domain'     => $domain,
                         'invitation' => $invitation,
@@ -146,9 +146,6 @@ class InvitationController extends Controller
             ], 500);
         }
     }
-
-
-
 
     public function storeStepTwo(Request $request)
     {
