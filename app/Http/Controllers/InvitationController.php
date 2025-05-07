@@ -29,52 +29,108 @@ class InvitationController extends Controller
     public function storeStepOne(Request $request)
     {
         try {
-            // Validasi request
+            // Validasi awal (tanpa unique email/domain dulu)
             $validated = $request->validate([
-                'email'             => 'required|email|unique:users,email',
-                'password'          => 'required|min:6',
-                'phone'             => 'required|string',
-                'paket_undangan_id' => 'required|exists:paket_undangans,id',
-                'domain'            => 'required|string|unique:settings,domain',
+                'kode_pemesanan'     => 'nullable|string',
+                'email'              => 'required|email',
+                'password'           => 'required|min:6',
+                'phone'              => 'required|string',
+                'paket_undangan_id'  => 'required|exists:paket_undangans,id',
+                'domain'             => 'required|string',
             ]);
 
-            return DB::transaction(function () use ($validated) {
-                // Simpan user baru
-                $user = User::create([
-                    'email'          => $validated['email'],
-                    'password'       => Hash::make($validated['password']),
-                    'phone'          => $validated['phone'],
-                    'kode_pemesanan' => '#' . mt_rand(1000000000, 9999999999),
-                ]);
-
-                if (method_exists($user, 'assignRole')) {
-                    $user->assignRole('user');
+            return DB::transaction(function () use ($validated, $request) {
+                // Cek apakah user dengan kode_pemesanan sudah ada
+                $user = null;
+                if (!empty($validated['kode_pemesanan'])) {
+                    $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
                 }
 
-                // Generate token autentikasi
-                $token = $user->createToken('auth_token')->plainTextToken;
+                if ($user) {
+                    // Validasi email dan domain tidak boleh milik user lain
+                    if (User::where('email', $validated['email'])->where('id', '!=', $user->id)->exists()) {
+                        return response()->json([
+                            'message' => 'Email sudah digunakan oleh pengguna lain',
+                        ], 422);
+                    }
 
-                // Simpan domain setting
-                $domain = Setting::create([
-                    'user_id' => $user->id,
-                    'domain'  => $validated['domain'],
-                ]);
+                    if (Setting::where('domain', $validated['domain'])->where('user_id', '!=', $user->id)->exists()) {
+                        return response()->json([
+                            'message' => 'Domain sudah digunakan oleh pengguna lain',
+                        ], 422);
+                    }
 
-                // Simpan invitation
-                $invitation = Invitation::create([
-                    'status'            => 'step1',
-                    'paket_undangan_id' => $validated['paket_undangan_id'],
-                    'user_id'           => $user->id,
-                ]);
+                    // Update user
+                    $user->update([
+                        'email'    => $validated['email'],
+                        'password' => Hash::make($validated['password']),
+                        'phone'    => $validated['phone'],
+                    ]);
 
-                return response()->json([
-                    'message'    => 'Step 1 berhasil',
-                    'user'       => $user,
-                    'token'      => $token,
-                    'user_id'    => $user->id,
-                    'domain'     => $domain,
-                    'invitation' => $invitation,
-                ], 201);
+                    // Update atau buat domain
+                    $domain = Setting::updateOrCreate(
+                        ['user_id' => $user->id],
+                        ['domain' => $validated['domain']]
+                    );
+
+                    // Update atau buat invitation
+                    $invitation = Invitation::updateOrCreate(
+                        ['user_id' => $user->id],
+                        [
+                            'status'            => 'step1',
+                            'paket_undangan_id' => $validated['paket_undangan_id'],
+                        ]
+                    );
+
+                    return response()->json([
+                        'message'    => 'Step 1 berhasil diperbarui',
+                        'user'       => $user,
+                        'token'      => null,
+                        'user_id'    => $user->id,
+                        'domain'     => $domain,
+                        'invitation' => $invitation,
+                    ]);
+                } else {
+                    // Validasi tambahan: email & domain harus unik untuk user baru
+                    $request->validate([
+                        'email'  => 'unique:users,email',
+                        'domain' => 'unique:settings,domain',
+                    ]);
+
+                    // Buat user baru
+                    $user = User::create([
+                        'email'          => $validated['email'],
+                        'password'       => Hash::make($validated['password']),
+                        'phone'          => $validated['phone'],
+                        'kode_pemesanan' => '#' . mt_rand(1000000000, 9999999999),
+                    ]);
+
+                    if (method_exists($user, 'assignRole')) {
+                        $user->assignRole('user');
+                    }
+
+                    $token = $user->createToken('auth_token')->plainTextToken;
+
+                    $domain = Setting::create([
+                        'user_id' => $user->id,
+                        'domain'  => $validated['domain'],
+                    ]);
+
+                    $invitation = Invitation::create([
+                        'status'            => 'step1',
+                        'paket_undangan_id' => $validated['paket_undangan_id'],
+                        'user_id'           => $user->id,
+                    ]);
+
+                    return response()->json([
+                        'message'    => 'Step 1 berhasil',
+                        'user'       => $user,
+                        'token'      => $token,
+                        'user_id'    => $user->id,
+                        'domain'     => $domain,
+                        'invitation' => $invitation,
+                    ], 201);
+                }
             });
 
         } catch (ValidationException $e) {
@@ -90,6 +146,7 @@ class InvitationController extends Controller
             ], 500);
         }
     }
+
 
 
 
