@@ -59,6 +59,10 @@ Route::controller(MethodePembayaran::class)->group(function(){
     Route::get('/v1/list-paket-undangan', 'getPaketUndangan');
 });
 
+Route::controller(MempelaiController::class)->group(function() {
+    Route::put('/v1/update/status-bayar', 'updateStatusBayar');
+});
+
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
@@ -82,10 +86,6 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::post('/v1/admin/send-rekening', 'store');
         Route::get('/v1/admin/get-rekening', 'index');
         Route::put('/v1/admin/update-rekening', 'update');
-    });
-
-    Route::controller(MempelaiController::class)->group(function() {
-        Route::put('/v1/admin/update/status-bayar', 'updateStatusBayar');
     });
 
     Route::controller(UserController::class)->group(function(){
