@@ -42,60 +42,85 @@ class UserController extends Controller
         return response()->json(['message' => 'User not found'], 404);
     }
 
-    public function index()
-    {
-        $user = auth()->user();
+public function index()
+{
+    $user = auth()->user();
 
-        if ($user->hasRole('user')) {
-            $user->makeHidden(['roles']);
-            $dataUser = auth()->user()->load(['invitation.paketUndangan', 'settingOne', 'mempelaiOne', 'invitationOne']);
+    if ($user->hasRole('user')) {
+        $user->makeHidden(['roles']);
+        $dataUser = auth()->user()->load([
+            'invitation.paketUndangan',
+            'settingOne',
+            'mempelaiOne',
+            'invitationOne'
+        ]);
 
-            if ($dataUser) {
-                return response()->json(['data' => new UserResource($dataUser)], 200);
-            } else {
-                return new UserCollection(collect([$dataUser]));
-            }
+        if ($dataUser) {
+            return response()->json(['data' => new UserResource($dataUser)], 200);
+        } else {
+            return new UserCollection(collect([$dataUser]));
         }
-
-        if ($user->hasRole('admin')) {
-            $usersQuery = User::whereDoesntHave('roles', function ($query) {
-                $query->where('name', 'admin');
-            })->with('settingOne', 'mempelaiOne', 'invitationOne');
-
-            $totalUsers = $usersQuery->count();
-            $users      = $usersQuery->paginate(5);
-
-            // Menghitung total keuntungan dari user dengan kd_status SB atau status "Sudah Bayar"
-            $totalKeuntungan = $usersQuery->get()->sum(function ($user) {
-                if ($user->mempelaiOne && ($user->mempelaiOne->kd_status === 'SB' || $user->mempelaiOne->status === 'Sudah Bayar')) {
-                    return match ($user->invitationOne->paket_undangan_id ?? 0) {
-                        1       => 99000,
-                        2       => 199000,
-                        3       => 299000,
-                        default => 0,
-                    };
-                }
-                return 0;
-            });
-
-            // Menghitung jumlah user dengan kd_status BL dan MK
-            $jumlahBL = $usersQuery->get()->filter(fn($user) => $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL')->count();
-            $jumlahMK = $usersQuery->get()->filter(fn($user) => $user->mempelaiOne && $user->mempelaiOne->kd_status === 'MK')->count();
-
-            return response()->json([
-                'admin'            => new UserCollection(collect([$user])),
-                'users'            => new UserCollection($users),
-                'total_users'      => $totalUsers,
-                'total_keuntungan' => $totalKeuntungan,
-                'jumlah_belum_lunas_dan_pending' => [
-                    'BL' => $jumlahBL,
-                    'MK' => $jumlahMK,
-                ],
-            ]);
-        }
-
-        return response()->json(['message' => 'User not found'], 404);
     }
+
+    if ($user->hasRole('admin')) {
+        // Ambil semua user non-admin dengan relasi yang dibutuhkan
+        $usersQuery = User::whereDoesntHave('roles', function ($query) {
+            $query->where('name', 'admin');
+        })->with([
+            'settingOne',
+            'mempelaiOne',
+            'invitationOne.paketUndangan'
+        ]);
+
+        // Total semua user non-admin
+        $totalUsers = $usersQuery->count();
+
+        // Data paginasi user
+        $users = $usersQuery->paginate(5);
+
+        // Ambil semua user tanpa paginasi untuk perhitungan
+        $allUsers = $usersQuery->get();
+
+        // Hitung total keuntungan dari user dengan status SB / Sudah Bayar
+        $totalKeuntungan = $allUsers->sum(function ($user) {
+            if (
+                $user->mempelaiOne &&
+                ($user->mempelaiOne->kd_status === 'SB' || $user->mempelaiOne->status === 'Sudah Bayar')
+            ) {
+                return match ($user->invitationOne->paket_undangan_id ?? 0) {
+                    1       => 99000,
+                    2       => 199000,
+                    3       => 299000,
+                    default => 0,
+                };
+            }
+            return 0;
+        });
+
+        // Hitung jumlah user dengan status BL dan MK
+        $jumlahBL = $allUsers->filter(fn($user) =>
+            $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL'
+        )->count();
+
+        $jumlahMK = $allUsers->filter(fn($user) =>
+            $user->mempelaiOne && $user->mempelaiOne->kd_status === 'MK'
+        )->count();
+
+        return response()->json([
+            'admin'                        => new UserCollection(collect([$user])),
+            'users'                        => new UserCollection($users),
+            'total_users'                  => $totalUsers,
+            'total_keuntungan'            => $totalKeuntungan,
+            'jumlah_belum_lunas_dan_pending' => [
+                'BL' => $jumlahBL,
+                'MK' => $jumlahMK,
+            ],
+        ]);
+    }
+
+    return response()->json(['message' => 'User not found'], 404);
+}
+
 
     public function update(Request $request)
     {
