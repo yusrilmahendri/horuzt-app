@@ -14,128 +14,133 @@ class UserController extends Controller
         $this->middleware('auth:sanctum');
     }
 
-    public function userProfile() {
+    public function userProfile()
+    {
         $user = auth()->user();
         if ($user->hasRole('user')) {
             $user->makeHidden(['roles']);
             $dataUser = auth()->user()->load('invitation.paketUndangan');
-            if($dataUser){
+            if ($dataUser) {
                 return response()->json(['data' => $dataUser], 200);
-            }else{
+            } else {
                 return new UserCollection(collect([$dataUser]));
             }
         }
-        if($user->hasRole('admin')){
-            $usersQuery = User::whereDoesntHave('roles', function($query) {
+        if ($user->hasRole('admin')) {
+            $usersQuery = User::whereDoesntHave('roles', function ($query) {
                 $query->where('name', 'admin');
             });
 
             $totalUsers = $usersQuery->count();
-            $users = $usersQuery->paginate(5);
+            $users      = $usersQuery->paginate(5);
 
             return response()->json([
-                'admin' => new UserCollection(collect([$user])),
-                'users' => new UserCollection($users),
-                'total_users' => $totalUsers
+                'admin'       => new UserCollection(collect([$user])),
+                'users'       => new UserCollection($users),
+                'total_users' => $totalUsers,
             ]);
         }
         return response()->json(['message' => 'User not found'], 404);
     }
 
-public function index()
-{
-    $user = auth()->user();
+    public function index()
+    {
+        $user = auth()->user();
 
-    if ($user->hasRole('user')) {
-        $user->makeHidden(['roles']);
-        $dataUser = auth()->user()->load([
-            'invitation.paketUndangan',
-            'settingOne',
-            'mempelaiOne',
-            'invitationOne'
-        ]);
+        if ($user->hasRole('user')) {
+            $user->makeHidden(['roles']);
+            $dataUser = auth()->user()->load([
+                'invitation.paketUndangan',
+                'settingOne',
+                'mempelaiOne',
+                'invitationOne',
+            ]);
 
-        if ($dataUser) {
-            return response()->json(['data' => new UserResource($dataUser)], 200);
-        } else {
-            return new UserCollection(collect([$dataUser]));
-        }
-    }
-
-    if ($user->hasRole('admin')) {
-        // Ambil semua user non-admin dengan relasi yang dibutuhkan
-        $usersQuery = User::whereDoesntHave('roles', function ($query) {
-            $query->where('name', 'admin');
-        })->with([
-            'settingOne',
-            'mempelaiOne',
-            'invitationOne.paketUndangan'
-        ]);
-
-        // Total semua user non-admin
-        $totalUsers = $usersQuery->count();
-
-        // Data paginasi user
-        $users = $usersQuery->paginate(5);
-
-        // Ambil semua user tanpa paginasi untuk perhitungan
-        $allUsers = $usersQuery->get();
-
-        // Hitung total keuntungan dari user dengan status SB / Sudah Bayar
-        $totalKeuntungan = $allUsers->sum(function ($user) {
-            if (
-                $user->mempelaiOne &&
-                ($user->mempelaiOne->kd_status === 'SB' || $user->mempelaiOne->status === 'Sudah Bayar')
-            ) {
-                return match ($user->invitationOne->paket_undangan_id ?? 0) {
-                    1       => 99000,
-                    2       => 199000,
-                    3       => 299000,
-                    default => 0,
-                };
+            if ($dataUser) {
+                return response()->json(['data' => new UserResource($dataUser)], 200);
+            } else {
+                return new UserCollection(collect([$dataUser]));
             }
-            return 0;
-        });
+        }
 
-        // Hitung jumlah user dengan status BL dan MK
-        $jumlahBL = $allUsers->filter(fn($user) =>
-            $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL'
-        )->count();
+        if ($user->hasRole('admin')) {
 
-        $jumlahMK = $allUsers->filter(fn($user) =>
-            $user->mempelaiOne && $user->mempelaiOne->kd_status === 'MK'
-        )->count();
+            $usersQuery = User::whereDoesntHave('roles', function ($query) {
+                $query->where('name', 'admin');
+            })->with([
+                'settingOne',
+                'mempelaiOne',
+                'invitationOne.paketUndangan',
+            ]);
 
-        return response()->json([
-            'admin'                        => new UserCollection(collect([$user])),
-            'users'                        => new UserCollection($users),
-            'total_users'                  => $totalUsers,
-            'total_keuntungan'            => $totalKeuntungan,
-            'jumlah_belum_lunas_dan_pending' => [
-                'BL' => $jumlahBL,
-                'MK' => $jumlahMK,
-            ],
-        ]);
+
+            $totalUsers = $usersQuery->count();
+
+
+            $users = $usersQuery->paginate(5);
+
+
+            $allUsers = User::whereDoesntHave('roles', function ($query) {
+                $query->where('name', 'admin');
+            })->with([
+                'mempelaiOne',
+                'invitationOne.paketUndangan',
+            ])->get();
+
+
+            $totalKeuntungan = $allUsers->sum(function ($user) {
+                if (
+                    $user->mempelaiOne &&
+                    ($user->mempelaiOne->kd_status === 'SB' || $user->mempelaiOne->status === 'Sudah Bayar')
+                ) {
+                    return match ($user->invitationOne->paket_undangan_id ?? 0) {
+                        1       => 99000,
+                        2       => 199000,
+                        3       => 299000,
+                        default => 0,
+                    };
+                }
+                return 0;
+            });
+
+
+            $jumlahBL = $allUsers->filter(fn($user) =>
+                $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL'
+            )->count();
+
+            $jumlahMK = $allUsers->filter(fn($user) =>
+                $user->mempelaiOne && $user->mempelaiOne->kd_status === 'MK'
+            )->count();
+
+            return response()->json([
+                'admin'                          => new UserCollection(collect([$user])),
+                'users'                          => new UserCollection($users),
+                'total_users'                    => $totalUsers,
+                'total_keuntungan'               => $totalKeuntungan,
+                'jumlah_belum_lunas_dan_pending' => [
+                    'BL' => $jumlahBL,
+                    'MK' => $jumlahMK,
+                ],
+            ]);
+        }
+
+        return response()->json(['message' => 'User not found'], 404);
     }
-
-    return response()->json(['message' => 'User not found'], 404);
-}
-
 
     public function update(Request $request)
     {
 
-        // Ambil user yang sedang login
+
         $user = auth()->user();
         if ($user->hasRole('user')) {
-            // Validasi data dari request
+
             $validatedData = $request->validate([
                 'name'     => 'sometimes|string|max:255',
                 'email'    => 'sometimes|email|unique:users,email,' . $user->id,
                 'password' => 'min:6',
                 'phone'    => 'min:11',
             ]);
-            // Update data user
+
             if (isset($validatedData['name'])) {
                 $user->name = $validatedData['name'];
             }
