@@ -43,7 +43,7 @@ use App\Http\Controllers\InvitationController;
 Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
-Route::get('/v1/paket-undangan/all', [SettingControllerAdmin::class, 'indexPaket']);
+Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
 Route::controller(InvitationController::class)->group(function() {
     Route::get('/v1/master-tagihan', 'masterTagihan');
