@@ -20,7 +20,7 @@ class SettingController extends Controller
     {
         $user = Auth::user();
 
-        // Ambil data Setting dan FilterUndangan berdasarkan user_id
+
         $setting = Setting::where('user_id', $user->id)->first();
         $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
 
@@ -72,7 +72,7 @@ class SettingController extends Controller
                 $file = $request->file('musik');
                 $filePath = $file->store('public/music');
 
-                // Save the file path to the database
+
                 $user = Auth::user();
                 $setting = Setting::updateOrCreate(
                     ['user_id' => $user->id],
@@ -160,9 +160,9 @@ class SettingController extends Controller
 
     public function create(Request $request)
     {
-        $user = Auth::user(); // Mendapatkan user yang sedang login
+        $user = Auth::user();
 
-        // Tentukan nilai default jika tidak dikirim dari request
+
         $defaultData = [
             'halaman_sampul' => $request->input('halaman_sampul', 0),
             'halaman_mempelai' => $request->input('halaman_mempelai', 0),
@@ -176,10 +176,10 @@ class SettingController extends Controller
             'halaman_qoute' => $request->input('halaman_qoute', 0),
         ];
 
-        // Gunakan firstOrCreate untuk memastikan tidak ada duplikasi
+
         $filterUndangan = FilterUndangan::firstOrCreate(
-            ['user_id' => $user->id], // Kondisi pencarian
-            $defaultData // Data default untuk dibuat
+            ['user_id' => $user->id],
+            $defaultData
         );
 
         return response()->json([
@@ -191,7 +191,7 @@ class SettingController extends Controller
     }
 
     public function update(Request $request)
-    {   
+    {
         $user = Auth::user();
         $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
 
@@ -200,7 +200,7 @@ class SettingController extends Controller
         }
 
 
-        // Validasi request dengan default 0 jika tidak dikirim
+
         $validatedData = $request->validate([
             'halaman_sampul' => 'nullable|integer',
             'halaman_mempelai' => 'nullable|integer',
@@ -214,7 +214,7 @@ class SettingController extends Controller
             'halaman_qoute' => 'nullable|integer',
         ]);
 
-        // Pastikan data tidak null
+
         $filterUndangan->update([
             'halaman_sampul' => $request->input('halaman_sampul', $filterUndangan->halaman_sampul),
             'halaman_mempelai' => $request->input('halaman_mempelai', $filterUndangan->halaman_mempelai),

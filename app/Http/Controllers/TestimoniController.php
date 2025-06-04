@@ -11,20 +11,20 @@ class TestimoniController extends Controller
 {
     public function __construct(){
         $this->middleware('auth:sanctum');
-    }  
+    }
 
     public function index(Request $request)
     {
         $query = Testimoni::query();
 
-        // Check if the authenticated user is an admin
+
         if (auth()->user()->role === 'admin') {
             $query->whereHas('user', function ($q) {
                 $q->where('role', 'user');
             });
         }
 
-        // Apply search filter if provided
+
         if ($request->has('search') && $request->search) {
             $searchTerm = $request->search;
             $query->where(function ($q) use ($searchTerm) {
@@ -33,15 +33,15 @@ class TestimoniController extends Controller
             });
         }
 
-        // Set default limit to 10 if not provided
-        $limit = $request->has('limit') && is_numeric($request->limit) 
-            ? $request->limit 
+
+        $limit = $request->has('limit') && is_numeric($request->limit)
+            ? $request->limit
             : 10;
 
-        // Paginate the results with the calculated limit
+
         $data = $query->paginate($limit);
 
-        // Return the paginated and filtered results
+
         return new TestimoniCollection($data);
     }
 
@@ -52,10 +52,10 @@ class TestimoniController extends Controller
             'provinsi' => 'required|min:3',
             'ulasan' => 'required|min:3',
         ]);
-    
-        // Add the authenticated user's ID to the validated data
+
+
         $validate['user_id'] = Auth::id();
-    
+
         $testimoni = new Testimoni($validate);
         if($testimoni->save()){
             return response()->json([
@@ -71,26 +71,26 @@ class TestimoniController extends Controller
 
     public function update(Request $request, $id)
     {
-        // Validate the 'status' field
+
         $validatedData = $request->validate([
-            'status' => 'required|boolean', // Ensure 'status' is required and a boolean (1 or 0)
+            'status' => 'required|boolean',
         ]);
 
-        // Find the Testimoni by ID
+
         $testimoni = Testimoni::find($id);
 
-        // Check if the Testimoni exists
+
         if (!$testimoni) {
             return response()->json([
                 'message' => 'Data tidak ditemukan.',
             ], 404);
         }
 
-        // Update the 'status' field
+
         $testimoni->status = $validatedData['status'];
         $testimoni->save();
 
-        // Return success response
+
         return response()->json([
             'message' => 'Status berhasil diperbarui.',
             'testimoni' => $testimoni,
@@ -100,10 +100,10 @@ class TestimoniController extends Controller
 
     public function deleteAll()
     {
-        // Check if there are any records to delete
+
         $testimoniesCount = Testimoni::count();
         if ($testimoniesCount > 0) {
-            // Delete all records
+
             Testimoni::truncate();
 
             return response()->json([

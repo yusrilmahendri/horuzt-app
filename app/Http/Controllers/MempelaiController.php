@@ -16,7 +16,7 @@ class MempelaiController extends Controller
         $this->middleware('auth:sanctum');
     }
 
-    // Helper function to convert photo paths to URLs
+
     private function transformPhotoUrls($mempelai)
     {
         $mempelai->photo_pria = $mempelai->photo_pria ? url('storage/' . $mempelai->photo_pria) : null;
@@ -31,7 +31,7 @@ class MempelaiController extends Controller
         $userId = Auth::id();
         $mempelai = Mempelai::where('user_id', $userId)->get();
 
-        // Transform photo paths to URLs for each mempelai
+
         $mempelai = $mempelai->map(function ($item) {
             return $this->transformPhotoUrls($item);
         });
@@ -177,40 +177,40 @@ class MempelaiController extends Controller
     public function updateStatusBayar(Request $request)
     {
         try {
-            // Validasi input dari frontend
+
             $validated = $request->validate([
                 'user_id'        => 'required|exists:users,id',
                 'kode_pemesanan' => 'required|exists:users,kode_pemesanan',
             ]);
 
-            // Cari user berdasarkan kode_pemesanan
+
             $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
 
-            // Jika user tidak ditemukan
+
             if (!$user) {
                 return response()->json([
                     'message' => 'Kode pemesanan tidak valid atau tidak ditemukan',
                 ], 404);
             }
 
-            // Jika user_id tidak cocok
+
             if ($user->id != $validated['user_id']) {
                 return response()->json([
                     'message' => 'User ID tidak cocok dengan kode pemesanan',
                 ], 400);
             }
 
-            // Cari data mempelai berdasarkan user_id
+
             $mempelai = Mempelai::where('user_id', $user->id)->first();
 
-            // Jika data mempelai tidak ditemukan
+
             if (!$mempelai) {
                 return response()->json([
                     'message' => 'Data mempelai tidak ditemukan untuk user ini',
                 ], 404);
             }
 
-            // Update status pembayaran
+
             $mempelai->update([
                 'status'    => 'Sudah Bayar',
                 'kd_status' => 'SB',
@@ -222,13 +222,13 @@ class MempelaiController extends Controller
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-            // Jika validasi gagal, kirim pesan error dengan status 422
+
             return response()->json([
                 'message' => 'Validasi gagal',
                 'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            // Jika terjadi error lain, kirim status 500
+
             return response()->json([
                 'message' => 'Terjadi kesalahan server',
                 'error'   => $e->getMessage(),

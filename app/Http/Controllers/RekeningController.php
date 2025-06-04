@@ -90,7 +90,7 @@ class RekeningController extends Controller
     public function update(Request $request)
     {
         try {
-            // Validate the request
+
             $validated = $request->validate([
                 'rekenings'                  => 'required|array',
                 'rekenings.*.id'             => 'required|integer|exists:rekenings,id',
@@ -113,7 +113,7 @@ class RekeningController extends Controller
                     $rekening->nomor_rekening = $data['nomor_rekening'];
                     $rekening->nama_pemilik   = $data['nama_pemilik'];
 
-                    // Handle file upload
+
                     if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
                         $photoPath           = $data['photo_rek']->store('photos', 'public');
                         $rekening->photo_rek = $photoPath;
@@ -121,14 +121,14 @@ class RekeningController extends Controller
                     $rekening->save();
                     $updatedRekenings[] = new RekeningResource($rekening);
                 } else {
-                    // Add an error note if the record does not exist
+
                     return response()->json([
                         'message' => "Rekening ID {$data['id']} at index {$index} not found or does not belong to the user.",
                     ], 404);
                 }
             }
 
-            // Return success response
+
             return response()->json([
                 'data'    => count($updatedRekenings) == 1
                 ? $updatedRekenings[0]
@@ -137,13 +137,13 @@ class RekeningController extends Controller
             ], 200);
 
         } catch (ValidationException $e) {
-            // Handle validation errors and return the failed field names and messages
+
             return response()->json([
                 'message' => 'Validation failed. Please check the form inputs.',
                 'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-            // Handle any other unexpected errors
+
             return response()->json([
                 'message' => 'An error occurred while updating the records.',
                 'error'   => $e->getMessage(),

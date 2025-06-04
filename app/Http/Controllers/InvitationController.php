@@ -29,7 +29,7 @@ class InvitationController extends Controller
     public function storeStepOne(Request $request)
     {
         try {
-            // Validasi awal (tanpa unique email/domain dulu)
+
             $validated = $request->validate([
                 'kode_pemesanan'     => 'nullable|string',
                 'email'              => 'required|email',
@@ -40,14 +40,14 @@ class InvitationController extends Controller
             ]);
 
             return DB::transaction(function () use ($validated, $request) {
-                // Cek apakah user dengan kode_pemesanan sudah ada
+
                 $user = null;
                 if (!empty($validated['kode_pemesanan'])) {
                     $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
                 }
 
                 if ($user) {
-                    // Validasi email dan domain tidak boleh milik user lain
+
                     if (User::where('email', $validated['email'])->where('id', '!=', $user->id)->exists()) {
                         return response()->json([
                             'message' => 'Email sudah digunakan oleh pengguna lain',
@@ -60,20 +60,20 @@ class InvitationController extends Controller
                         ], 422);
                     }
 
-                    // Update user
+
                     $user->update([
                         'email'    => $validated['email'],
                         'password' => Hash::make($validated['password']),
                         'phone'    => $validated['phone'],
                     ]);
 
-                    // Update atau buat domain
+
                     $domain = Setting::updateOrCreate(
                         ['user_id' => $user->id],
                         ['domain' => $validated['domain']]
                     );
 
-                    // Update atau buat invitation
+
                     $invitation = Invitation::updateOrCreate(
                         ['user_id' => $user->id],
                         [
@@ -91,13 +91,13 @@ class InvitationController extends Controller
                         'invitation' => $invitation,
                     ]);
                 } else {
-                    // Validasi tambahan: email & domain harus unik untuk user baru
+
                     $request->validate([
                         'email'  => 'unique:users,email',
                         'domain' => 'unique:settings,domain',
                     ]);
 
-                    // Buat user baru
+
                     $user = User::create([
                         'email'          => $validated['email'],
                         'password'       => Hash::make($validated['password']),
@@ -149,7 +149,7 @@ class InvitationController extends Controller
 
     public function storeStepTwo(Request $request)
     {
-        // Validasi awal termasuk user_id
+
         $validated = $request->validate([
             'user_id'               => 'required|exists:users,id',
             'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
@@ -165,19 +165,19 @@ class InvitationController extends Controller
             'ibu_wanita'            => 'nullable|string|max:255',
         ]);
 
-        // Ambil user berdasarkan ID
+
         $user = User::find($validated['user_id']);
 
         if (! $user) {
             return response()->json(['error' => 'User tidak ditemukan.'], 404);
         }
 
-        // Simpan gambar
+
         $photoPria   = $request->hasFile('photo_pria') ? $request->file('photo_pria')->store('photos', 'public') : null;
         $photoWanita = $request->hasFile('photo_wanita') ? $request->file('photo_wanita')->store('photos', 'public') : null;
         $coverPhoto  = $request->hasFile('cover_photo') ? $request->file('cover_photo')->store('photos', 'public') : null;
 
-        // Simpan data mempelai
+
         $mempelai = Mempelai::updateOrCreate(
             ['user_id' => $user->id],
             [
@@ -197,7 +197,7 @@ class InvitationController extends Controller
             ]
         );
 
-        // Update status undangan ke step2
+
         Invitation::where('user_id', $user->id)->update(['status' => 'step2']);
 
         return response()->json([
@@ -210,24 +210,24 @@ class InvitationController extends Controller
 
     public function storeStepThree(Request $request)
     {
-        // Validasi input termasuk user_id
+
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
             'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
             'status'  => 'nullable|string|max:255',
         ]);
 
-        // Ambil user berdasarkan user_id dari request
+
         $user = User::find($validated['user_id']);
 
         if (! $user) {
             return response()->json(['error' => 'User tidak ditemukan.'], 404);
         }
 
-        // Simpan foto galeri jika ada
+
         $galeryPhoto = $request->hasFile('photo') ? $request->file('photo')->store('photos', 'public') : null;
 
-        // Simpan atau perbarui data galeri
+
         $galery = Galery::updateOrCreate(
             ['user_id' => $user->id],
             [
@@ -236,7 +236,7 @@ class InvitationController extends Controller
             ]
         );
 
-        // Update status undangan ke step3
+
         Invitation::where('user_id', $user->id)->update(['status' => 'step3']);
 
         return response()->json([
@@ -249,7 +249,7 @@ class InvitationController extends Controller
 
     public function storeStepFor(Request $request)
     {
-        // Validasi awal, termasuk user_id dan array input
+
         $validated = $request->validate([
             'user_id'        => 'required|exists:users,id',
             'title'          => 'required|array',

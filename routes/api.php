@@ -96,7 +96,11 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::get('/v1/admin/get-themas', 'index')->name('thema.index');
     });
     Route::controller(CategoryController::class)->group(function() {
-        Route::get('/v1/admin/categorys', 'index')->name('category.index');
+        Route::get('/v1/admin/categorys', 'index');
+        Route::post('/v1/admin/add-categorys', 'store');
+        Route::put('/v1/admin/update-categorys', 'update');
+        Route::delete('/v1/admin/delete-categorys', 'destroy');
+        Route::delete('/v1/admin/delete-all-categorys', 'destroyAll');
     });
     Route::controller(JenisThemaController::class)->group(function() {
         Route::get('/v1/admin/jenis-themas', 'index')->name('jenis.index');
