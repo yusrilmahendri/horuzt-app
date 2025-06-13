@@ -16,8 +16,11 @@ class CategoryController extends Controller
 
     public function index()
     {
-        $data = CategoryThemas::paginate(5);
-        return new CategoryCollection($data);
+        $data = CategoryThemas::select('id', 'name', 'slug')->get();
+        return response()->json([
+            'status' => true,
+            'data' => $data
+        ]);
     }
 
     public function store(Request $request)
