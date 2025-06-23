@@ -25,10 +25,10 @@ class SettingControllerAdmin extends Controller
         $query = MetodeTransaction::query();
 
         if ($user->hasRole('admin')) {
-            // Jika admin, sembunyikan "Trial"
+
             $query->where('name', '!=', 'Trial');
         } else {
-            // Jika bukan admin, sembunyikan "Tripay"
+
             $query->where('name', '!=', 'Tripay');
         }
 
@@ -39,18 +39,18 @@ class SettingControllerAdmin extends Controller
 
     public function storeMethodTransaction(Request $request)
     {
-        // Validasi Input
+
         $request->validate([
             'metodeTransactions_id' => 'required|exists:metode_transactions,id',
         ]);
 
-        // Simpan data ke database
+
         $transaction = TransactionTagihan::create([
-            'user_id'               => Auth::id(), // Ambil ID user yang sedang login
+            'user_id'               => Auth::id(),
             'metodeTransactions_id' => $request->metodeTransactions_id,
         ]);
 
-        // Return response sukses
+
         return response()->json([
             'message' => 'Metode transaksi berhasil dibuat!',
             'data'    => $transaction,
@@ -60,7 +60,7 @@ class SettingControllerAdmin extends Controller
     public function storeMidtrans(Request $request)
     {
 
-        // Validasi request
+
         $request->validate([
             'url'                    => 'required|url',
             'server_key'             => 'required|string',
@@ -70,9 +70,9 @@ class SettingControllerAdmin extends Controller
             'id_methode_pembayaran' => 'required|string',
         ]);
 
-        // Simpan data ke database dengan user yang sedang login
+
         $midtrans = MidtransTransaction::create([
-            'user_id'                => Auth::id(), // Mengambil user yang sedang login
+            'user_id'                => Auth::id(),
             'method_transaction'     => $request->metodeTransactions_id,
             'url'                    => $request->url,
             'server_key'             => $request->server_key,
@@ -98,7 +98,7 @@ class SettingControllerAdmin extends Controller
     public function storeTripay(Request $request)
     {
 
-        // Validasi request
+
         $request->validate([
             'url_tripay'             => 'required|url',
             'private_key'            => 'required|string',
@@ -108,9 +108,9 @@ class SettingControllerAdmin extends Controller
             'id_methode_pembayaran' => 'required|string',
         ]);
 
-        // Simpan data ke database dengan user yang sedang login
+
         $midtrans = TripayTransaction::create([
-            'user_id'                => Auth::id(), // Mengambil user yang sedang login
+            'user_id'                => Auth::id(),
             'method_transaction'     => $request->metodeTransactions_id,
             'url_tripay'             => $request->url_tripay,
             'private_key'            => $request->private_key,
@@ -135,7 +135,7 @@ class SettingControllerAdmin extends Controller
 
     public function indexPaket()
     {
-        $pakets = PaketUndangan::all(); // Ambil semua data paket undangan
+        $pakets = PaketUndangan::all();
         return response()->json([
             'message' => 'Data paket undangan yang tersedia saat ini.!',
             'data'    => $pakets,
@@ -145,17 +145,17 @@ class SettingControllerAdmin extends Controller
     public function updatePaket(Request $request, $id)
     {
 
-        // Cari paket berdasarkan ID
+
         $paket = PaketUndangan::find($id);
 
-        // Jika tidak ditemukan, kembalikan response 404
+
         if (! $paket) {
             return response()->json([
                 'message' => 'Paket tidak ditemukan',
             ], 404);
         }
 
-        // Validasi input
+
         $request->validate([
             'name_paket'       => 'required|string',
             'price'            => 'required|numeric',
@@ -167,7 +167,7 @@ class SettingControllerAdmin extends Controller
             'import_data'      => 'boolean',
         ]);
 
-        // Update data
+
         $paket->update([
             'name_paket'       => $request->name_paket,
             'price'            => $request->price,

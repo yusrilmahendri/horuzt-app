@@ -183,8 +183,8 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/settings/domain', 'storeDomainToken');
         Route::post('/v1/user/settings/music', 'storeMusic');
         Route::post('/v1/user/settings/salam', 'storeSalam');
-        Route::get('/v1/user/music/download/{id}', 'downloadMusic');
-        Route::get('/v1/user/music/stream/{id}', 'streamMusic');
+        Route::get('/v1/user/music/download', 'downloadMusic');
+        Route::get('/v1/user/music/stream', 'getMusic');
         Route::post('/v1/user/submission-filter', 'create');
         Route::put('/v1/user/submission-filter-update', 'update');
         Route::get('/v1/user/list-data-setting', 'index');

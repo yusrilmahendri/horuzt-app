@@ -87,23 +87,6 @@ class UserController extends Controller
                 'invitationOne.paketUndangan',
             ])->get();
 
-
-            $totalKeuntungan = $allUsers->sum(function ($user) {
-                if (
-                    $user->mempelaiOne &&
-                    ($user->mempelaiOne->kd_status === 'SB' || $user->mempelaiOne->status === 'Sudah Bayar')
-                ) {
-                    return match ($user->invitationOne->paket_undangan_id ?? 0) {
-                        1       => 99000,
-                        2       => 199000,
-                        3       => 299000,
-                        default => 0,
-                    };
-                }
-                return 0;
-            });
-
-
             $jumlahBL = $allUsers->filter(fn($user) =>
                 $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL'
             )->count();
@@ -116,7 +99,6 @@ class UserController extends Controller
                 'admin'                          => new UserCollection(collect([$user])),
                 'users'                          => new UserCollection($users),
                 'total_users'                    => $totalUsers,
-                'total_keuntungan'               => $totalKeuntungan,
                 'jumlah_belum_lunas_dan_pending' => [
                     'BL' => $jumlahBL,
                     'MK' => $jumlahMK,

@@ -13,10 +13,10 @@ class UserResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
-        // Mengambil domain_create_date
+
         $domainCreateDate = $this->mempelaiOne ? $this->mempelaiOne->created_at : null;
 
-        // Menghitung domain_end_date berdasarkan paket_undangan_id
+
         $domainEndDate = null;
         if ($domainCreateDate && $this->invitationOne) {
             $monthsToAdd = match ($this->invitationOne->paket_undangan_id) {
@@ -29,9 +29,9 @@ class UserResource extends JsonResource
             $domainEndDate = \Carbon\Carbon::parse($domainCreateDate)->addMonths($monthsToAdd)->toDateTimeString();
         }
 
-        $userAktif = 1; // Default aktif
+        $userAktif = 1;
         if ($domainEndDate && \Carbon\Carbon::parse($domainEndDate)->isPast()) {
-            $userAktif = 0; // Jika domain_end_date sudah lewat
+            $userAktif = 0;
         }
 
         return [
@@ -50,7 +50,7 @@ class UserResource extends JsonResource
             'domain_end_date'    => $domainEndDate,
             'paket_undangan_id'  => $this->invitationOne ? $this->invitationOne->paket_undangan_id : null,
 
-            // Relasi invitations
+
             'invitations'        => $this->whenLoaded('invitation', function () {
                 return $this->invitations->map(function ($invitation) {
                     return [
@@ -59,7 +59,7 @@ class UserResource extends JsonResource
                         'created_at'     => $invitation->created_at ?? null,
                         'updated_at'     => $invitation->updated_at ?? null,
 
-                        // Relasi paket_undangan dalam invitation
+
                         'paket_undangan' => $invitation->paketUndangan ? [
                             'id'         => $invitation->paketUndangan->id ?? null,
                             'nama_paket' => $invitation->paketUndangan->nama_paket ?? null,
