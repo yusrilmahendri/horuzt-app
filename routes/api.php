@@ -188,6 +188,7 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/submission-filter', 'create');
         Route::put('/v1/user/submission-filter-update', 'update');
         Route::get('/v1/user/list-data-setting', 'index');
+        Route::delete('/v1/user/music/delete', 'deleteMusic');
     });
     Route::controller(ThemaController::class)->group(function() {
         Route::get('/v1/user/get-themas', 'index')->name('user.thema.index');

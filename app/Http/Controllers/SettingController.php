@@ -100,6 +100,34 @@ class SettingController extends Controller
         }
     }
 
+    public function deleteMusic()
+    {
+        try {
+            $user    = Auth::user();
+            $setting = Setting::where('user_id', $user->id)->first();
+
+            if (! $setting) {
+                return response()->json(['message' => 'Setting not found.'], 404);
+            }
+
+            if (! $setting->musik) {
+                return response()->json(['message' => 'No music file to delete.'], 404);
+            }
+
+            Storage::delete($setting->musik);
+
+            $setting->update(['musik' => null]);
+
+            return response()->json([
+                'message' => 'Music file deleted successfully.',
+                'setting' => $setting,
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Music deletion failed', ['error' => $e->getMessage()]);
+            return response()->json(['message' => 'Failed to delete music file.'], 500);
+        }
+    }
+
     public function getMusic(Request $request)
     {
         try {
