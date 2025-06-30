@@ -1,13 +1,13 @@
 <?php
-
 namespace App\Http\Controllers;
 
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth; // Import Auth facade
+use App\Http\Controllers\ValidationException;
+use App\Http\Resources\Acara\AcaraCollection; // Import Auth facade
+use App\Http\Resources\Acara\AcaraResource;
 use App\Models\Acara;
 use App\Models\CountdownAcara;
-use App\Http\Resources\Acara\AcaraResource;
-use App\Http\Resources\Acara\AcaraCollection;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
 
 class AcaraController extends Controller
 {
@@ -19,7 +19,7 @@ class AcaraController extends Controller
     public function index()
     {
         $userId = Auth::id();
-        
+
         $acaras = Acara::with('countdown')->where('user_id', $userId)->get();
         return new AcaraCollection(AcaraResource::collection($acaras));
     }
@@ -27,19 +27,19 @@ class AcaraController extends Controller
     public function storeCountDown(Request $request)
     {
         $validateData = $request->validate([
-            'name_countdown' => 'required'
+            'name_countdown' => 'required',
         ]);
 
-        $userId = Auth::id();        
-        $countDown = new CountdownAcara();
-        $countDown->user_id = $userId; 
+        $userId                    = Auth::id();
+        $countDown                 = new CountdownAcara();
+        $countDown->user_id        = $userId;
         $countDown->name_countdown = $validateData['name_countdown'];
         $countDown->save();
 
         if ($countDown) {
             return response()->json([
                 'name_countdown' => $countDown,
-                'message' => 'Countdown has been successfully added!'
+                'message'        => 'Countdown has been successfully added!',
             ]);
         } else {
             return response()->json([
@@ -50,19 +50,19 @@ class AcaraController extends Controller
 
     public function store(Request $request)
     {
-        $nameAcara = $request->input('nama_acara', []);
-        $tglAcara = $request->input('tanggal_acara', []);
-        $startAcara = $request->input('start_acara', []);
-        $endAcara = $request->input('end_acara', []);
+        $nameAcara   = $request->input('nama_acara', []);
+        $tglAcara    = $request->input('tanggal_acara', []);
+        $startAcara  = $request->input('start_acara', []);
+        $endAcara    = $request->input('end_acara', []);
         $alamatAcara = $request->input('alamat', []);
-        $linkAcara = $request->input('link_maps', []);
+        $linkAcara   = $request->input('link_maps', []);
 
-        $count = count($nameAcara);
-        $userId = Auth::id();
+        $count      = count($nameAcara);
+        $userId     = Auth::id();
         $savedAcara = [];
-        $countDown = CountdownAcara::where('user_id', $userId)->latest('created_at')->first();
+        $countDown  = CountdownAcara::where('user_id', $userId)->latest('created_at')->first();
 
-        if (!$countDown) {
+        if (! $countDown) {
             return response()->json([
                 'message' => 'No countdown is associated with the user. Please create a countdown first.',
             ], 400);
@@ -79,39 +79,70 @@ class AcaraController extends Controller
                 ], 400);
             }
 
-            $acara = new Acara();
-            $acara->countdown_id = $countDown->id;
-            $acara->nama_acara = $nameAcara[$i];
+            $acara                = new Acara();
+            $acara->countdown_id  = $countDown->id;
+            $acara->nama_acara    = $nameAcara[$i];
             $acara->tanggal_acara = $tglAcara[$i];
-            $acara->start_acara = $startAcara[$i];
-            $acara->end_acara = $endAcara[$i];
-            $acara->alamat = $alamatAcara[$i];
-            $acara->link_maps = $linkAcara[$i];
-            $acara->user_id = $userId; 
+            $acara->start_acara   = $startAcara[$i];
+            $acara->end_acara     = $endAcara[$i];
+            $acara->alamat        = $alamatAcara[$i];
+            $acara->link_maps     = $linkAcara[$i];
+            $acara->user_id       = $userId;
             $acara->save();
 
             $savedAcara[] = [
-                'nama_acara' => $acara->nama_acara,
+                'nama_acara'    => $acara->nama_acara,
                 'tanggal_acara' => $acara->tanggal_acara,
-                'start_acara' => $acara->start_acara,
-                'end_acara' => $acara->end_acara,
-                'alamat' => $acara->alamat,
-                'link_maps' => $acara->link_maps,
-                'countdown_id' => $acara->countdown_id,
+                'start_acara'   => $acara->start_acara,
+                'end_acara'     => $acara->end_acara,
+                'alamat'        => $acara->alamat,
+                'link_maps'     => $acara->link_maps,
+                'countdown_id'  => $acara->countdown_id,
             ];
         }
 
         return response()->json([
-            'data' => $savedAcara,
+            'data'    => $savedAcara,
             'user_id' => $userId,
             'message' => 'Acara has been successfully added!',
         ], 201);
     }
 
-public function updateCountDown(Request $request, $id)
+    public function destroy(Request $request)
+    {
+        $userId     = $request->input('user_id');
+        $namaAcara  = $request->input('nama_acara');
+
+        if (! $userId) {
+            return response()->json(['message' => 'Please provide user_id in the request body.'], 400);
+        }
+
+        // If nama_acara is provided, delete only that acara
+        if ($namaAcara) {
+            $deleted = Acara::where('user_id', $userId)
+                ->where('nama_acara', $namaAcara)
+                ->delete();
+
+            if ($deleted) {
+                return response()->json(['message' => 'Acara deleted successfully!'], 200);
+            } else {
+                return response()->json(['message' => 'No acara found with the given nama_acara for this user!'], 404);
+            }
+        }
+
+        // If nama_acara is not provided, delete all acara for the user
+        $deleted = Acara::where('user_id', $userId)->delete();
+        if ($deleted) {
+            return response()->json(['message' => 'All acara for user deleted successfully!'], 200);
+        } else {
+            return response()->json(['message' => 'No acara found for this user!'], 404);
+        }
+    }
+
+    public function updateCountDown(Request $request, $id)
     {
         $countDown = CountdownAcara::find($id);
-        if (!$countDown) {
+        if (! $countDown) {
             return response()->json(['message' => 'Countdown not found!'], 404);
         }
 
@@ -126,19 +157,19 @@ public function updateCountDown(Request $request, $id)
         }
         return response()->json(['message' => 'Failed to update countdown!'], 400);
     }
- 
+
     public function updateAcara(Request $request)
     {
         try {
             $validated = $request->validate([
-                'data' => 'required|array',
-                'data.*.id' => 'required|integer|exists:acaras,id', // Updated table name if needed
-                'data.*.nama_acara' => 'required|string',
+                'data'                 => 'required|array',
+                'data.*.id'            => 'required|integer|exists:acaras,id', // Updated table name if needed
+                'data.*.nama_acara'    => 'required|string',
                 'data.*.tanggal_acara' => 'required|date',
-                'data.*.start_acara' => 'required|string',
-                'data.*.end_acara' => 'required|string',
-                'data.*.alamat' => 'required|string',
-                'data.*.link_maps' => 'required|string',
+                'data.*.start_acara'   => 'required|string',
+                'data.*.end_acara'     => 'required|string',
+                'data.*.alamat'        => 'required|string',
+                'data.*.link_maps'     => 'required|string',
             ]);
 
             $updatedRecords = [];
@@ -152,25 +183,21 @@ public function updateCountDown(Request $request, $id)
             }
 
             return response()->json([
-                'data' => $updatedRecords,
+                'data'    => $updatedRecords,
                 'message' => 'Acara records have been successfully updated!',
             ], 200);
 
         } catch (ValidationException $e) {
             return response()->json([
                 'message' => 'Validation failed.',
-                'errors' => $e->errors(),
+                'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'An error occurred while updating the Acara records.',
-                'error' => $e->getMessage(),
+                'error'   => $e->getMessage(),
             ], 500);
         }
     }
-
-
-
-
 
 }

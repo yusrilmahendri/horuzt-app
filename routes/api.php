@@ -168,6 +168,7 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/submission-acara', 'store');
         Route::put('/v1/user/update-countdown/{id}', 'updateCountDown');
         Route::put('/v1/user/update-acara', 'updateAcara');
+        Route::delete('/v1/user/delete-countdown', 'destroy');
     });
 
     Route::controller(MempelaiController::class)->group(function () {
