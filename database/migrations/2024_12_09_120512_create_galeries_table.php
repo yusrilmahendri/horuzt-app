@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->unsignedBigInteger('user_id');
             $table->string('photo')->nullable();
+            $table->string('url_video')->nullable();
             $table->boolean('status')->nullable();
             $table->timestamps();
             $table->foreign('user_id')->references('id')->on('users');
