@@ -6,8 +6,10 @@ use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\BankController;
 use App\Http\Controllers\BukuTamuController;
+use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CeritaController;
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\JenisThemaController;
@@ -25,7 +27,9 @@ use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\ThemaController;
+use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
+use App\Http\Controllers\WeddingProfileController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -43,6 +47,28 @@ Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
+
+// Public Ucapan (Wedding Wishes & Attendance) endpoints
+Route::controller(UcapanController::class)->group(function () {
+    Route::get('/v1/ucapan', 'index');
+    Route::post('/v1/ucapan', 'store');
+    Route::get('/v1/ucapan/{id}', 'show');
+    Route::delete('/v1/ucapan/{id}', 'destroy');
+    Route::get('/v1/ucapan-statistics', 'statistics');
+});
+
+// Public Wedding Profile endpoints (for viewing wedding invitations)
+Route::get('/v1/wedding-profile/public', [WeddingProfileController::class, 'publicProfile']);
+Route::get('/v1/wedding-profile/couple/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
+
+// Public Attendance endpoints (for wedding attendance confirmation)
+Route::controller(AttendanceController::class)->group(function () {
+    Route::post('/v1/attendance', 'store');
+    Route::delete('/v1/attendance/{id}', 'destroy');
+    Route::delete('/v1/attendance/user/{user_id}/all', 'destroyAllByUser');
+    Route::get('/v1/attendance/stats/{user_id}', 'statistics');
+    Route::get('/v1/attendance/user/{user_id}', 'getByUser');
+});
 
 Route::controller(InvitationController::class)->group(function () {
     Route::get('/v1/master-tagihan', 'masterTagihan');
@@ -85,6 +111,7 @@ Route::group(['middleware' => ['role:admin']], function () {
         Route::post('/v1/admin/send-rekening', 'store');
         Route::get('/v1/admin/get-rekening', 'index');
         Route::put('/v1/admin/update-rekening', 'update');
+        Route::delete('/v1/admin/delete-rekening/{id}', 'destroy');
     });
 
     Route::controller(UserController::class)->group(function () {
@@ -127,7 +154,7 @@ Route::group(['middleware' => ['role:admin']], function () {
     });
 });
 
-Route::group(['middleware' => ['role:user']], function () {
+Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(PaketController::class)->group(function () {
         Route::get('/v1/user/paket-nikah', 'index');
     });
@@ -139,6 +166,7 @@ Route::group(['middleware' => ['role:user']], function () {
         Route::post('/v1/user/send-rekening', 'store');
         Route::get('/v1/user/get-rekening', 'index');
         Route::put('/v1/user/update-rekening', 'update');
+        Route::delete('/v1/user/delete-rekening/{id}', 'destroy');
     });
     Route::controller(BukuTamuController::class)->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
@@ -152,15 +180,23 @@ Route::group(['middleware' => ['role:user']], function () {
     });
     Route::controller(CeritaController::class)->group(function () {
         Route::post('/v1/user/send-cerita', 'store');
+        Route::get('/v1/user/list-cerita', 'index');
+        Route::put('/v1/user/update-cerita', 'update');
+        Route::delete('/v1/user/delete-cerita', 'destroy');
     });
     Route::controller(QouteController::class)->group(function () {
         Route::post('/v1/user/send-qoute', 'store');
+        Route::get('/v1/user/list-qoute', 'index');
+        Route::put('/v1/user/update-qoute', 'update');
+        Route::delete('/v1/user/delete-qoute', 'destroy');
     });
     Route::controller(TestimoniController::class)->group(function () {
         Route::post('/v1/user/post-testimoni', 'store')->name('testimoni.store');
     });
     Route::controller(GaleryController::class)->group(function () {
         Route::post('/v1/user/submission-galery', 'store');
+        Route::get('/v1/user/list-galery', 'index');
+        Route::delete('/v1/user/delete-galery', 'destroy');
     });
     Route::controller(AcaraController::class)->group(function () {
         Route::get('/v1/user/acara', 'index');
@@ -199,5 +235,24 @@ Route::group(['middleware' => ['role:user']], function () {
     });
     Route::controller(ResultThemaController::class)->group(function () {
         Route::get('/v1/user/result-themas', 'index')->name('user.result.index');
+    });
+
+    // Wedding Profile endpoints (Core wedding data aggregation)
+    Route::controller(WeddingProfileController::class)->group(function () {
+        Route::get('/v1/user/wedding-profile', 'show');
+        Route::get('/v1/user/wedding-profile/statistics', 'statistics');
+    });
+
+    // Dashboard Analytics endpoints (Wedding statistics & metrics)
+    Route::controller(DashboardController::class)->group(function () {
+        Route::get('/v1/dashboard/overview/{user_id}', 'overview')
+            ->where('user_id', '[0-9]+')
+            ->name('dashboard.overview');
+        Route::get('/v1/dashboard/trends/{user_id}', 'trends')
+            ->where('user_id', '[0-9]+')
+            ->name('dashboard.trends');
+        Route::get('/v1/dashboard/messages/{user_id}', 'messages')
+            ->where('user_id', '[0-9]+')
+            ->name('dashboard.messages');
     });
 });

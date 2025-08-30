@@ -8,9 +8,21 @@ use Illuminate\Database\Eloquent\Model;
 class Ucapan extends Model
 {
     use HasFactory;
-    protected $gaurded = [''];
 
-    public function user(){
+    protected $fillable = [
+        'user_id',
+        'nama',
+        'kehadiran',
+        'pesan'
+    ];
+
+    protected $casts = [
+        'created_at' => 'datetime',
+        'updated_at' => 'datetime'
+    ];
+
+    public function user()
+    {
         return $this->belongsTo(User::class);
     }
 }

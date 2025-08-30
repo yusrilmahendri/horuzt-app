@@ -1,0 +1,84 @@
+{
+  "index": {
+    "method": "GET",
+    "url": "/api/rekenings",
+    "response": {
+      "data": [
+        {
+          "kode_bank": "123",
+          "nomor_rekening": "456789",
+          "nama_pemilik": "John Doe",
+          "photo_rek": "http://example.com/storage/photos/photo1.jpg"
+        },
+        {
+          "kode_bank": "456",
+          "nomor_rekening": "987654",
+          "nama_pemilik": "Jane Doe",
+          "photo_rek": "http://example.com/storage/photos/photo2.jpg"
+        }
+      ],
+      "message": "Rekenings retrieved successfully!"
+    }
+  },
+  "store": {
+    "method": "POST",
+    "url": "/api/rekenings",
+    "request": {
+      "kode_bank": ["123", "456"],
+      "nomor_rekening": ["456789", "987654"],
+      "nama_pemilik": ["John Doe", "Jane Doe"],
+      "photo_rek": [
+        "file1.jpg",
+        "file2.jpg"
+      ]
+    },
+    "response": {
+      "data": [
+        {
+          "kode_bank": "123",
+          "nomor_rekening": "456789",
+          "nama_pemilik": "John Doe",
+          "photo_rek": "http://example.com/storage/photos/photo1.jpg"
+        },
+        {
+          "kode_bank": "456",
+          "nomor_rekening": "987654",
+          "nama_pemilik": "Jane Doe",
+          "photo_rek": "http://example.com/storage/photos/photo2.jpg"
+        }
+      ],
+      "message": "Rekenings have been successfully added!"
+    }
+  },
+  "update": {
+    "method": "PUT",
+    "url": "/api/rekenings",
+    "request": {
+      "rekenings": [
+        {
+          "id": 1,
+          "kode_bank": "123",
+          "nomor_rekening": "456789",
+          "nama_pemilik": "John Doe",
+          "photo_rek": "file1_updated.jpg"
+        }
+      ]
+    },
+    "response": {
+      "data": {
+        "kode_bank": "123",
+        "nomor_rekening": "456789",
+        "nama_pemilik": "John Doe",
+        "photo_rek": "http://example.com/storage/photos/photo1_updated.jpg"
+      },
+      "message": "Rekenings updated successfully!"
+    }
+  },
+  "destroy": {
+    "method": "DELETE",
+    "url": "/api/rekenings/{id}",
+    "response": {
+      "message": "Rekening deleted successfully."
+    }
+  }
+}

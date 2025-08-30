@@ -1,0 +1,555 @@
+{
+  "api_documentation": {
+    "title": "Wedding Attendance API Documentation",
+    "version": "1.0.0",
+    "base_url": "http://127.0.0.1:8000/api",
+    "description": "Public API endpoints for wedding attendance confirmation and management",
+    "authentication": "None (Public endpoints)",
+    "content_type": "application/json",
+    "endpoints": {
+      "store_attendance": {
+        "method": "POST",
+        "url": "/v1/attendance",
+        "description": "Submit wedding attendance confirmation",
+        "authentication": "Not required",
+        "request": {
+          "headers": {
+            "Content-Type": "application/json",
+            "Accept": "application/json"
+          },
+          "body": {
+            "user_id": {
+              "type": "integer",
+              "required": true,
+              "description": "Wedding owner's user ID",
+              "example": 4
+            },
+            "nama": {
+              "type": "string",
+              "required": true,
+              "max_length": 255,
+              "description": "Guest name",
+              "example": "John Doe"
+            },
+            "kehadiran": {
+              "type": "string",
+              "required": true,
+              "enum": ["hadir", "tidak_hadir", "mungkin"],
+              "description": "Attendance status",
+              "example": "hadir"
+            },
+            "pesan": {
+              "type": "string",
+              "required": true,
+              "max_length": 1000,
+              "description": "Wedding wishes message",
+              "example": "Selamat menempuh hidup baru! Semoga bahagia selalu."
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Attendance successfully saved",
+            "example": {
+              "message": "Konfirmasi kehadiran berhasil disimpan!",
+              "data": {
+                "id": 15,
+                "user_id": 4,
+                "nama": "John Doe",
+                "kehadiran": "hadir",
+                "pesan": "Selamat menempuh hidup baru! Semoga bahagia selalu.",
+                "created_at": "2025-08-30 10:30:45"
+              }
+            }
+          },
+          "422": {
+            "description": "Validation error",
+            "example": {
+              "message": "Data yang dikirim tidak valid.",
+              "errors": {
+                "user_id": ["User ID wajib diisi."],
+                "nama": ["Nama wajib diisi."],
+                "kehadiran": ["Status kehadiran harus: hadir, tidak_hadir, atau mungkin."],
+                "pesan": ["Ucapan wajib diisi."]
+              }
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "example": {
+              "message": "Gagal menyimpan konfirmasi kehadiran.",
+              "error": "Internal server error"
+            }
+          }
+        },
+        "example_request": {
+          "curl": "curl -X POST http://127.0.0.1:8000/api/v1/attendance \\\n  -H \"Content-Type: application/json\" \\\n  -H \"Accept: application/json\" \\\n  -d '{\n    \"user_id\": 4,\n    \"nama\": \"John Doe\",\n    \"kehadiran\": \"hadir\",\n    \"pesan\": \"Selamat menempuh hidup baru! Semoga bahagia selalu.\"\n  }'",
+          "javascript": "const response = await fetch('http://127.0.0.1:8000/api/v1/attendance', {\n  method: 'POST',\n  headers: {\n    'Content-Type': 'application/json',\n    'Accept': 'application/json'\n  },\n  body: JSON.stringify({\n    user_id: 4,\n    nama: 'John Doe',\n    kehadiran: 'hadir',\n    pesan: 'Selamat menempuh hidup baru! Semoga bahagia selalu.'\n  })\n});\nconst data = await response.json();"
+        }
+      },
+      "delete_attendance": {
+        "method": "DELETE",
+        "url": "/v1/attendance/{id}",
+        "description": "Delete single attendance record",
+        "authentication": "Not required",
+        "parameters": {
+          "id": {
+            "type": "integer",
+            "required": true,
+            "location": "path",
+            "description": "Attendance record ID",
+            "example": 15
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Attendance successfully deleted",
+            "example": {
+              "message": "Konfirmasi kehadiran berhasil dihapus."
+            }
+          },
+          "404": {
+            "description": "Attendance not found",
+            "example": {
+              "message": "Data konfirmasi kehadiran tidak ditemukan."
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "example": {
+              "message": "Gagal menghapus konfirmasi kehadiran.",
+              "error": "Internal server error"
+            }
+          }
+        },
+        "example_request": {
+          "curl": "curl -X DELETE http://127.0.0.1:8000/api/v1/attendance/15 \\\n  -H \"Accept: application/json\"",
+          "javascript": "const response = await fetch('http://127.0.0.1:8000/api/v1/attendance/15', {\n  method: 'DELETE',\n  headers: {\n    'Accept': 'application/json'\n  }\n});\nconst data = await response.json();"
+        }
+      },
+      "delete_all_by_user": {
+        "method": "DELETE",
+        "url": "/v1/attendance/user/{user_id}/all",
+        "description": "Delete all attendance records for specific wedding",
+        "authentication": "Not required",
+        "parameters": {
+          "user_id": {
+            "type": "integer",
+            "required": true,
+            "location": "path",
+            "description": "Wedding owner's user ID",
+            "example": 4
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "All attendance records successfully deleted",
+            "example": {
+              "message": "Berhasil menghapus 12 konfirmasi kehadiran untuk wedding John Wedding.",
+              "deleted_count": 12
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "example": {
+              "message": "User tidak ditemukan."
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "example": {
+              "message": "Gagal menghapus konfirmasi kehadiran.",
+              "error": "Internal server error"
+            }
+          }
+        },
+        "example_request": {
+          "curl": "curl -X DELETE http://127.0.0.1:8000/api/v1/attendance/user/4/all \\\n  -H \"Accept: application/json\"",
+          "javascript": "const response = await fetch('http://127.0.0.1:8000/api/v1/attendance/user/4/all', {\n  method: 'DELETE',\n  headers: {\n    'Accept': 'application/json'\n  }\n});\nconst data = await response.json();"
+        }
+      },
+      "get_statistics": {
+        "method": "GET",
+        "url": "/v1/attendance/stats/{user_id}",
+        "description": "Get attendance statistics for specific wedding",
+        "authentication": "Not required",
+        "parameters": {
+          "user_id": {
+            "type": "integer",
+            "required": true,
+            "location": "path",
+            "description": "Wedding owner's user ID",
+            "example": 4
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Attendance statistics retrieved successfully",
+            "example": {
+              "data": {
+                "user_id": 4,
+                "wedding_owner": "John Wedding",
+                "total_responses": 25,
+                "hadir": 18,
+                "tidak_hadir": 5,
+                "mungkin": 2,
+                "response_rate": {
+                  "hadir_percentage": 72.0,
+                  "tidak_hadir_percentage": 20.0,
+                  "mungkin_percentage": 8.0
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "example": {
+              "message": "User tidak ditemukan."
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "example": {
+              "message": "Gagal mengambil statistik kehadiran.",
+              "error": "Internal server error"
+            }
+          }
+        },
+        "example_request": {
+          "curl": "curl -X GET http://127.0.0.1:8000/api/v1/attendance/stats/4 \\\n  -H \"Accept: application/json\"",
+          "javascript": "const response = await fetch('http://127.0.0.1:8000/api/v1/attendance/stats/4', {\n  headers: {\n    'Accept': 'application/json'\n  }\n});\nconst data = await response.json();"
+        }
+      },
+      "get_by_user": {
+        "method": "GET",
+        "url": "/v1/attendance/user/{user_id}",
+        "description": "Get all attendance records for specific wedding",
+        "authentication": "Not required",
+        "parameters": {
+          "user_id": {
+            "type": "integer",
+            "required": true,
+            "location": "path",
+            "description": "Wedding owner's user ID",
+            "example": 4
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Attendance records retrieved successfully",
+            "example": {
+              "data": {
+                "user_id": 4,
+                "wedding_owner": "John Wedding",
+                "total_responses": 3,
+                "attendances": [
+                  {
+                    "id": 15,
+                    "nama": "John Doe",
+                    "kehadiran": "hadir",
+                    "pesan": "Selamat menempuh hidup baru! Semoga bahagia selalu.",
+                    "created_at": "2025-08-30 10:30:45"
+                  },
+                  {
+                    "id": 14,
+                    "nama": "Jane Smith",
+                    "kehadiran": "tidak_hadir",
+                    "pesan": "Maaf tidak bisa hadir, tapi selamat ya!",
+                    "created_at": "2025-08-30 09:15:30"
+                  },
+                  {
+                    "id": 13,
+                    "nama": "Bob Wilson",
+                    "kehadiran": "mungkin",
+                    "pesan": "Akan diusahakan hadir. Selamat!",
+                    "created_at": "2025-08-30 08:45:12"
+                  }
+                ]
+              }
+            }
+          },
+          "404": {
+            "description": "User not found",
+            "example": {
+              "message": "User tidak ditemukan."
+            }
+          },
+          "500": {
+            "description": "Server error",
+            "example": {
+              "message": "Gagal mengambil data kehadiran.",
+              "error": "Internal server error"
+            }
+          }
+        },
+        "example_request": {
+          "curl": "curl -X GET http://127.0.0.1:8000/api/v1/attendance/user/4 \\\n  -H \"Accept: application/json\"",
+          "javascript": "const response = await fetch('http://127.0.0.1:8000/api/v1/attendance/user/4', {\n  headers: {\n    'Accept': 'application/json'\n  }\n});\nconst data = await response.json();"
+        }
+      }
+    },
+    "data_types": {
+      "kehadiran_enum": {
+        "description": "Attendance status options",
+        "values": {
+          "hadir": "Will attend",
+          "tidak_hadir": "Will not attend",
+          "mungkin": "Maybe will attend"
+        }
+      }
+    },
+    "error_handling": {
+      "common_errors": {
+        "400": "Bad Request - Invalid request format",
+        "404": "Not Found - Resource not found",
+        "422": "Unprocessable Entity - Validation failed",
+        "500": "Internal Server Error - Server error"
+      },
+      "validation_rules": {
+        "user_id": "Must be integer and exist in users table",
+        "nama": "Required string, max 255 characters",
+        "kehadiran": "Required, must be one of: hadir, tidak_hadir, mungkin",
+        "pesan": "Required string, max 1000 characters"
+      }
+    },
+    "usage_examples": {
+      "frontend_form_submission": {
+        "html": "<!-- HTML Form -->\n<form id=\"attendanceForm\">\n  <input type=\"hidden\" id=\"user_id\" value=\"4\">\n  <input type=\"text\" id=\"nama\" placeholder=\"Nama Lengkap\" required>\n  <select id=\"kehadiran\" required>\n    <option value=\"\">Pilih Kehadiran</option>\n    <option value=\"hadir\">Akan Hadir</option>\n    <option value=\"tidak_hadir\">Tidak Hadir</option>\n    <option value=\"mungkin\">Mungkin Hadir</option>\n  </select>\n  <textarea id=\"pesan\" placeholder=\"Ucapan\" required></textarea>\n  <button type=\"submit\">Kirim Konfirmasi</button>\n</form>",
+        "javascript": "// JavaScript Form Handler\ndocument.getElementById('attendanceForm').addEventListener('submit', async function(e) {\n  e.preventDefault();\n  \n  const formData = {\n    user_id: parseInt(document.getElementById('user_id').value),\n    nama: document.getElementById('nama').value,\n    kehadiran: document.getElementById('kehadiran').value,\n    pesan: document.getElementById('pesan').value\n  };\n  \n  try {\n    const response = await fetch('/api/v1/attendance', {\n      method: 'POST',\n      headers: {\n        'Content-Type': 'application/json',\n        'Accept': 'application/json'\n      },\n      body: JSON.stringify(formData)\n    });\n    \n    const result = await response.json();\n    \n    if (response.ok) {\n      alert('Konfirmasi kehadiran berhasil dikirim!');\n      // Reset form or redirect\n    } else {\n      console.error('Error:', result);\n      alert('Terjadi kesalahan: ' + result.message);\n    }\n  } catch (error) {\n    console.error('Network error:', error);\n    alert('Terjadi kesalahan jaringan');\n  }\n});"
+      },
+      "react_component": {
+        "description": "React component example for attendance form",
+        "code": "import React, { useState } from 'react';\n\nconst AttendanceForm = ({ userId }) => {\n  const [formData, setFormData] = useState({\n    nama: '',\n    kehadiran: '',\n    pesan: ''\n  });\n  const [loading, setLoading] = useState(false);\n\n  const handleSubmit = async (e) => {\n    e.preventDefault();\n    setLoading(true);\n\n    try {\n      const response = await fetch('/api/v1/attendance', {\n        method: 'POST',\n        headers: {\n          'Content-Type': 'application/json',\n          'Accept': 'application/json'\n        },\n        body: JSON.stringify({\n          user_id: userId,\n          ...formData\n        })\n      });\n\n      const result = await response.json();\n\n      if (response.ok) {\n        alert('Konfirmasi kehadiran berhasil dikirim!');\n        setFormData({ nama: '', kehadiran: '', pesan: '' });\n      } else {\n        alert('Error: ' + result.message);\n      }\n    } catch (error) {\n      alert('Network error');\n    } finally {\n      setLoading(false);\n    }\n  };\n\n  return (\n    <form onSubmit={handleSubmit}>\n      <input\n        type=\"text\"\n        placeholder=\"Nama Lengkap\"\n        value={formData.nama}\n        onChange={(e) => setFormData({...formData, nama: e.target.value})}\n        required\n      />\n      <select\n        value={formData.kehadiran}\n        onChange={(e) => setFormData({...formData, kehadiran: e.target.value})}\n        required\n      >\n        <option value=\"\">Pilih Kehadiran</option>\n        <option value=\"hadir\">Akan Hadir</option>\n        <option value=\"tidak_hadir\">Tidak Hadir</option>\n        <option value=\"mungkin\">Mungkin Hadir</option>\n      </select>\n      <textarea\n        placeholder=\"Ucapan\"\n        value={formData.pesan}\n        onChange={(e) => setFormData({...formData, pesan: e.target.value})}\n        required\n      />\n      <button type=\"submit\" disabled={loading}>\n        {loading ? 'Mengirim...' : 'Kirim Konfirmasi'}\n      </button>\n    </form>\n  );\n};\n\nexport default AttendanceForm;"
+      }
+    },
+    "notes": {
+      "security": "These are public endpoints and don't require authentication",
+      "rate_limiting": "Consider implementing rate limiting in production",
+      "cors": "Ensure CORS is properly configured for frontend domains",
+      "validation": "All input is validated server-side for security"
+    }
+  }
+}
+
+
+
+Wedding Data from API: {
+  "user_info": {
+    "id": 4,
+    "name": null,
+    "email": "asnam2@gmail.com",
+    "phone": "375423432423",
+    "kode_pemesanan": "#8029075475"
+  },
+  "mempelai": {
+    "id": 1,
+    "cover_photo": "http://127.0.0.1:8000/storage/photos/PNB1yKfKDUcMzD236fcuamuQJIThKPvYxlS1cXlg.png",
+    "urutan_mempelai": null,
+    "pria": {
+      "photo": "http://127.0.0.1:8000/storage/photos/rtzvVTW5aELzgF4DgxVO9uZIzTafzICeXSh4ZFLA.png",
+      "nama_lengkap": "anton prima",
+      "nama_panggilan": "anton",
+      "ayah": "budal",
+      "ibu": "budel"
+    },
+    "wanita": {
+      "photo": "http://127.0.0.1:8000/storage/photos/vYc6JJW4VKOWkpOwThSQirQFfOouLWbZVVnkWJbj.png",
+      "nama_lengkap": "ana",
+      "nama_panggilan": "keok",
+      "ayah": "wewewewewe",
+      "ibu": "skcmkscksc"
+    },
+    "status": "Sudah Bayar",
+    "kd_status": "SB"
+  },
+  "invitation_package": {
+    "id": 1,
+    "status": "step3",
+    "paket_undangan": {
+      "id": 3,
+      "jenis_paket": "Paket 3",
+      "name_paket": "Paket Platinum",
+      "price": "299000.00",
+      "masa_aktif": 90,
+      "features": {
+        "halaman_buku": 200,
+        "kirim_wa": 1,
+        "bebas_pilih_tema": 1,
+        "kirim_hadiah": 1,
+        "import_data": 1
+      }
+    }
+  },
+  "events": [
+    {
+      "id": 1,
+      "nama_acara": "mega",
+      "tanggal_acara": "2025-08-26",
+      "start_acara": "11:11",
+      "end_acara": "12:12",
+      "alamat": "koko",
+      "link_maps": "https://d",
+      "countdown": null
+    }
+  ],
+  "stories": [
+    {
+      "id": 4,
+      "title": "sdasdsadsdasdasdad",
+      "lead_cerita": "asdasdasdasdaadadada",
+      "tanggal_cerita": "2025-01-25",
+      "created_at": "2025-08-08 09:10:25"
+    },
+    {
+      "id": 5,
+      "title": "asdsadad",
+      "lead_cerita": "sadadasd",
+      "tanggal_cerita": "2025-08-13",
+      "created_at": "2025-08-08 09:10:25"
+    }
+  ],
+  "quotes": [
+    {
+      "id": 5,
+      "name": "dasdasdasd",
+      "qoute": "sdasdsa",
+      "created_at": "2025-08-08 09:10:32"
+    }
+  ],
+  "gallery": [
+    {
+      "id": 6,
+      "photo": "http://127.0.0.1:8000/storage/photos/9VtSyrhD5kYBaZTiAn8mnC5Y4VFFg3Z9EeDLUBJH.png",
+      "url_video": "https://kokoko",
+      "nama_foto": "Ubah pelatih.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:06:32"
+    },
+    {
+      "id": 7,
+      "photo": "http://127.0.0.1:8000/storage/photos/zalesOQLP0gwff4PGo7P7S9hDsPvz4XFCtCCBWrs.png",
+      "url_video": "https://koekbinmodhar",
+      "nama_foto": "Tambah pelatih.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:08:21"
+    },
+    {
+      "id": 8,
+      "photo": "http://127.0.0.1:8000/storage/photos/R2y3lMRgkzdcpWbGpmYV7AKjPITtg64BLDQ8UMxY.png",
+      "url_video": "https://dskdsdmdm",
+      "nama_foto": "Tambah pelatih.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:10:02"
+    },
+    {
+      "id": 9,
+      "photo": "http://127.0.0.1:8000/storage/photos/nhufcGZDLv55oU8gTrTAiXb4BHM85vwtTQA8IO6q.png",
+      "url_video": "https://dskdsdmdm",
+      "nama_foto": "Tambah pelatih.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:10:46"
+    },
+    {
+      "id": 10,
+      "photo": "http://127.0.0.1:8000/storage/photos/POnd21x64BWHuDGCkrcw9l95zEibtKqZYZm0aGI9.png",
+      "url_video": "https://dskdsdmdm",
+      "nama_foto": "Screenshot 2025-08-07 at 10.35.48.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:13:10"
+    },
+    {
+      "id": 11,
+      "photo": "http://127.0.0.1:8000/storage/photos/WSZip2ZmvgK1tx955JIqGhJ51PejXXGzD7ikXpaS.png",
+      "url_video": "https://dskdsdmdm",
+      "nama_foto": "Screenshot 2025-08-07 at 10.35.48.png",
+      "status": 1,
+      "created_at": "2025-08-08 08:13:21"
+    }
+  ],
+  "bank_accounts": [
+    {
+      "id": 12,
+      "kode_bank": "37",
+      "nomor_rekening": "99999999",
+      "nama_bank": "BANK ARTHA GRAHA INTERNASIONAL",
+      "nama_pemilik": "Rahmanisa",
+      "methode_pembayaran": "Manual",
+      "photo_rek": null,
+      "bank": {
+        "id": 37,
+        "name": "BANK KEPPEL TATLEE BUANA",
+        "kode_bank": "053"
+      }
+    },
+    {
+      "id": 13,
+      "kode_bank": "009",
+      "nomor_rekening": "24131212",
+      "nama_bank": "BANK BNI",
+      "nama_pemilik": "aaaan",
+      "methode_pembayaran": "Manual",
+      "photo_rek": null,
+      "bank": null
+    }
+  ],
+  "settings": {
+    "id": 2,
+    "domain": "asnamubahdomainlagi",
+    "musik": "http://127.0.0.1:8000/storage/public/music/1756536991_file_example_MP3_700KB.mp3",
+    "salam_pembuka": "Assalamu'alaikum Warahmatullahi Wabarakatuh.\r\n\r\nDengan memohon Rahmat dan Ridho Allah SWT, Kami akan menyelenggarakan resepsi pernikahan Putra-Putri kami",
+    "salam_atas": "Assalamualaikum Wr Wb.\r\nDengan segala kerendahan hati dan syukur atas Karunia Allah SWT.\r\nKami bermaksud mengundang Bapak/Ibu/Saudara/i, teman sekaligus sahabat, untuk menghadiri acara pernikahan kami :",
+    "salam_bawah": "Assalamualaikum Wr Wb.\r\nDengan segala kerendahan hati dan syukur atas Karunia Allah SWT.\r\nKami bermaksud mengundang Bapak/Ibu/Saudara/i, teman sekaligus sahabat, untuk menghadiri acara pernikahan kami :"
+  },
+  "filter_undangan": {
+    "id": 2,
+    "halaman_sampul": 0,
+    "halaman_mempelai": 0,
+    "halaman_acara": 0,
+    "halaman_ucapan": 1,
+    "halaman_galery": 0,
+    "halaman_cerita": 0,
+    "halaman_lokasi": 1,
+    "halaman_prokes": 0,
+    "halaman_send_gift": 0,
+    "halaman_qoute": 1
+  },
+  "guest_wishes": [
+    {
+      "id": 2,
+      "nama": "Ahmad Rizki Pratama",
+      "kehadiran": "hadir",
+      "pesan": "Selamat menempuh hidup baru! Semoga menjadi keluarga yang sakinah, mawaddah, warahmah.",
+      "created_at": "2025-08-29 03:14:50"
+    }
+  ],
+  "guest_book": [],
+  "testimonials": [
+    {
+      "id": 2,
+      "kota": "tes",
+      "provinsi": "tes",
+      "ulasan": "tes",
+      "status": 0,
+      "created_at": "2025-08-27 05:33:34"
+    },
+    {
+      "id": 3,
+      "kota": "test",
+      "provinsi": "tes",
+      "ulasan": "ess",
+      "status": 0,
+      "created_at": "2025-08-27 13:40:21"
+    }
+  ],
+  "themes": [],
+  "metadata": {
+    "profile_created_at": "2025-08-08 06:49:24",
+    "profile_updated_at": "2025-08-08 06:49:24",
+    "total_events": 1,
+    "total_stories": 2,
+    "total_quotes": 1,
+    "total_gallery_items": 6,
+    "total_guest_wishes": 1,
+    "is_public_view": true
+  }
+}

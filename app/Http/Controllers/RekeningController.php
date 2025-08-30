@@ -28,6 +28,16 @@ class RekeningController extends Controller
     public function store(Request $request)
     {
         try {
+            $userId = Auth::id();
+            // Cek jumlah rekening user sebelum menambah
+            $existingCount = Rekening::where('user_id', $userId)->count();
+            $requestedCount = is_array($request->input('kode_bank')) ? count($request->input('kode_bank')) : 0;
+            if ($existingCount + $requestedCount > 2) {
+                return response()->json([
+                    'message' => 'User tidak boleh memiliki lebih dari 2 rekening.',
+                ], 422);
+            }
+
             $validated = $request->validate([
                 'kode_bank'        => 'required|array',
                 'kode_bank.*'      => 'required|string',
@@ -45,9 +55,7 @@ class RekeningController extends Controller
             $userEmail           = Auth::user()->email;
             $idMethodePembayaran = MetodeTransaction::pluck('id')->first();
             $methodePembayaran   = MetodeTransaction::pluck('name')->first();
-            $namaBank            = Bank::where('kode_bank', $validated['kode_bank'])->pluck('name')->first();
             $savedRekenings      = [];
-
 
             for ($i = 0; $i < $count; $i++) {
                 $rekening                        = new Rekening();
@@ -55,12 +63,18 @@ class RekeningController extends Controller
                 $rekening->email                 = $userEmail;
                 $rekening->methode_pembayaran    = $methodePembayaran;
                 $rekening->id_methode_pembayaran = $idMethodePembayaran;
+                // Ambil nama bank sesuai kode_bank per rekening
+                $namaBank = Bank::where('kode_bank', $validated['kode_bank'][$i])->pluck('name')->first();
                 $rekening->nama_bank             = $namaBank;
                 $rekening->kode_bank             = $validated['kode_bank'][$i];
                 $rekening->nomor_rekening        = $validated['nomor_rekening'][$i];
                 $rekening->nama_pemilik          = $validated['nama_pemilik'][$i];
 
-                if ($validated['photo_rek'][$i]->isValid()) {
+                if (
+                    isset($validated['photo_rek'][$i]) &&
+                    $validated['photo_rek'][$i] &&
+                    $validated['photo_rek'][$i]->isValid()
+                ) {
                     $photoPath           = $validated['photo_rek'][$i]->store('photos', 'public');
                     $rekening->photo_rek = $photoPath;
                 }
@@ -70,7 +84,7 @@ class RekeningController extends Controller
                     'kode_bank'      => $rekening->kode_bank,
                     'nomor_rekening' => $rekening->nomor_rekening,
                     'nama_pemilik'   => $rekening->nama_pemilik,
-                    'photo_rek'      => asset('storage/' . $rekening->photo_rek),
+                    'photo_rek'      => $rekening->photo_rek ? asset('storage/' . $rekening->photo_rek) : null,
                 ];
             }
 
@@ -149,5 +163,23 @@ class RekeningController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function destroy($id)
+    {
+        $userId = Auth::id();
+        $rekening = Rekening::where('id', $id)->where('user_id', $userId)->first();
+
+        if (!$rekening) {
+            return response()->json([
+                'message' => 'Rekening not found or does not belong to the user.',
+            ], 404);
+        }
+
+        $rekening->delete();
+
+        return response()->json([
+            'message' => 'Rekening deleted successfully.',
+        ], 200);
     }
 }

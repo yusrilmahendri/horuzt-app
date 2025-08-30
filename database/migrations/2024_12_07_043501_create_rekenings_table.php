@@ -21,9 +21,9 @@ return new class extends Migration
             $table->string('nama_pemilik');
             $table->string('methode_pembayaran');
             $table->string('id_methode_pembayaran');
-            $table->binary('photo_rek')->nullable();
+            $table->string('photo_rek')->nullable(); // Ubah dari binary ke string
             $table->timestamps();
-            $table->foreign('user_id')->references('id')->on('users');
+            $table->foreign('user_id')->references('id')->on('users')->onDelete('cascade');
         });
     }
 

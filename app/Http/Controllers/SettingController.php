@@ -295,9 +295,12 @@ class SettingController extends Controller
 
             $filterUndangan->update($dataToUpdate);
 
+            // Ambil data terbaru setelah update
+            $filterUndangan = $filterUndangan->refresh();
+
             return response()->json([
                 'message' => 'Data filter berhasil diperbarui.',
-                'data'    => $filterUndangan->fresh(),
+                'data'    => $filterUndangan,
             ], 200);
 
         } catch (\Illuminate\Validation\ValidationException $e) {

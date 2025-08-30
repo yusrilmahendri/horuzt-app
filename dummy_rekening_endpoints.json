@@ -1,0 +1,304 @@
+{
+  "rekening_endpoints_documentation": {
+    "base_url": "https://yourdomain.com/api/v1",
+    "authentication": "Bearer Token (Sanctum)",
+    "endpoints": {
+      "GET_index": "/user/get-rekening",
+      "POST_store": "/user/send-rekening", 
+      "PUT_update": "/user/update-rekening",
+      "DELETE_destroy": "/user/delete-rekening/{id}"
+    }
+  },
+
+  "GET_/api/v1/user/get-rekening": {
+    "description": "Retrieve all bank accounts for authenticated user",
+    "method": "GET",
+    "headers": {
+      "Authorization": "Bearer {access_token}",
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "success_response": {
+      "status_code": 200,
+      "data": {
+        "data": [
+          {
+            "id": 1,
+            "kode_bank": "014",
+            "email": "john.doe@example.com",
+            "bank_name": "Bank Central Asia",
+            "nomor_rekening": "1234567890",
+            "nama_pemilik": "John Doe",
+            "photo_rek": "https://yourdomain.com/storage/photos/rekening_1.jpg",
+            "created_at": "2025-01-15 10:30:45"
+          },
+          {
+            "id": 2,
+            "kode_bank": "008",
+            "email": "john.doe@example.com", 
+            "bank_name": "Bank Mandiri",
+            "nomor_rekening": "9876543210",
+            "nama_pemilik": "John Doe",
+            "photo_rek": null,
+            "created_at": "2025-01-16 14:22:33"
+          }
+        ]
+      }
+    },
+    "empty_response": {
+      "status_code": 200,
+      "data": {
+        "data": []
+      }
+    }
+  },
+
+  "POST_/api/v1/user/send-rekening": {
+    "description": "Create new bank accounts (max 2 per user)",
+    "method": "POST",
+    "headers": {
+      "Authorization": "Bearer {access_token}",
+      "Content-Type": "multipart/form-data",
+      "Accept": "application/json"
+    },
+    "request_body": {
+      "kode_bank": ["014", "008"],
+      "nomor_rekening": ["1234567890", "9876543210"],
+      "nama_pemilik": ["John Doe", "John Doe"],
+      "photo_rek": ["file1.jpg", "file2.jpg"]
+    },
+    "success_response": {
+      "status_code": 201,
+      "data": {
+        "data": [
+          {
+            "kode_bank": "014",
+            "nomor_rekening": "1234567890",
+            "nama_pemilik": "John Doe",
+            "photo_rek": "https://yourdomain.com/storage/photos/rekening_hash1.jpg"
+          },
+          {
+            "kode_bank": "008",
+            "nomor_rekening": "9876543210", 
+            "nama_pemilik": "John Doe",
+            "photo_rek": "https://yourdomain.com/storage/photos/rekening_hash2.jpg"
+          }
+        ],
+        "message": "Rekenings have been successfully added!"
+      }
+    },
+    "business_rule_error": {
+      "status_code": 422,
+      "data": {
+        "message": "User tidak boleh memiliki lebih dari 2 rekening."
+      }
+    },
+    "validation_error": {
+      "status_code": 422,
+      "data": {
+        "errors": {
+          "kode_bank.0": ["The kode_bank.0 field is required."],
+          "kode_bank.1": ["The kode_bank.1 field is required."],
+          "nomor_rekening.0": ["The nomor_rekening.0 field is required."],
+          "nama_pemilik.0": ["The nama_pemilik.0 field is required."],
+          "photo_rek.0": ["The photo_rek.0 must be an image.", "The photo_rek.0 may not be greater than 2048 kilobytes."]
+        },
+        "message": "Validation failed!"
+      }
+    }
+  },
+
+  "PUT_/api/v1/user/update-rekening": {
+    "description": "Update existing bank accounts",
+    "method": "PUT", 
+    "headers": {
+      "Authorization": "Bearer {access_token}",
+      "Content-Type": "multipart/form-data",
+      "Accept": "application/json"
+    },
+    "request_body": {
+      "rekenings": [
+        {
+          "id": 1,
+          "kode_bank": "014",
+          "nomor_rekening": "1234567890",
+          "nama_pemilik": "John Doe Updated",
+          "photo_rek": "new_file.jpg"
+        },
+        {
+          "id": 2,
+          "kode_bank": "008", 
+          "nomor_rekening": "9876543210",
+          "nama_pemilik": "John Doe",
+          "photo_rek": null
+        }
+      ]
+    },
+    "success_response_multiple": {
+      "status_code": 200,
+      "data": {
+        "data": [
+          {
+            "id": 1,
+            "kode_bank": "014",
+            "email": "john.doe@example.com",
+            "bank_name": "Bank Central Asia",
+            "nomor_rekening": "1234567890",
+            "nama_pemilik": "John Doe Updated",
+            "photo_rek": "https://yourdomain.com/storage/photos/new_rekening_hash.jpg",
+            "created_at": "2025-01-15 10:30:45"
+          },
+          {
+            "id": 2,
+            "kode_bank": "008",
+            "email": "john.doe@example.com",
+            "bank_name": "Bank Mandiri", 
+            "nomor_rekening": "9876543210",
+            "nama_pemilik": "John Doe",
+            "photo_rek": null,
+            "created_at": "2025-01-16 14:22:33"
+          }
+        ],
+        "message": "Rekenings updated successfully!"
+      }
+    },
+    "success_response_single": {
+      "status_code": 200,
+      "data": {
+        "data": {
+          "id": 1,
+          "kode_bank": "014",
+          "email": "john.doe@example.com",
+          "bank_name": "Bank Central Asia",
+          "nomor_rekening": "1234567890",
+          "nama_pemilik": "John Doe Updated",
+          "photo_rek": "https://yourdomain.com/storage/photos/updated_rekening.jpg",
+          "created_at": "2025-01-15 10:30:45"
+        },
+        "message": "Rekenings updated successfully!"
+      }
+    },
+    "not_found_error": {
+      "status_code": 404,
+      "data": {
+        "message": "Rekening ID 999 at index 0 not found or does not belong to the user."
+      }
+    },
+    "validation_error": {
+      "status_code": 422,
+      "data": {
+        "message": "Validation failed. Please check the form inputs.",
+        "errors": {
+          "rekenings.0.id": ["The rekenings.0.id field is required."],
+          "rekenings.0.kode_bank": ["The rekenings.0.kode_bank field is required."],
+          "rekenings.0.nomor_rekening": ["The rekenings.0.nomor_rekening field is required."],
+          "rekenings.0.nama_pemilik": ["The rekenings.0.nama_pemilik field is required."]
+        }
+      }
+    },
+    "server_error": {
+      "status_code": 500,
+      "data": {
+        "message": "An error occurred while updating the records.",
+        "error": "Database connection timeout"
+      }
+    }
+  },
+
+  "DELETE_/api/v1/user/delete-rekening/{id}": {
+    "description": "Delete a specific bank account",
+    "method": "DELETE",
+    "headers": {
+      "Authorization": "Bearer {access_token}",
+      "Content-Type": "application/json",
+      "Accept": "application/json"
+    },
+    "path_parameters": {
+      "id": "integer (rekening ID)"
+    },
+    "success_response": {
+      "status_code": 200,
+      "data": {
+        "message": "Rekening deleted successfully."
+      }
+    },
+    "not_found_error": {
+      "status_code": 404,
+      "data": {
+        "message": "Rekening not found or does not belong to the user."
+      }
+    }
+  },
+
+  "authentication_errors": {
+    "unauthenticated": {
+      "status_code": 401,
+      "data": {
+        "message": "Unauthenticated."
+      }
+    },
+    "token_expired": {
+      "status_code": 401,
+      "data": {
+        "message": "Token has expired."
+      }
+    }
+  },
+
+  "database_reference_data": {
+    "banks_sample": [
+      {"id": 1, "name": "Bank Central Asia", "kode_bank": "014"},
+      {"id": 2, "name": "Bank Mandiri", "kode_bank": "008"},
+      {"id": 3, "name": "Bank Negara Indonesia", "kode_bank": "009"},
+      {"id": 4, "name": "Bank Rakyat Indonesia", "kode_bank": "002"},
+      {"id": 5, "name": "Bank Tabungan Negara", "kode_bank": "200"}
+    ],
+    "metode_transactions_sample": [
+      {"id": 1, "name": "Transfer Bank"},
+      {"id": 2, "name": "E-Wallet"},
+      {"id": 3, "name": "Virtual Account"}
+    ]
+  },
+
+  "business_rules": {
+    "max_rekenings_per_user": 2,
+    "allowed_photo_formats": ["jpeg", "png", "jpg"],
+    "max_photo_size": "2048 KB",
+    "required_fields": ["kode_bank", "nomor_rekening", "nama_pemilik"],
+    "optional_fields": ["photo_rek"],
+    "auto_populated_fields": ["user_id", "email", "methode_pembayaran", "id_methode_pembayaran", "nama_bank"]
+  },
+
+  "frontend_integration_notes": {
+    "file_upload": "Use FormData for photo uploads in POST/PUT requests",
+    "array_handling": "Send arrays for multiple rekening creation",
+    "error_handling": "Check status_code and parse errors object for validation messages", 
+    "authentication": "Include Bearer token in Authorization header",
+    "photo_display": "Use the full URL from photo_rek field",
+    "bank_selection": "Fetch banks from /api/v1/all-bank endpoint first"
+  },
+
+  "testing_scenarios": {
+    "happy_path": [
+      "Create 2 rekenings with valid data",
+      "Update existing rekening",
+      "Delete a rekening",
+      "Get all rekenings"
+    ],
+    "edge_cases": [
+      "Try to create 3rd rekening (should fail)",
+      "Update non-existent rekening",
+      "Delete rekening of another user",
+      "Upload invalid file format",
+      "Send empty arrays",
+      "Missing required fields"
+    ],
+    "security_tests": [
+      "Access without authentication",
+      "Access with expired token", 
+      "Try to access other user's rekenings",
+      "SQL injection in rekening fields",
+      "File upload security (malicious files)"
+    ]
+  }
+}

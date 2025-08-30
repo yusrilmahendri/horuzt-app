@@ -7,13 +7,17 @@ use App\Models\BukuTamu;
 use App\Models\Cerita;
 use App\Models\FilterUndangan;
 use App\Models\Galery;
+use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\Order;
 use App\Models\Pernikahan;
 use App\Models\Qoute;
+use App\Models\Rekening;
 use App\Models\Setting;
 use App\Models\Testimoni;
+use App\Models\Themas;
 use App\Models\Ucapan;
+use App\Models\CountdownAcara;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -57,11 +61,6 @@ class User extends Authenticatable
         'password'          => 'hashed',
     ];
 
-    public function thema()
-    {
-        return $this->belongsToMany(Thema::class, 'result_themas');
-    }
-
     public function order()
     {
         return $this->hasMany(Order::class, 'orders');
@@ -84,7 +83,7 @@ class User extends Authenticatable
 
     public function cerita()
     {
-        return $this->hasmany(Cerita::class);
+        return $this->hasMany(Cerita::class);
     }
 
     public function qoute()
@@ -99,17 +98,22 @@ class User extends Authenticatable
 
     public function acara()
     {
-        return $this->hasmany(Acara::class);
+        return $this->hasMany(Acara::class);
     }
 
     public function ucapan()
     {
-        return $this->hasmany(Ucapan::class);
+        return $this->hasMany(Ucapan::class);
     }
 
     public function CountdownAcara()
     {
         return $this->hasMany(CountdownAcara::class);
+    }
+
+    public function rekening()
+    {
+        return $this->hasMany(Rekening::class);
     }
 
     public function mempelai()
@@ -137,6 +141,11 @@ class User extends Authenticatable
         return $this->hasMany(FilterUndangan::class);
     }
 
+    public function filterUndanganOne()
+    {
+        return $this->hasOne(FilterUndangan::class, 'user_id');
+    }
+
     public function invitation()
     {
         return $this->hasOne(Invitation::class);
@@ -145,5 +154,10 @@ class User extends Authenticatable
     public function invitationOne()
     {
         return $this->hasOne(Invitation::class, 'user_id');
+    }
+
+    public function thema()
+    {
+        return $this->belongsToMany(Themas::class, 'result_themas', 'user_id', 'thema_id');
     }
 }

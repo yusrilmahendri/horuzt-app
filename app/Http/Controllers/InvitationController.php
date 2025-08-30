@@ -214,7 +214,6 @@ class InvitationController extends Controller
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
             'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'status'  => 'nullable|string|max:255',
         ]);
 
 
@@ -232,7 +231,7 @@ class InvitationController extends Controller
             ['user_id' => $user->id],
             [
                 'photo'  => $galeryPhoto,
-                'status' => $validated['status'] ?? null,
+                'status' => 1,
             ]
         );
 
@@ -304,4 +303,5 @@ class InvitationController extends Controller
         ]);
     }
 
+}
 }

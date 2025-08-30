@@ -17,6 +17,6 @@ class Themas extends Model
     }
 
     public function user(){
-        return $this->belongsToMany(User::class, 'result_themas');
+        return $this->belongsToMany(User::class, 'result_themas', 'thema_id', 'user_id');
     }
 }
