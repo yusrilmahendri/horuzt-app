@@ -39,6 +39,7 @@ class User extends Authenticatable
         'password',
         'phone',
         'kode_pemesanan',
+        'profile_photo',
     ];
 
     /**

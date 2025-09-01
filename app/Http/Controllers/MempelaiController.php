@@ -9,6 +9,8 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Http\Resources\Mempelai\MempelaiCollection;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class MempelaiController extends Controller
 {
@@ -148,15 +150,12 @@ class MempelaiController extends Controller
     public function updateStatusBayar(Request $request)
     {
         try {
-
             $validated = $request->validate([
                 'user_id'        => 'required|exists:users,id',
                 'kode_pemesanan' => 'required|exists:users,kode_pemesanan',
             ]);
 
-
             $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
-
 
             if (!$user) {
                 return response()->json([
@@ -164,16 +163,13 @@ class MempelaiController extends Controller
                 ], 404);
             }
 
-
             if ($user->id != $validated['user_id']) {
                 return response()->json([
                     'message' => 'User ID tidak cocok dengan kode pemesanan',
                 ], 400);
             }
 
-
             $mempelai = Mempelai::where('user_id', $user->id)->first();
-
 
             if (!$mempelai) {
                 return response()->json([
@@ -181,25 +177,58 @@ class MempelaiController extends Controller
                 ], 404);
             }
 
+            // Get invitation to access package duration snapshot
+            $invitation = \App\Models\Invitation::where('user_id', $user->id)->first();
 
-            $mempelai->update([
-                'status'    => 'Sudah Bayar',
-                'kd_status' => 'SB',
-            ]);
+            if (!$invitation) {
+                return response()->json([
+                    'message' => 'Data invitation tidak ditemukan untuk user ini',
+                ], 404);
+            }
 
-            return response()->json([
-                'message'   => 'Status berhasil diperbarui',
-                'mempelai'  => $mempelai,
-            ], 200);
+            // Use database transaction for data consistency
+            return DB::transaction(function () use ($mempelai, $invitation, $user) {
+                $paymentConfirmedAt = now();
+
+                // Calculate domain expiry based on package duration snapshot
+                // This ensures users keep their original package terms even after package updates
+                $durationDays = $invitation->package_duration_snapshot ?? 30; // Default 30 days if not set
+                $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($durationDays);
+
+                // Update Mempelai payment status
+                $mempelai->update([
+                    'status'    => 'Sudah Bayar',
+                    'kd_status' => 'SB',
+                ]);
+
+                // Update Invitation with payment confirmation and domain expiry
+                $invitation->update([
+                    'payment_status' => 'paid',
+                    'payment_confirmed_at' => $paymentConfirmedAt,
+                    'domain_expires_at' => $domainExpiresAt,
+                ]);
+
+                return response()->json([
+                    'message' => 'Status berhasil diperbarui',
+                    'mempelai' => $mempelai,
+                    'invitation' => [
+                        'payment_status' => $invitation->payment_status,
+                        'payment_confirmed_at' => $invitation->payment_confirmed_at,
+                        'domain_expires_at' => $invitation->domain_expires_at,
+                        'domain_active_days' => $durationDays,
+                        'package_used' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
+                        'original_price' => $invitation->package_price_snapshot,
+                    ],
+                ], 200);
+            });
 
         } catch (\Illuminate\Validation\ValidationException $e) {
-
             return response()->json([
                 'message' => 'Validasi gagal',
                 'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-
+            Log::error('Error di updateStatusBayar: ' . $e->getMessage());
             return response()->json([
                 'message' => 'Terjadi kesalahan server',
                 'error'   => $e->getMessage(),

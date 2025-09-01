@@ -73,13 +73,11 @@ class UserController extends Controller
                 'invitationOne.paketUndangan',
             ]);
 
-
             $totalUsers = $usersQuery->count();
-
 
             $users = $usersQuery->paginate(5);
 
-
+            // Enhanced analytics for admin dashboard
             $allUsers = User::whereDoesntHave('roles', function ($query) {
                 $query->where('name', 'admin');
             })->with([
@@ -87,6 +85,7 @@ class UserController extends Controller
                 'invitationOne.paketUndangan',
             ])->get();
 
+            // Basic user status counts
             $jumlahBL = $allUsers->filter(fn($user) =>
                 $user->mempelaiOne && $user->mempelaiOne->kd_status === 'BL'
             )->count();
@@ -95,14 +94,110 @@ class UserController extends Controller
                 $user->mempelaiOne && $user->mempelaiOne->kd_status === 'MK'
             )->count();
 
+            $jumlahSB = $allUsers->filter(fn($user) =>
+                $user->mempelaiOne && $user->mempelaiOne->kd_status === 'SB'
+            )->count();
+
+            // Payment status analytics
+            $pendingPayments = $allUsers->filter(fn($user) =>
+                $user->invitationOne && $user->invitationOne->payment_status === 'pending'
+            )->count();
+
+            $paidPayments = $allUsers->filter(fn($user) =>
+                $user->invitationOne && $user->invitationOne->payment_status === 'paid'
+            )->count();
+
+            // Revenue calculations by package (using snapshot prices for accuracy)
+            $revenueByPackage = [];
+            $totalRevenue = 0;
+
+            foreach ($allUsers as $userData) {
+                if ($userData->invitationOne && $userData->invitationOne->payment_status === 'paid') {
+                    $price = $userData->invitationOne->package_price_snapshot ?? 0;
+                    $packageName = $userData->invitationOne->package_features_snapshot['name_paket'] ?? 'Unknown';
+
+                    if (!isset($revenueByPackage[$packageName])) {
+                        $revenueByPackage[$packageName] = [
+                            'count' => 0,
+                            'revenue' => 0,
+                            'package_name' => $packageName
+                        ];
+                    }
+
+                    $revenueByPackage[$packageName]['count']++;
+                    $revenueByPackage[$packageName]['revenue'] += $price;
+                    $totalRevenue += $price;
+                }
+            }
+
+            // Domain expiry analytics
+            $activeDomains = $allUsers->filter(fn($user) =>
+                $user->invitationOne &&
+                $user->invitationOne->payment_status === 'paid' &&
+                $user->invitationOne->domain_expires_at &&
+                now()->lt($user->invitationOne->domain_expires_at)
+            )->count();
+
+            $expiredDomains = $allUsers->filter(fn($user) =>
+                $user->invitationOne &&
+                $user->invitationOne->payment_status === 'paid' &&
+                $user->invitationOne->domain_expires_at &&
+                now()->gte($user->invitationOne->domain_expires_at)
+            )->count();
+
+            // Domain expiring soon (within 7 days)
+            $expiringDomains = $allUsers->filter(fn($user) =>
+                $user->invitationOne &&
+                $user->invitationOne->payment_status === 'paid' &&
+                $user->invitationOne->domain_expires_at &&
+                now()->lt($user->invitationOne->domain_expires_at) &&
+                now()->addDays(7)->gte($user->invitationOne->domain_expires_at)
+            )->count();
+
+            // Step completion analytics
+            $stepAnalytics = [
+                'step1' => $allUsers->filter(fn($user) => $user->invitationOne && $user->invitationOne->status === 'step1')->count(),
+                'step2' => $allUsers->filter(fn($user) => $user->invitationOne && $user->invitationOne->status === 'step2')->count(),
+                'step3' => $allUsers->filter(fn($user) => $user->invitationOne && $user->invitationOne->status === 'step3')->count(),
+                'step4' => $allUsers->filter(fn($user) => $user->invitationOne && $user->invitationOne->status === 'step4')->count(),
+                'completed' => $allUsers->filter(fn($user) => $user->invitationOne && $user->invitationOne->status === 'completed')->count(),
+            ];
+
             return response()->json([
-                'admin'                          => new UserCollection(collect([$user])),
-                'users'                          => new UserCollection($users),
-                'total_users'                    => $totalUsers,
+                'admin' => new UserCollection(collect([$user])),
+                'users' => new UserCollection($users),
+                'total_users' => $totalUsers,
+
+                // Legacy compatibility
                 'jumlah_belum_lunas_dan_pending' => [
                     'BL' => $jumlahBL,
                     'MK' => $jumlahMK,
                 ],
+
+                // Enhanced dashboard analytics
+                'dashboard_analytics' => [
+                    'user_status' => [
+                        'belum_lunas' => $jumlahBL,
+                        'menunggu_konfirmasi' => $jumlahMK,
+                        'sudah_bayar' => $jumlahSB,
+                        'total' => $totalUsers
+                    ],
+                    'payment_status' => [
+                        'pending' => $pendingPayments,
+                        'paid' => $paidPayments
+                    ],
+                    'revenue' => [
+                        'total' => $totalRevenue,
+                        'by_package' => array_values($revenueByPackage),
+                        'currency' => 'IDR'
+                    ],
+                    'domain_status' => [
+                        'active' => $activeDomains,
+                        'expired' => $expiredDomains,
+                        'expiring_soon' => $expiringDomains
+                    ],
+                    'step_completion' => $stepAnalytics
+                ]
             ]);
         }
 

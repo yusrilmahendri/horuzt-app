@@ -20,6 +20,7 @@ use App\Http\Controllers\PaketController;
 use App\Http\Controllers\PembayaranController;
 use App\Http\Controllers\PengunjungController;
 use App\Http\Controllers\PernikahanController;
+use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\ResultPernikahanController;
@@ -92,7 +93,16 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
 });
 
-Route::group(['middleware' => ['role:admin']], function () {
+Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
+    // Admin Profile Management endpoints (prefixed with admin)
+    Route::controller(ProfileController::class)->prefix('admin/profile')->group(function () {
+        Route::get('/', 'show')->name('admin.profile.show');
+        Route::put('/', 'update')->name('admin.profile.update');
+        Route::post('/photo', 'uploadPhoto')->name('admin.profile.upload-photo');
+        Route::delete('/photo', 'deletePhoto')->name('admin.profile.delete-photo');
+        Route::post('/change-password', 'changePassword')->name('admin.profile.change-password');
+    });
+
     Route::controller(SettingControllerAdmin::class)->group(function () {
         Route::get('/v1/all-tagihan', 'masterTagihan');
         Route::post('/v1/admin/send-midtrans', 'storeMidtrans');
@@ -155,6 +165,15 @@ Route::group(['middleware' => ['role:admin']], function () {
 });
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
+    // Profile Management endpoints
+    Route::controller(ProfileController::class)->prefix('profile')->group(function () {
+        Route::get('/', 'show')->name('profile.show');
+        Route::put('/', 'update')->name('profile.update');
+        Route::post('/photo', 'uploadPhoto')->name('profile.upload-photo');
+        Route::delete('/photo', 'deletePhoto')->name('profile.delete-photo');
+        Route::post('/change-password', 'changePassword')->name('profile.change-password');
+    });
+
     Route::controller(PaketController::class)->group(function () {
         Route::get('/v1/user/paket-nikah', 'index');
     });

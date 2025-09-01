@@ -12,7 +12,6 @@ use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
-
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\ValidationException;
@@ -39,7 +38,7 @@ class InvitationController extends Controller
                 'domain'             => 'required|string',
             ]);
 
-            return DB::transaction(function () use ($validated, $request) {
+                return DB::transaction(function () use ($validated, $request) {
 
                 $user = null;
                 if (!empty($validated['kode_pemesanan'])) {
@@ -60,27 +59,47 @@ class InvitationController extends Controller
                         ], 422);
                     }
 
-
                     $user->update([
                         'email'    => $validated['email'],
                         'password' => Hash::make($validated['password']),
                         'phone'    => $validated['phone'],
                     ]);
 
-
                     $domain = Setting::updateOrCreate(
                         ['user_id' => $user->id],
                         ['domain' => $validated['domain']]
                     );
 
+                    // Get package details for snapshot
+                    $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
+                    if (!$paketUndangan) {
+                        return response()->json([
+                            'message' => 'Paket undangan tidak ditemukan',
+                        ], 422);
+                    }
 
                     $invitation = Invitation::updateOrCreate(
                         ['user_id' => $user->id],
                         [
                             'status'            => 'step1',
                             'paket_undangan_id' => $validated['paket_undangan_id'],
+                            'payment_status'    => 'pending',
+                            // Capture package snapshot to preserve original terms
+                            'package_price_snapshot' => $paketUndangan->price,
+                            'package_duration_snapshot' => $paketUndangan->masa_aktif,
+                            'package_features_snapshot' => [
+                                'jenis_paket' => $paketUndangan->jenis_paket,
+                                'name_paket' => $paketUndangan->name_paket,
+                                'halaman_buku' => $paketUndangan->halaman_buku,
+                                'kirim_wa' => $paketUndangan->kirim_wa,
+                                'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
+                                'kirim_hadiah' => $paketUndangan->kirim_hadiah,
+                                'import_data' => $paketUndangan->import_data,
+                                'snapshot_at' => now()->toISOString()
+                            ]
                         ]
                     );
+
                     $token = $user->createToken('auth_token')->plainTextToken;
                     return response()->json([
                         'message'    => 'Step 1 berhasil diperbarui',
@@ -96,7 +115,6 @@ class InvitationController extends Controller
                         'email'  => 'unique:users,email',
                         'domain' => 'unique:settings,domain',
                     ]);
-
 
                     $user = User::create([
                         'email'          => $validated['email'],
@@ -116,10 +134,32 @@ class InvitationController extends Controller
                         'domain'  => $validated['domain'],
                     ]);
 
+                    // Get package details for snapshot
+                    $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
+                    if (!$paketUndangan) {
+                        return response()->json([
+                            'message' => 'Paket undangan tidak ditemukan',
+                        ], 422);
+                    }
+
                     $invitation = Invitation::create([
                         'status'            => 'step1',
                         'paket_undangan_id' => $validated['paket_undangan_id'],
                         'user_id'           => $user->id,
+                        'payment_status'    => 'pending',
+                        // Capture package snapshot to preserve original terms
+                        'package_price_snapshot' => $paketUndangan->price,
+                        'package_duration_snapshot' => $paketUndangan->masa_aktif,
+                        'package_features_snapshot' => [
+                            'jenis_paket' => $paketUndangan->jenis_paket,
+                            'name_paket' => $paketUndangan->name_paket,
+                            'halaman_buku' => $paketUndangan->halaman_buku,
+                            'kirim_wa' => $paketUndangan->kirim_wa,
+                            'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
+                            'kirim_hadiah' => $paketUndangan->kirim_hadiah,
+                            'import_data' => $paketUndangan->import_data,
+                            'snapshot_at' => now()->toISOString()
+                        ]
                     ]);
 
                     return response()->json([
@@ -149,62 +189,118 @@ class InvitationController extends Controller
 
     public function storeStepTwo(Request $request)
     {
+        try {
+            $validated = $request->validate([
+                'user_id'               => 'required|exists:users,id',
+                'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'photo_wanita'          => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'cover_photo'           => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'name_lengkap_pria'     => 'nullable|string|max:255',
+                'name_lengkap_wanita'   => 'nullable|string|max:255',
+                'name_panggilan_pria'   => 'nullable|string|max:255',
+                'name_panggilan_wanita' => 'nullable|string|max:255',
+                'ayah_pria'             => 'nullable|string|max:255',
+                'ayah_wanita'           => 'nullable|string|max:255',
+                'ibu_pria'              => 'nullable|string|max:255',
+                'ibu_wanita'            => 'nullable|string|max:255',
+            ]);
 
-        $validated = $request->validate([
-            'user_id'               => 'required|exists:users,id',
-            'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'photo_wanita'          => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'cover_photo'           => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-            'name_lengkap_pria'     => 'nullable|string|max:255',
-            'name_lengkap_wanita'   => 'nullable|string|max:255',
-            'name_panggilan_pria'   => 'nullable|string|max:255',
-            'name_panggilan_wanita' => 'nullable|string|max:255',
-            'ayah_pria'             => 'nullable|string|max:255',
-            'ayah_wanita'           => 'nullable|string|max:255',
-            'ibu_pria'              => 'nullable|string|max:255',
-            'ibu_wanita'            => 'nullable|string|max:255',
-        ]);
+            $user = User::find($validated['user_id']);
 
+            if (! $user) {
+                return response()->json(['error' => 'User tidak ditemukan.'], 404);
+            }
 
-        $user = User::find($validated['user_id']);
+            return DB::transaction(function () use ($validated, $request, $user) {
+                // Store photos in Gallery table with active status (requirement)
+                $galleryPhotos = [];
+                $mempelaiPhotos = [];
 
-        if (! $user) {
-            return response()->json(['error' => 'User tidak ditemukan.'], 404);
+                if ($request->hasFile('photo_pria')) {
+                    $photoPath = $request->file('photo_pria')->store('photos', 'public');
+
+                    // Store in Gallery with status 1 (active)
+                    $galleryPhoto = Galery::create([
+                        'user_id' => $user->id,
+                        'photo' => $photoPath,
+                        'nama_foto' => 'Photo Pria',
+                        'status' => 1 // Active status for frontend filtering
+                    ]);
+
+                    $galleryPhotos['photo_pria'] = $galleryPhoto;
+                    $mempelaiPhotos['photo_pria'] = $photoPath;
+                }
+
+                if ($request->hasFile('photo_wanita')) {
+                    $photoPath = $request->file('photo_wanita')->store('photos', 'public');
+
+                    // Store in Gallery with status 1 (active)
+                    $galleryPhoto = Galery::create([
+                        'user_id' => $user->id,
+                        'photo' => $photoPath,
+                        'nama_foto' => 'Photo Wanita',
+                        'status' => 1 // Active status for frontend filtering
+                    ]);
+
+                    $galleryPhotos['photo_wanita'] = $galleryPhoto;
+                    $mempelaiPhotos['photo_wanita'] = $photoPath;
+                }
+
+                if ($request->hasFile('cover_photo')) {
+                    $photoPath = $request->file('cover_photo')->store('photos', 'public');
+
+                    // Store in Gallery with status 1 (active)
+                    $galleryPhoto = Galery::create([
+                        'user_id' => $user->id,
+                        'photo' => $photoPath,
+                        'nama_foto' => 'Cover Photo',
+                        'status' => 1 // Active status for frontend filtering
+                    ]);
+
+                    $galleryPhotos['cover_photo'] = $galleryPhoto;
+                    $mempelaiPhotos['cover_photo'] = $photoPath;
+                }
+
+                // Update Mempelai with photo references and other data
+                $mempelai = Mempelai::updateOrCreate(
+                    ['user_id' => $user->id],
+                    array_merge([
+                        'name_lengkap_pria'     => $validated['name_lengkap_pria'],
+                        'name_lengkap_wanita'   => $validated['name_lengkap_wanita'],
+                        'name_panggilan_pria'   => $validated['name_panggilan_pria'],
+                        'name_panggilan_wanita' => $validated['name_panggilan_wanita'],
+                        'ayah_pria'             => $validated['ayah_pria'],
+                        'ayah_wanita'           => $validated['ayah_wanita'],
+                        'ibu_pria'              => $validated['ibu_pria'],
+                        'ibu_wanita'            => $validated['ibu_wanita'],
+                        'status'                => 'Menunggu Konfirmasi',
+                        'kd_status'             => 'MK',
+                    ], $mempelaiPhotos)
+                );
+
+                // Update invitation status
+                Invitation::where('user_id', $user->id)->update(['status' => 'step2']);
+
+                return response()->json([
+                    'message'           => 'Step 2 berhasil disimpan.',
+                    'mempelai'          => $mempelai,
+                    'gallery_photos'    => $galleryPhotos,
+                    'invitation_status' => 'step2',
+                ], 200);
+            });
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error di storeStepTwo: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Gagal menyimpan data',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-
-
-        $photoPria   = $request->hasFile('photo_pria') ? $request->file('photo_pria')->store('photos', 'public') : null;
-        $photoWanita = $request->hasFile('photo_wanita') ? $request->file('photo_wanita')->store('photos', 'public') : null;
-        $coverPhoto  = $request->hasFile('cover_photo') ? $request->file('cover_photo')->store('photos', 'public') : null;
-
-
-        $mempelai = Mempelai::updateOrCreate(
-            ['user_id' => $user->id],
-            [
-                'cover_photo'           => $coverPhoto,
-                'photo_pria'            => $photoPria,
-                'photo_wanita'          => $photoWanita,
-                'name_lengkap_pria'     => $validated['name_lengkap_pria'],
-                'name_lengkap_wanita'   => $validated['name_lengkap_wanita'],
-                'name_panggilan_pria'   => $validated['name_panggilan_pria'],
-                'name_panggilan_wanita' => $validated['name_panggilan_wanita'],
-                'ayah_pria'             => $validated['ayah_pria'],
-                'ayah_wanita'           => $validated['ayah_wanita'],
-                'ibu_pria'              => $validated['ibu_pria'],
-                'ibu_wanita'            => $validated['ibu_wanita'],
-                'status'                => 'Menunggu Konfirmasi',
-                'kd_status'             => 'MK',
-            ]
-        );
-
-
-        Invitation::where('user_id', $user->id)->update(['status' => 'step2']);
-
-        return response()->json([
-            'message'           => 'Step 2 berhasil disimpan.',
-            'mempelai'          => $mempelai,
-            'invitation_status' => 'step2',
-        ], 200);
     }
 
 
@@ -214,6 +310,7 @@ class InvitationController extends Controller
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
             'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'status'  => 'nullable|string|max:255',
         ]);
 
 
@@ -231,7 +328,7 @@ class InvitationController extends Controller
             ['user_id' => $user->id],
             [
                 'photo'  => $galeryPhoto,
-                'status' => 1,
+                'status' => $validated['status'] ?? null,
             ]
         );
 
@@ -303,5 +400,4 @@ class InvitationController extends Controller
         ]);
     }
 
-}
 }
