@@ -1,0 +1,712 @@
+{
+    "info": {
+        "name": "Bank Account Management API",
+        "description": "Complete bank account management system for users and administrators",
+        "version": "1.0",
+        "contact": {
+            "name": "API Support",
+            "url": "http://www.example.com/support",
+            "email": "support@example.com"
+        }
+    },
+    "item": [
+        {
+            "name": "User Bank Account Management",
+            "description": "Bank account management endpoints for authenticated users",
+            "item": [
+                {
+                    "name": "Get User Bank Accounts",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts"
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "name": "Success Response",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/user/bank-accounts",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "user",
+                                        "bank-accounts"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"data\": [\n    {\n      \"id\": 1,\n      \"nomor_rekening\": \"1234567890\",\n      \"nama_pemilik\": \"John Doe\",\n      \"nama_bank\": \"Bank BCA\",\n      \"photo_url\": \"http://localhost/storage/bank-logos/logo.jpg\",\n      \"bank_info\": {\n        \"kode_bank\": \"014\",\n        \"name\": \"Bank BCA\",\n        \"logo\": \"bca.png\"\n      },\n      \"created_at\": \"2024-01-01T00:00:00.000000Z\"\n    }\n  ]\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Create Bank Account",
+                    "request": {
+                        "method": "POST",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "kode_bank",
+                                    "value": "014",
+                                    "type": "text",
+                                    "description": "Bank code (required)"
+                                },
+                                {
+                                    "key": "nomor_rekening",
+                                    "value": "1234567890",
+                                    "type": "text",
+                                    "description": "Account number (required, 6-20 digits)"
+                                },
+                                {
+                                    "key": "nama_pemilik",
+                                    "value": "John Doe",
+                                    "type": "text",
+                                    "description": "Account owner name (required, max 255 chars)"
+                                },
+                                {
+                                    "key": "photo_rek",
+                                    "type": "file",
+                                    "description": "Bank logo/photo (optional, max 2MB, jpg/png/jpeg)"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts"
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "name": "Success Response",
+                            "originalRequest": {
+                                "method": "POST",
+                                "header": [],
+                                "body": {
+                                    "mode": "formdata",
+                                    "formdata": [
+                                        {
+                                            "key": "kode_bank",
+                                            "value": "014",
+                                            "type": "text"
+                                        },
+                                        {
+                                            "key": "nomor_rekening",
+                                            "value": "1234567890",
+                                            "type": "text"
+                                        },
+                                        {
+                                            "key": "nama_pemilik",
+                                            "value": "John Doe",
+                                            "type": "text"
+                                        }
+                                    ]
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/user/bank-accounts",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "user",
+                                        "bank-accounts"
+                                    ]
+                                }
+                            },
+                            "status": "Created",
+                            "code": 201,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true,\n  \"message\": \"Rekening bank berhasil ditambahkan.\",\n  \"data\": {\n    \"id\": 1,\n    \"nomor_rekening\": \"1234567890\",\n    \"nama_pemilik\": \"John Doe\",\n    \"nama_bank\": \"Bank BCA\",\n    \"photo_url\": null,\n    \"bank_info\": {\n      \"kode_bank\": \"014\",\n      \"name\": \"Bank BCA\",\n      \"logo\": \"bca.png\"\n    },\n    \"created_at\": \"2024-01-01T00:00:00.000000Z\"\n  }\n}"
+                        },
+                        {
+                            "name": "Account Limit Exceeded",
+                            "originalRequest": {
+                                "method": "POST",
+                                "header": [],
+                                "body": {
+                                    "mode": "formdata",
+                                    "formdata": []
+                                },
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/user/bank-accounts",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "user",
+                                        "bank-accounts"
+                                    ]
+                                }
+                            },
+                            "status": "Unprocessable Entity",
+                            "code": 422,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": false,\n  \"message\": \"Anda tidak dapat menambah lebih dari 2 rekening bank.\",\n  \"error_code\": \"ACCOUNT_LIMIT_EXCEEDED\"\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Get Bank Account Details",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts/:id",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "1",
+                                    "description": "Bank account ID"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Update Bank Account",
+                    "request": {
+                        "method": "PUT",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "body": {
+                            "mode": "formdata",
+                            "formdata": [
+                                {
+                                    "key": "kode_bank",
+                                    "value": "014",
+                                    "type": "text",
+                                    "description": "Bank code (optional)"
+                                },
+                                {
+                                    "key": "nomor_rekening",
+                                    "value": "9876543210",
+                                    "type": "text",
+                                    "description": "Account number (optional)"
+                                },
+                                {
+                                    "key": "nama_pemilik",
+                                    "value": "Jane Doe",
+                                    "type": "text",
+                                    "description": "Account owner name (optional)"
+                                },
+                                {
+                                    "key": "photo_rek",
+                                    "type": "file",
+                                    "description": "Bank logo/photo (optional)"
+                                },
+                                {
+                                    "key": "_method",
+                                    "value": "PUT",
+                                    "type": "text",
+                                    "description": "Method override for multipart forms"
+                                }
+                            ]
+                        },
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts/:id",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "1",
+                                    "description": "Bank account ID"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Bank Account",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts/:id",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "1",
+                                    "description": "Bank account ID"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Bank Account Statistics",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/user/bank-accounts-statistics",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "user",
+                                "bank-accounts-statistics"
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "name": "Success Response",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/user/bank-accounts-statistics",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "user",
+                                        "bank-accounts-statistics"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true,\n  \"data\": {\n    \"total_accounts\": 2,\n    \"accounts_with_logo\": 1,\n    \"can_add_more\": false,\n    \"remaining_slots\": 0\n  }\n}"
+                        }
+                    ]
+                }
+            ]
+        },
+        {
+            "name": "Admin Bank Account Management",
+            "description": "Bank account management endpoints for administrators",
+            "item": [
+                {
+                    "name": "Get All Bank Accounts (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/admin/bank-accounts?user_id=&kode_bank=&search=&per_page=15",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "admin",
+                                "bank-accounts"
+                            ],
+                            "query": [
+                                {
+                                    "key": "user_id",
+                                    "value": "",
+                                    "description": "Filter by user ID (optional)"
+                                },
+                                {
+                                    "key": "kode_bank",
+                                    "value": "",
+                                    "description": "Filter by bank code (optional)"
+                                },
+                                {
+                                    "key": "search",
+                                    "value": "",
+                                    "description": "Search by account number or owner name (optional)"
+                                },
+                                {
+                                    "key": "per_page",
+                                    "value": "15",
+                                    "description": "Number of items per page (optional, default: 15)"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Bank Account Details (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/admin/bank-accounts/:id",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "admin",
+                                "bank-accounts",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "1",
+                                    "description": "Bank account ID"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Delete Bank Account (Admin)",
+                    "request": {
+                        "method": "DELETE",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/admin/bank-accounts/:id",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "admin",
+                                "bank-accounts",
+                                ":id"
+                            ],
+                            "variable": [
+                                {
+                                    "key": "id",
+                                    "value": "1",
+                                    "description": "Bank account ID"
+                                }
+                            ]
+                        }
+                    }
+                },
+                {
+                    "name": "Get Bank Account Statistics (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/admin/bank-accounts-statistics",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "admin",
+                                "bank-accounts-statistics"
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "name": "Success Response",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/admin/bank-accounts-statistics",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "admin",
+                                        "bank-accounts-statistics"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"success\": true,\n  \"data\": {\n    \"total_accounts\": 150,\n    \"accounts_with_logo\": 89,\n    \"unique_users\": 75,\n    \"users_with_max_accounts\": 23,\n    \"top_banks\": [\n      {\n        \"kode_bank\": \"014\",\n        \"nama_bank\": \"Bank BCA\",\n        \"account_count\": 45\n      }\n    ]\n  }\n}"
+                        }
+                    ]
+                },
+                {
+                    "name": "Get User Accounts Summary (Admin)",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Authorization",
+                                "value": "Bearer {{admin_token}}",
+                                "type": "text"
+                            },
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/admin/user-accounts",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "admin",
+                                "user-accounts"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        {
+            "name": "Bank Data (Public)",
+            "description": "Public endpoints to get bank information",
+            "item": [
+                {
+                    "name": "Get All Banks",
+                    "request": {
+                        "method": "GET",
+                        "header": [
+                            {
+                                "key": "Accept",
+                                "value": "application/json",
+                                "type": "text"
+                            }
+                        ],
+                        "url": {
+                            "raw": "{{base_url}}/api/v1/all-bank",
+                            "host": [
+                                "{{base_url}}"
+                            ],
+                            "path": [
+                                "api",
+                                "v1",
+                                "all-bank"
+                            ]
+                        }
+                    },
+                    "response": [
+                        {
+                            "name": "Success Response",
+                            "originalRequest": {
+                                "method": "GET",
+                                "header": [],
+                                "url": {
+                                    "raw": "{{base_url}}/api/v1/all-bank",
+                                    "host": [
+                                        "{{base_url}}"
+                                    ],
+                                    "path": [
+                                        "api",
+                                        "v1",
+                                        "all-bank"
+                                    ]
+                                }
+                            },
+                            "status": "OK",
+                            "code": 200,
+                            "_postman_previewlanguage": "json",
+                            "header": [],
+                            "cookie": [],
+                            "body": "{\n  \"data\": [\n    {\n      \"kode_bank\": \"014\",\n      \"name\": \"Bank BCA\",\n      \"logo\": \"bca.png\"\n    },\n    {\n      \"kode_bank\": \"002\",\n      \"name\": \"Bank BRI\",\n      \"logo\": \"bri.png\"\n    }\n  ]\n}"
+                        }
+                    ]
+                }
+            ]
+        }
+    ],
+    "variable": [
+        {
+            "key": "base_url",
+            "value": "http://localhost:8000",
+            "type": "string"
+        },
+        {
+            "key": "token",
+            "value": "",
+            "type": "string",
+            "description": "User authentication token"
+        },
+        {
+            "key": "admin_token",
+            "value": "",
+            "type": "string",
+            "description": "Admin authentication token"
+        }
+    ]
+}

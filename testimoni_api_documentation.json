@@ -1,0 +1,426 @@
+{
+  "testimonial_api_documentation": {
+    "title": "Testimonial Management API",
+    "version": "1.0.0",
+    "description": "Comprehensive API for testimonial management with admin, user, and public access endpoints",
+    "base_url": "https://your-domain.com/api",
+    "authentication": {
+      "type": "Bearer Token (Sanctum)",
+      "header": "Authorization: Bearer {token}",
+      "note": "Required for all endpoints except public endpoints"
+    },
+    "endpoints": {
+      "public_endpoints": {
+        "get_public_testimonials": {
+          "method": "GET",
+          "url": "/v1/testimoni/public",
+          "description": "Get published testimonials for landing page display",
+          "authentication": false,
+          "parameters": {
+            "query_params": {
+              "search": {
+                "type": "string",
+                "required": false,
+                "description": "Search in province, city, or review text"
+              },
+              "limit": {
+                "type": "integer",
+                "required": false,
+                "default": 10,
+                "max": 50,
+                "description": "Number of testimonials per page"
+              },
+              "page": {
+                "type": "integer",
+                "required": false,
+                "default": 1,
+                "description": "Page number for pagination"
+              }
+            }
+          },
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "message": "Testimoni berhasil diambil.",
+              "data": [
+                {
+                  "id": 1,
+                  "user": {
+                    "id": 5,
+                    "name": "Lana Lana",
+                    "email": "lana@example.com"
+                  },
+                  "kota": "Malang",
+                  "provinsi": "Jawa Timur",
+                  "ulasan": "Sangat keren dan menarik, proses pembuatannya cepat dan bisa custom sendiri",
+                  "status": true,
+                  "created_at": "2024-10-02T14:15:30Z",
+                  "updated_at": "2024-10-02T14:15:30Z"
+                }
+              ],
+              "meta": {
+                "current_page": 1,
+                "last_page": 3,
+                "per_page": 10,
+                "total": 25
+              }
+            }
+          }
+        }
+      },
+      "admin_endpoints": {
+        "get_all_testimonials": {
+          "method": "GET",
+          "url": "/v1/admin/testimoni",
+          "description": "Get all testimonials with advanced filtering for admin panel",
+          "authentication": true,
+          "required_role": "admin",
+          "parameters": {
+            "query_params": {
+              "search": {
+                "type": "string",
+                "required": false,
+                "description": "Search in name, province, city, or review text"
+              },
+              "status": {
+                "type": "string",
+                "required": false,
+                "enum": ["0", "1", "published", "unpublished"],
+                "description": "Filter by publication status"
+              },
+              "limit": {
+                "type": "integer",
+                "required": false,
+                "default": 10,
+                "max": 100,
+                "description": "Number of testimonials per page"
+              },
+              "page": {
+                "type": "integer",
+                "required": false,
+                "default": 1,
+                "description": "Page number for pagination"
+              }
+            }
+          },
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "data": [
+                {
+                  "id": 1,
+                  "user": {
+                    "id": 5,
+                    "name": "Lana Lana",
+                    "email": "lana@example.com"
+                  },
+                  "kota": "Malang",
+                  "provinsi": "Jawa Timur",
+                  "ulasan": "Sangat keren dan menarik, proses pembuatannya cepat dan bisa custom sendiri",
+                  "status": true,
+                  "created_at": "2024-10-02T14:15:30Z",
+                  "updated_at": "2024-10-02T14:15:30Z"
+                }
+              ]
+            }
+          }
+        },
+        "update_testimonial_status": {
+          "method": "PUT",
+          "url": "/v1/admin/testimoni/{id}/status",
+          "description": "Update testimonial publication status",
+          "authentication": true,
+          "required_role": "admin",
+          "parameters": {
+            "path_params": {
+              "id": {
+                "type": "integer",
+                "required": true,
+                "description": "Testimonial ID"
+              }
+            },
+            "body_params": {
+              "status": {
+                "type": "boolean",
+                "required": true,
+                "description": "Publication status (true = published, false = unpublished)"
+              }
+            }
+          },
+          "request_example": {
+            "status": true
+          },
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "message": "Status testimoni berhasil diperbarui menjadi dipublikasikan.",
+              "data": {
+                "id": 1,
+                "user": {
+                  "id": 5,
+                  "name": "Lana Lana",
+                  "email": "lana@example.com"
+                },
+                "kota": "Malang",
+                "provinsi": "Jawa Timur",
+                "ulasan": "Sangat keren dan menarik, proses pembuatannya cepat dan bisa custom sendiri",
+                "status": true,
+                "created_at": "2024-10-02T14:15:30Z",
+                "updated_at": "2024-10-02T14:15:30Z"
+              }
+            }
+          },
+          "error_responses": {
+            "404": {
+              "example": {
+                "success": false,
+                "message": "Testimoni tidak ditemukan."
+              }
+            },
+            "403": {
+              "example": {
+                "message": "This action is unauthorized."
+              }
+            }
+          }
+        },
+        "bulk_update_status": {
+          "method": "PUT",
+          "url": "/v1/admin/testimoni/bulk-status",
+          "description": "Bulk update testimonial status for multiple testimonials",
+          "authentication": true,
+          "required_role": "admin",
+          "parameters": {
+            "body_params": {
+              "ids": {
+                "type": "array",
+                "required": true,
+                "description": "Array of testimonial IDs to update"
+              },
+              "status": {
+                "type": "boolean",
+                "required": true,
+                "description": "New status for all selected testimonials"
+              }
+            }
+          },
+          "request_example": {
+            "ids": [1, 2, 3, 4],
+            "status": true
+          },
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "message": "Berhasil mengubah status 4 testimoni menjadi dipublikasikan."
+            }
+          }
+        },
+        "delete_testimonial": {
+          "method": "DELETE",
+          "url": "/v1/admin/testimoni/{id}",
+          "description": "Delete specific testimonial",
+          "authentication": true,
+          "required_role": "admin",
+          "parameters": {
+            "path_params": {
+              "id": {
+                "type": "integer",
+                "required": true,
+                "description": "Testimonial ID to delete"
+              }
+            }
+          },
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "message": "Testimoni berhasil dihapus."
+            }
+          },
+          "error_responses": {
+            "404": {
+              "example": {
+                "success": false,
+                "message": "Testimoni tidak ditemukan."
+              }
+            }
+          }
+        },
+        "delete_all_testimonials": {
+          "method": "DELETE",
+          "url": "/v1/admin/testimoni/delete-all",
+          "description": "Delete all testimonials",
+          "authentication": true,
+          "required_role": "admin",
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "message": "Berhasil menghapus semua 25 testimoni."
+            }
+          },
+          "error_responses": {
+            "404": {
+              "example": {
+                "success": false,
+                "message": "Tidak ada testimoni untuk dihapus."
+              }
+            }
+          }
+        },
+        "get_testimonial_statistics": {
+          "method": "GET",
+          "url": "/v1/admin/testimoni/statistics",
+          "description": "Get testimonial statistics for admin dashboard",
+          "authentication": true,
+          "required_role": "admin",
+          "success_response": {
+            "status_code": 200,
+            "example": {
+              "success": true,
+              "data": {
+                "total_testimonials": 25,
+                "published": 18,
+                "unpublished": 7,
+                "recent_week": 5,
+                "publication_rate": 72.0
+              }
+            }
+          }
+        }
+      },
+      "user_endpoints": {
+        "create_testimonial": {
+          "method": "POST",
+          "url": "/v1/user/testimoni",
+          "description": "Submit a new testimonial (user)",
+          "authentication": true,
+          "required_role": "user",
+          "parameters": {
+            "body_params": {
+              "kota": {
+                "type": "string",
+                "required": true,
+                "min_length": 3,
+                "max_length": 100,
+                "description": "City name"
+              },
+              "provinsi": {
+                "type": "string",
+                "required": true,
+                "min_length": 3,
+                "max_length": 100,
+                "description": "Province name"
+              },
+              "ulasan": {
+                "type": "string",
+                "required": true,
+                "min_length": 10,
+                "max_length": 500,
+                "description": "Review text"
+              }
+            }
+          },
+          "request_example": {
+            "kota": "Lamongan",
+            "provinsi": "Jawa Timur",
+            "ulasan": "Menarik sekali ya websitenya, banyak banget macam-macam undangannya. sukses deh"
+          },
+          "success_response": {
+            "status_code": 201,
+            "example": {
+              "success": true,
+              "message": "Terima kasih! Ulasan Anda telah berhasil dikirim dan akan ditinjau oleh admin.",
+              "data": {
+                "id": 3,
+                "user": {
+                  "id": 8,
+                  "name": "Sheraphine",
+                  "email": "sheraphine@example.com"
+                },
+                "kota": "Lamongan",
+                "provinsi": "Jawa Timur",
+                "ulasan": "Menarik sekali ya websitenya, banyak banget macam-macam undangannya. sukses deh",
+                "status": false,
+                "created_at": "2024-10-02T14:30:45Z",
+                "updated_at": "2024-10-02T14:30:45Z"
+              }
+            }
+          },
+          "error_responses": {
+            "422": {
+              "example": {
+                "message": "The given data was invalid.",
+                "errors": {
+                  "kota": ["Kota wajib diisi"],
+                  "provinsi": ["Provinsi minimal 3 karakter"],
+                  "ulasan": ["Ulasan minimal 10 karakter"]
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "data_models": {
+      "testimonial": {
+        "id": "integer - Unique testimonial identifier",
+        "user": "object - User information (id, name, email)",
+        "kota": "string - City name",
+        "provinsi": "string - Province name",
+        "ulasan": "string - Review text (10-500 characters)",
+        "status": "boolean - Publication status (true=published, false=unpublished)",
+        "created_at": "datetime - Creation timestamp",
+        "updated_at": "datetime - Last update timestamp"
+      },
+      "user": {
+        "id": "integer - User ID",
+        "name": "string - User full name",
+        "email": "string - User email address"
+      }
+    },
+    "status_codes": {
+      "200": "Success - Request completed successfully",
+      "201": "Created - New resource created successfully",
+      "404": "Not Found - Resource not found",
+      "422": "Validation Error - Invalid input data",
+      "401": "Unauthorized - Authentication required",
+      "403": "Forbidden - Insufficient permissions"
+    },
+    "notes": {
+      "pagination": "All list endpoints support pagination with 'page' and 'limit' parameters",
+      "search": "Search functionality is available across name, city, province, and review text",
+      "moderation": "New testimonials default to unpublished status and require admin approval",
+      "rate_limiting": "API endpoints may be rate limited based on authentication status",
+      "sorting": "Results are returned in descending order by creation date (latest first)"
+    },
+    "frontend_implementation_guide": {
+      "admin_ui_components": {
+        "testimonial_table": {
+          "columns": ["Name", "City", "Province", "Review", "Status", "Actions"],
+          "actions": ["Toggle Status", "Delete"],
+          "bulk_actions": ["Bulk Status Update", "Delete All"],
+          "search_filters": ["Search Text", "Status Filter"],
+          "pagination": "Required for large datasets"
+        }
+      },
+      "user_ui_components": {
+        "testimonial_form": {
+          "fields": ["Province", "City", "Review (max 500 chars)"],
+          "validation": "Real-time validation with error messages",
+          "submission": "Show success message and form reset on submit"
+        }
+      },
+      "public_display": {
+        "testimonial_cards": {
+          "display_fields": ["User Name", "City + Province", "Review Text"],
+          "layout": "Card or carousel format recommended",
+          "pagination": "Load more or infinite scroll"
+        }
+      }
+    }
+  }
+}
