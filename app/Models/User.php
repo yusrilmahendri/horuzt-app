@@ -117,6 +117,11 @@ class User extends Authenticatable
         return $this->hasMany(Rekening::class);
     }
 
+    public function rekenings()
+    {
+        return $this->hasMany(Rekening::class);
+    }
+
     public function mempelai()
     {
         return $this->hasMany(Mempelai::class);
@@ -160,5 +165,17 @@ class User extends Authenticatable
     public function thema()
     {
         return $this->belongsToMany(Themas::class, 'result_themas', 'user_id', 'thema_id');
+    }
+
+    public function selectedTheme()
+    {
+        return $this->hasOne(\App\Models\ResultThemas::class, 'user_id')
+            ->with(['jenisThema.category'])
+            ->latest('selected_at');
+    }
+
+    public function jenisThemas()
+    {
+        return $this->belongsToMany(\App\Models\JenisThemas::class, 'result_themas', 'user_id', 'jenis_id');
     }
 }

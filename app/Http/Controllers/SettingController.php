@@ -1,9 +1,11 @@
 <?php
 namespace App\Http\Controllers;
 
+use App\Http\Requests\StoreMusicRequest;
 use App\Models\FilterUndangan;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\MusicStreamService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
@@ -11,9 +13,12 @@ use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
 {
-    public function __construct()
+    protected MusicStreamService $musicStreamService;
+
+    public function __construct(MusicStreamService $musicStreamService)
     {
         $this->middleware('auth:sanctum');
+        $this->musicStreamService = $musicStreamService;
     }
 
     public function index()
@@ -60,42 +65,49 @@ class SettingController extends Controller
         }
     }
 
-    public function storeMusic(Request $request)
+    public function storeMusic(StoreMusicRequest $request)
     {
         try {
-
-            $request->validate([
-                'musik' => 'required|file|mimes:mp3,wav,ogg|max:10240',
-            ]);
-
             $user = Auth::user();
+            $musicFile = $request->file('musik');
 
-            $existingSetting = Setting::where('user_id', $user->id)->first();
-            if ($existingSetting && $existingSetting->musik) {
-                Storage::delete($existingSetting->musik);
+            // Additional validation using service
+            if (!$this->musicStreamService->validateAudioFile($musicFile)) {
+                return response()->json([
+                    'message' => 'Invalid audio file format or size.'
+                ], 422);
             }
 
-            $musicFile = $request->file('musik');
-            $fileName  = time() . '_' . $musicFile->getClientOriginalName();
-            $filePath  = $musicFile->storeAs('public/music', $fileName);
+            // Delete existing music file if exists
+            $existingSetting = Setting::where('user_id', $user->id)->first();
+            if ($existingSetting && $existingSetting->musik) {
+                $this->musicStreamService->deleteMusic($existingSetting);
+            }
 
+            // Store new file
+            $fileName = time() . '_' . $musicFile->getClientOriginalName();
+            $filePath = $musicFile->storeAs('public/music', $fileName);
+
+            // Update or create setting
             $setting = Setting::updateOrCreate(
                 ['user_id' => $user->id],
                 ['musik' => $filePath]
             );
 
+            // Get file info
+            $musicInfo = $this->musicStreamService->getMusicInfo($setting);
+
             return response()->json([
-                'message'   => 'Music file uploaded successfully.',
-                'file_path' => Storage::url($filePath),
-                'setting'   => $setting,
+                'message' => 'Music file uploaded successfully.',
+                'setting' => $setting,
+                'music_info' => $musicInfo
             ], 200);
-        } catch (\Illuminate\Validation\ValidationException $e) {
-            return response()->json([
-                'message' => 'Validation failed',
-                'errors'  => $e->errors(),
-            ], 422);
+
         } catch (\Exception $e) {
-            Log::error('Music upload failed', ['error' => $e->getMessage()]);
+            Log::error('Music upload failed', [
+                'user_id' => Auth::id(),
+                'error' => $e->getMessage()
+            ]);
             return response()->json(['message' => 'Failed to upload music file.'], 500);
         }
     }

@@ -17,12 +17,19 @@ class RekeningResource extends JsonResource
         return [
             'id' => $this->id,
             'kode_bank' => $this->kode_bank,
-            'email' => $this->email,
-            'bank_name' => $this->bank ? $this->bank->name : null, // Include bank name
             'nomor_rekening' => $this->nomor_rekening,
+            'nama_bank' => $this->nama_bank,
             'nama_pemilik' => $this->nama_pemilik,
-           'photo_rek' => $this->photo_rek ? asset('storage/photos' . $this->photo_rek) : null, // Public URL for the photo
-            'created_at' => $this->created_at->toDateTimeString(),
+            'photo_rek' => $this->photo_url,
+            'bank_info' => $this->whenLoaded('bank', function () {
+                return [
+                    'id' => $this->bank->id,
+                    'name' => $this->bank->name,
+                    'kode_bank' => $this->bank->kode_bank,
+                ];
+            }),
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 }

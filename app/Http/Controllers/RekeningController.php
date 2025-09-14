@@ -40,7 +40,7 @@ class RekeningController extends Controller
 
             $validated = $request->validate([
                 'kode_bank'        => 'required|array',
-                'kode_bank.*'      => 'required|string',
+                'kode_bank.*'      => 'required|string|exists:banks,kode_bank',
                 'nomor_rekening'   => 'required|array',
                 'nomor_rekening.*' => 'required|string',
                 'nama_pemilik'     => 'required|array',
@@ -104,11 +104,10 @@ class RekeningController extends Controller
     public function update(Request $request)
     {
         try {
-
             $validated = $request->validate([
                 'rekenings'                  => 'required|array',
                 'rekenings.*.id'             => 'required|integer|exists:rekenings,id',
-                'rekenings.*.kode_bank'      => 'required|integer',
+                'rekenings.*.kode_bank'      => 'required', // Accept both string and integer
                 'rekenings.*.nomor_rekening' => 'required|string',
                 'rekenings.*.nama_pemilik'   => 'required|string',
                 'rekenings.*.photo_rek'      => 'nullable|file|mimes:jpeg,png,jpg|max:2048',
@@ -122,42 +121,68 @@ class RekeningController extends Controller
                     ->where('user_id', $userId)
                     ->first();
 
-                if ($rekening) {
-                    $rekening->kode_bank      = $data['kode_bank'];
-                    $rekening->nomor_rekening = $data['nomor_rekening'];
-                    $rekening->nama_pemilik   = $data['nama_pemilik'];
-
-
-                    if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
-                        $photoPath           = $data['photo_rek']->store('photos', 'public');
-                        $rekening->photo_rek = $photoPath;
-                    }
-                    $rekening->save();
-                    $updatedRekenings[] = new RekeningResource($rekening);
-                } else {
-
+                if (!$rekening) {
                     return response()->json([
                         'message' => "Rekening ID {$data['id']} at index {$index} not found or does not belong to the user.",
                     ], 404);
                 }
-            }
 
+                // CRITICAL FIX: Normalize bank code and validate existence
+                $kodeBankInput = $data['kode_bank'];
+                
+                // Convert integer to proper bank code format (pad with zeros)
+                if (is_numeric($kodeBankInput)) {
+                    $normalizedKodeBank = str_pad($kodeBankInput, 3, '0', STR_PAD_LEFT);
+                } else {
+                    $normalizedKodeBank = $kodeBankInput;
+                }
+
+                // Validate that the bank actually exists
+                $bank = Bank::where('kode_bank', $normalizedKodeBank)->first();
+                if (!$bank) {
+                    return response()->json([
+                        'message' => "Bank dengan kode '{$kodeBankInput}' tidak ditemukan. Kode bank yang valid: " . Bank::pluck('kode_bank')->implode(', '),
+                        'errors' => [
+                            "rekenings.{$index}.kode_bank" => ["Bank code '{$kodeBankInput}' does not exist."]
+                        ]
+                    ], 422);
+                }
+
+                // Update rekening data
+                $rekening->kode_bank      = $normalizedKodeBank;
+                $rekening->nomor_rekening = $data['nomor_rekening'];
+                $rekening->nama_pemilik   = $data['nama_pemilik'];
+                
+                // CRITICAL FIX: Update nama_bank when kode_bank changes
+                $rekening->nama_bank = $bank->name;
+
+                // Handle photo upload
+                if (isset($data['photo_rek']) && $data['photo_rek']->isValid()) {
+                    $photoPath           = $data['photo_rek']->store('photos', 'public');
+                    $rekening->photo_rek = $photoPath;
+                }
+                
+                $rekening->save();
+                
+                // CRITICAL FIX: Load bank relationship for proper response
+                $rekening->load('bank');
+                
+                $updatedRekenings[] = new RekeningResource($rekening);
+            }
 
             return response()->json([
                 'data'    => count($updatedRekenings) == 1
-                ? $updatedRekenings[0]
-                : $updatedRekenings,
+                    ? $updatedRekenings[0]
+                    : $updatedRekenings,
                 'message' => 'Rekenings updated successfully!',
             ], 200);
 
         } catch (ValidationException $e) {
-
             return response()->json([
                 'message' => 'Validation failed. Please check the form inputs.',
                 'errors'  => $e->errors(),
             ], 422);
         } catch (\Exception $e) {
-
             return response()->json([
                 'message' => 'An error occurred while updating the records.',
                 'error'   => $e->getMessage(),

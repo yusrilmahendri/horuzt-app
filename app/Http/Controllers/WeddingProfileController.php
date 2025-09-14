@@ -44,7 +44,8 @@ class WeddingProfileController extends Controller
                 'ucapan',
 
                 // Theme relationships
-                'thema'
+                'thema',
+                'selectedTheme.jenisThema.category'
             ])->findOrFail($userId);
 
             return response()->json([

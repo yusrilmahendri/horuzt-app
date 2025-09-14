@@ -11,7 +11,17 @@ use App\Models\JenisThemas;
 class ResultThemas extends Model
 {
     use HasFactory;
-    protected $guarded = [];
+
+    protected $fillable = [
+        'user_id',
+        'jenis_id',
+        'thema_id',
+        'selected_at'
+    ];
+
+    protected $casts = [
+        'selected_at' => 'datetime'
+    ];
 
     public function user()
     {

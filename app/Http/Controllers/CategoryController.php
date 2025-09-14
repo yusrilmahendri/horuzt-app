@@ -5,6 +5,7 @@ use App\Http\Resources\CategoryThemas\CategoryCollection;
 use App\Models\CategoryThemas;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
 
 class CategoryController extends Controller
@@ -141,21 +142,31 @@ class CategoryController extends Controller
 
     public function destroyAll(Request $request)
     {
-        $confirm = $request->input('confirm');
+        $confirm = $request->query('confirm');
 
         if ($confirm !== 'yes') {
             return response()->json([
                 'status'  => false,
-                'message' => 'Confirmation required to delete all categories. Send { "confirm": "yes" }',
+                'message' => 'Confirmation required to delete all categories. Add ?confirm=yes to the URL',
             ], 400);
         }
 
-        CategoryThemas::query()->delete();
+        try {
+            // First, delete all related records to avoid foreign key constraints
+            DB::statement('SET FOREIGN_KEY_CHECKS=0;');
+            CategoryThemas::query()->delete();
+            DB::statement('SET FOREIGN_KEY_CHECKS=1;');
 
-        return response()->json([
-            'status'  => true,
-            'message' => 'All categories deleted successfully',
-        ]);
+            return response()->json([
+                'status'  => true,
+                'message' => 'All categories deleted successfully',
+            ]);
+        } catch (\Exception $e) {
+            return response()->json([
+                'status'  => false,
+                'message' => 'Failed to delete all categories: ' . $e->getMessage(),
+            ], 500);
+        }
     }
 
 }

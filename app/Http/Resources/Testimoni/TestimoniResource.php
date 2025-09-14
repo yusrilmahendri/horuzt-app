@@ -18,9 +18,12 @@ class TestimoniResource extends JsonResource
         return [
             'id' => $this->id,
             'user' => new UserResource($this->user),
+            'kota' => $this->kota,
             'provinsi' => $this->provinsi,
             'ulasan' => $this->ulasan,
             'status' => $this->status,
+            'created_at' => $this->created_at,
+            'updated_at' => $this->updated_at,
         ];
     }
 }

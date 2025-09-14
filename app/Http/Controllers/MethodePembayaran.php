@@ -7,6 +7,7 @@ use App\Models\PaketUndangan;
 use App\Models\Rekening;
 use App\Models\Setting;
 use App\Models\TripayTransaction;
+use App\Models\User;
 use Illuminate\Http\Request;
 
 class MethodePembayaran extends Controller
@@ -46,13 +47,14 @@ public function getPaketUndangan(Request $request)
 
     public function getAllMethodeTransactions(Request $request)
     {
+        // Get admin user IDs to filter payment methods created by admin users only
+        $adminUserIds = \App\Models\User::whereHas('roles', function ($query) {
+            $query->where('name', 'admin');
+        })->pluck('id');
 
-        $rekeningQuery = Rekening::query();
-
-        $midtransQuery = MidtransTransaction::query();
-
-        $tripayQuery  = TripayTransaction::query();
-        $settingQuery = Setting::query();
+        $rekeningQuery = Rekening::query()->whereIn('user_id', $adminUserIds);
+        $midtransQuery = MidtransTransaction::query()->whereIn('user_id', $adminUserIds);
+        $tripayQuery  = TripayTransaction::query()->whereIn('user_id', $adminUserIds);
 
         if ($request->has('id_methode_pembayaran')) {
             $rekeningQuery->where('id_methode_pembayaran', $request->id_methode_pembayaran);
@@ -73,7 +75,7 @@ public function getPaketUndangan(Request $request)
         $result = $rekeningData->merge($midtransData)->merge($tripayData);
 
         return response()->json([
-            'message' => 'Data metode transaksi berhasil diambil',
+            'message' => 'Data metode transaksi admin berhasil diambil',
             'data'    => $result,
         ]);
     }

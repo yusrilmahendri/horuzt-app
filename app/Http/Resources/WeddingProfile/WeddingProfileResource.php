@@ -205,7 +205,7 @@ class WeddingProfileResource extends JsonResource
     {
         if (!$this->settingOne) return null;
 
-        return [
+        $settings = [
             'id' => $this->settingOne->id,
             'domain' => $this->settingOne->domain,
             'musik' => $this->settingOne->musik ? asset('storage/' . $this->settingOne->musik) : null,
@@ -213,6 +213,25 @@ class WeddingProfileResource extends JsonResource
             'salam_atas' => $this->settingOne->salam_atas,
             'salam_bawah' => $this->settingOne->salam_bawah,
         ];
+
+        // Add music streaming URL if music file exists
+        if ($this->settingOne->musik) {
+            $settings['music_stream_url'] = url('/api/v1/music/stream/public?id=' . $this->settingOne->id);
+            $settings['music_info'] = [
+                'has_music' => true,
+                'supports_streaming' => true,
+                'supports_range_requests' => true,
+                'format_support' => ['mp3', 'wav', 'ogg', 'm4a']
+            ];
+        } else {
+            $settings['music_stream_url'] = null;
+            $settings['music_info'] = [
+                'has_music' => false,
+                'supports_streaming' => false
+            ];
+        }
+
+        return $settings;
     }
 
     private function getFilterUndanganInfo(): ?array
@@ -286,17 +305,48 @@ class WeddingProfileResource extends JsonResource
 
     private function getThemesInfo(): array
     {
-        if (!$this->relationLoaded('thema') || !$this->thema) {
-            return [];
+        $result = [
+            'selected_theme' => null,
+            'legacy_themes' => []
+        ];
+
+        // Get current selected theme (from jenis_themas)
+        if ($this->relationLoaded('selectedTheme') && $this->selectedTheme) {
+            $selectedTheme = $this->selectedTheme;
+            $jenisThema = $selectedTheme->jenisThema;
+            
+            if ($jenisThema) {
+                $result['selected_theme'] = [
+                    'id' => $jenisThema->id,
+                    'name' => $jenisThema->name,
+                    'price' => $jenisThema->price,
+                    'preview' => $jenisThema->preview,
+                    'url_thema' => $jenisThema->url_thema,
+                    'demo_url' => $jenisThema->demo_url,
+                    'features' => $jenisThema->features,
+                    'description' => $jenisThema->description,
+                    'category' => [
+                        'id' => $jenisThema->category->id ?? null,
+                        'name' => $jenisThema->category->name ?? null,
+                        'type' => $jenisThema->category->type ?? null,
+                    ],
+                    'selected_at' => $selectedTheme->selected_at?->format('Y-m-d H:i:s'),
+                ];
+            }
         }
 
-        return $this->thema->map(function ($theme) {
-            return [
-                'id' => $theme->id,
-                'name' => $theme->name ?? null,
-                // Add other theme fields as needed
-            ];
-        })->toArray();
+        // Get legacy themes (from old themas table for backward compatibility)
+        if ($this->relationLoaded('thema') && $this->thema) {
+            $result['legacy_themes'] = $this->thema->map(function ($theme) {
+                return [
+                    'id' => $theme->id,
+                    'name' => $theme->name ?? null,
+                    // Add other legacy theme fields as needed
+                ];
+            })->toArray();
+        }
+
+        return $result;
     }
 
     private function getMetadata(): array
