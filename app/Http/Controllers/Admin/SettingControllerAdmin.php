@@ -188,7 +188,7 @@ class SettingControllerAdmin extends Controller
     // ===== MIDTRANS MANAGEMENT =====
 
     /**
-     * List all Midtrans configurations for authenticated admin
+     * List all Midtrans configurations for authenticated admin, dok
      * GET /v1/admin/midtrans
      */
     public function indexMidtrans()
