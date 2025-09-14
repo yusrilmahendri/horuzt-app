@@ -66,4 +66,59 @@ class JenisThemas extends Model
             $q->where('is_active', true);
         });
     }
+
+    // Accessors for image URLs
+    public function getPreviewImageAttribute($value)
+    {
+        // Priority: preview_image -> image -> null
+        $imageValue = $value ?: ($this->attributes['image'] ?? null);
+
+        if (!$imageValue) {
+            return null;
+        }
+
+        // If it's already a full URL, return as is
+        if (str_starts_with($imageValue, 'http')) {
+            return $imageValue;
+        }
+
+        // Convert relative path to full URL
+        return url('storage/' . $imageValue);
+    }
+
+    public function getThumbnailImageAttribute($value)
+    {
+        // Priority: thumbnail_image -> image -> null
+        $imageValue = $value ?: ($this->attributes['image'] ?? null);
+
+        if (!$imageValue) {
+            return null;
+        }
+
+        // If it's already a full URL, return as is
+        if (str_starts_with($imageValue, 'http')) {
+            return $imageValue;
+        }
+
+        // Convert relative path to full URL
+        return url('storage/' . $imageValue);
+    }
+
+    public function getPreviewAttribute($value)
+    {
+        // Priority: preview -> image -> null
+        $imageValue = $value ?: ($this->attributes['image'] ?? null);
+
+        if (!$imageValue) {
+            return null;
+        }
+
+        // If it's already a full URL, return as is
+        if (str_starts_with($imageValue, 'http')) {
+            return $imageValue;
+        }
+
+        // Convert relative path to full URL
+        return url('storage/' . $imageValue);
+    }
 }

@@ -254,6 +254,7 @@ class WeddingProfileController extends Controller
                 'testimoni',
                 'bukuTamu',
                 'thema',
+                'selectedTheme.jenisThema.category', // Add user's selected theme with category
                 'ucapan' => function($query) {
                     $query->whereNotNull('user_id'); // Only user's own ucapan
                 }

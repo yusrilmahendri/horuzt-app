@@ -35,7 +35,7 @@ class ThemeController extends Controller
 
             $categories = CategoryThemas::with(['jenisThemas' => function($query) {
                 $query->active()->ordered()
-                    ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'demo_url', 'features', 'sort_order', 'description');
+                    ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'sort_order', 'description');
             }])
             ->where('type', $type)
             ->where('is_active', true)
@@ -85,7 +85,7 @@ class ThemeController extends Controller
                 ->where('category_id', $categoryId)
                 ->active()
                 ->ordered()
-                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
                 ->get();
 
             return response()->json([
@@ -194,6 +194,7 @@ class ThemeController extends Controller
             $resultThema = ResultThemas::create([
                 'user_id' => $user->id,
                 'jenis_id' => $request->theme_id,
+                'thema_id' => null, // Set to null for new jenis_themas system
                 'selected_at' => now()
             ]);
 
@@ -312,7 +313,7 @@ class ThemeController extends Controller
                       ->orWhereJsonContains('features', $layout);
             })
             ->ordered()
-            ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+            ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
             ->get();
 
             return response()->json([
@@ -400,7 +401,7 @@ class ThemeController extends Controller
 
             $results = $themes->ordered()
                              ->limit($limit)
-                             ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                             ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
                              ->get();
 
             return response()->json([
@@ -506,7 +507,7 @@ class ThemeController extends Controller
                 ->orderBy('result_themas_count', 'desc')
                 ->orderBy('name', 'asc')
                 ->limit($limit)
-                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'demo_url', 'features', 'url_thema', 'sort_order')
+                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'url_thema', 'sort_order')
                 ->get();
 
             return response()->json([
