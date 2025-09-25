@@ -141,7 +141,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     Route::controller(RekeningController::class)->group(function () {
         Route::post('/v1/admin/send-rekening', 'store');
         Route::get('/v1/admin/get-rekening', 'index');
-        Route::put('/v1/admin/update-rekening', 'update');
+        Route::put('/v1/admin/update-rekening/{id}', 'update');
         Route::delete('/v1/admin/delete-rekening/{id}', 'destroy');
     });
 
@@ -257,7 +257,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(RekeningController::class)->group(function () {
         Route::post('/v1/user/send-rekening', 'store');
         Route::get('/v1/user/get-rekening', 'index');
-        Route::put('/v1/user/update-rekening', 'update');
+        Route::put('/v1/user/update-rekening/{id}', 'update');
         Route::delete('/v1/user/delete-rekening/{id}', 'destroy');
     });
 

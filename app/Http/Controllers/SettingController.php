@@ -25,12 +25,24 @@ class SettingController extends Controller
     {
         $user = Auth::user();
 
-        $setting        = Setting::where('user_id', $user->id)->first();
-        $filterUndangan = FilterUndangan::where('user_id', $user->id)->first();
+        $setting = Setting::where('user_id', $user->id)->first();
 
-        if (! $setting && ! $filterUndangan) {
-            return response()->json(['message' => 'Data setting dan filter undangan tidak ditemukan.'], 404);
-        }
+        // Auto-create FilterUndangan with default values if it doesn't exist
+        $filterUndangan = FilterUndangan::firstOrCreate(
+            ['user_id' => $user->id],
+            [
+                'halaman_sampul'    => 1,
+                'halaman_mempelai'  => 1,
+                'halaman_acara'     => 1,
+                'halaman_ucapan'    => 1,
+                'halaman_galery'    => 1,
+                'halaman_cerita'    => 1,
+                'halaman_lokasi'    => 1,
+                'halaman_prokes'    => 1,
+                'halaman_send_gift' => 1,
+                'halaman_qoute'     => 1,
+            ]
+        );
 
         return response()->json([
             'message'         => 'Data ditemukan.',
@@ -252,16 +264,16 @@ class SettingController extends Controller
         $user = Auth::user();
 
         $defaultData = [
-            'halaman_sampul'    => $request->input('halaman_sampul', 0),
-            'halaman_mempelai'  => $request->input('halaman_mempelai', 0),
-            'halaman_acara'     => $request->input('halaman_acara', 0),
-            'halaman_ucapan'    => $request->input('halaman_ucapan', 0),
-            'halaman_galery'    => $request->input('halaman_galery', 0),
-            'halaman_cerita'    => $request->input('halaman_cerita', 0),
-            'halaman_lokasi'    => $request->input('halaman_lokasi', 0),
-            'halaman_prokes'    => $request->input('halaman_prokes', 0),
-            'halaman_send_gift' => $request->input('halaman_send_gift', 0),
-            'halaman_qoute'     => $request->input('halaman_qoute', 0),
+            'halaman_sampul'    => $request->input('halaman_sampul', 1),
+            'halaman_mempelai'  => $request->input('halaman_mempelai', 1),
+            'halaman_acara'     => $request->input('halaman_acara', 1),
+            'halaman_ucapan'    => $request->input('halaman_ucapan', 1),
+            'halaman_galery'    => $request->input('halaman_galery', 1),
+            'halaman_cerita'    => $request->input('halaman_cerita', 1),
+            'halaman_lokasi'    => $request->input('halaman_lokasi', 1),
+            'halaman_prokes'    => $request->input('halaman_prokes', 1),
+            'halaman_send_gift' => $request->input('halaman_send_gift', 1),
+            'halaman_qoute'     => $request->input('halaman_qoute', 1),
         ];
 
         $filterUndangan = FilterUndangan::firstOrCreate(
