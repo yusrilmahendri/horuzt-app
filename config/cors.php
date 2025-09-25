@@ -19,7 +19,11 @@ return [
 
     'allowed_methods' => ['*'],
 
-    'allowed_origins' => ['http://localhost:4200', 'http://127.0.0.1:4200'],
+    'allowed_origins' => [
+        'http://localhost:4200',
+        'http://127.0.0.1:4200',
+        'https://woocommerce-main-git-master-hnfzrogs-projects.vercel.app'
+    ],
 
     'allowed_origins_patterns' => [],
 
