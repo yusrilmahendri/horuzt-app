@@ -20,9 +20,15 @@ return [
     'allowed_methods' => ['*'],
 
     'allowed_origins' => [
+        // Development
         'http://localhost:4200',
         'http://127.0.0.1:4200',
-        'https://woocommerce-main-git-master-hnfzrogs-projects.vercel.app'
+
+        // Production
+        'https://www.sena-digital.com',
+        'https://sena-digital.com',
+        'http://www.sena-digital.com',
+        'http://sena-digital.com'
     ],
 
     'allowed_origins_patterns' => [],
