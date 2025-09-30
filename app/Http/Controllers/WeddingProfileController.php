@@ -267,9 +267,28 @@ class WeddingProfileController extends Controller
                 ], 403);
             }
 
+            // Check payment status from mempelai
+            $paymentStatus = $user->mempelaiOne?->kd_status;
+
+            // If status is "MK" (Menunggu Konfirmasi), return empty data
+            if ($paymentStatus === 'MK') {
+                return response()->json([
+                    'data' => [],
+                    'message' => 'Payment is still pending confirmation.'
+                ], 200);
+            }
+
+            // If status is "SB" (Sudah Bayar), return full data
+            if ($paymentStatus === 'SB') {
+                return response()->json([
+                    'data' => new WeddingProfileResource($user, true) // Pass true for public view
+                ], 200);
+            }
+
+            // If no payment status or unknown status, return error
             return response()->json([
-                'data' => new WeddingProfileResource($user, true) // Pass true for public view
-            ], 200);
+                'message' => 'Wedding profile payment status is not valid.'
+            ], 403);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
