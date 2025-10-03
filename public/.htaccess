@@ -1,16 +1,3 @@
-# Upload Configuration for Domanesia
-# Increase PHP limits for file uploads
-php_value upload_max_filesize 6M
-php_value post_max_size 6M
-php_value max_execution_time 300
-php_value max_input_time 300
-php_value memory_limit 256M
-php_value max_file_uploads 20
-
-# Additional Apache settings if supported
-LimitRequestBody 6291456
-
-
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
