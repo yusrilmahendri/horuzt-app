@@ -18,7 +18,7 @@ class CheckProductionFiles extends Command
         // Check files in current directory (production)
         $currentDir = base_path();
         $publicDir = public_path();
-        
+
         // Files to check
         $files = [
             'public/.htaccess' => $publicDir . '/.htaccess',
@@ -33,7 +33,7 @@ class CheckProductionFiles extends Command
             $status = $exists ? '✅ EXISTS' : '❌ MISSING';
             $size = $exists ? ' (' . File::size($path) . ' bytes)' : '';
             $this->line("   {$name}: {$status}{$size}");
-            
+
             // Check content if exists
             if ($exists && (str_contains($name, '.htaccess') || str_contains($name, 'php.ini'))) {
                 $content = File::get($path);
@@ -62,18 +62,18 @@ class CheckProductionFiles extends Command
 
         // Recommendations
         $this->warn('📋 Next Actions:');
-        
+
         $htaccessExists = File::exists($publicDir . '/.htaccess');
         $phpIniExists = File::exists($publicDir . '/php.ini');
-        
+
         if (!$htaccessExists) {
             $this->line('1. Create/edit public_html/.htaccess with upload config');
         }
-        
+
         if (!$phpIniExists) {
             $this->line('2. Create public_html/php.ini with upload config');
         }
-        
+
         if ($htaccessExists && $phpIniExists) {
             $this->line('✅ Files exist! Run: php artisan config:clear && php artisan cache:clear');
         }

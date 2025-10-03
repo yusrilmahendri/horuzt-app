@@ -29,9 +29,9 @@ class GenerateProductionFiles extends Command
         $this->line('LimitRequestBody 6291456');
         $this->line('');
         $this->info('═══════════════════════════════════════════════════');
-        
+
         $this->newLine();
-        
+
         $this->info('📄 php.ini Content (Create new file):');
         $this->info('═══════════════════════════════════════════════════');
         $this->line('; PHP Configuration for Domanesia Upload');
@@ -56,18 +56,18 @@ class GenerateProductionFiles extends Command
         $this->line('file_uploads = On');
         $this->line('auto_detect_line_endings = On');
         $this->info('═══════════════════════════════════════════════════');
-        
+
         $this->newLine();
-        
+
         $this->warn('📋 Manual Steps:');
         $this->line('1. Copy .htaccess content above to public_html/.htaccess (at TOP)');
         $this->line('2. Create public_html/php.ini with content above');
         $this->line('3. Run: php artisan config:clear && php artisan cache:clear');
         $this->line('4. Wait 5-10 minutes for changes to take effect');
         $this->line('5. Test upload via API');
-        
+
         $this->newLine();
-        
+
         $this->info('🧪 Test Commands:');
         $this->line('php artisan upload:check-config');
         $this->line('php artisan upload:test-upload');
