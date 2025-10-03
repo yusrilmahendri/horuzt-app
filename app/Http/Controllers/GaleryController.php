@@ -14,6 +14,35 @@ class GaleryController extends Controller
     }
 
     public function store(Request $request){
+        // Check if file was uploaded successfully
+        if (!$request->hasFile('photo')) {
+            return response()->json([
+                'message' => 'The photo failed to upload.',
+                'errors' => [
+                    'photo' => ['The photo failed to upload.']
+                ],
+                'debug' => [
+                    'post_max_size' => ini_get('post_max_size'),
+                    'upload_max_filesize' => ini_get('upload_max_filesize'),
+                    'max_file_uploads' => ini_get('max_file_uploads'),
+                ]
+            ], 422);
+        }
+
+        $file = $request->file('photo');
+        if (!$file->isValid()) {
+            return response()->json([
+                'message' => 'The uploaded file is not valid.',
+                'errors' => [
+                    'photo' => ['The uploaded file is not valid.']
+                ],
+                'debug' => [
+                    'error' => $file->getError(),
+                    'error_message' => $file->getErrorMessage(),
+                ]
+            ], 422);
+        }
+
         $validateData = $request->validate([
             'photo' => 'required|file|mimes:jpg,png,jpeg|max:5222',
             'url_video' => 'nullable|url',
