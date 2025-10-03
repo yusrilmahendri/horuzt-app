@@ -192,9 +192,9 @@ class InvitationController extends Controller
         try {
             $validated = $request->validate([
                 'user_id'               => 'required|exists:users,id',
-                'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'photo_wanita'          => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
-                'cover_photo'           => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+                'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
+                'photo_wanita'          => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
+                'cover_photo'           => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
                 'name_lengkap_pria'     => 'nullable|string|max:255',
                 'name_lengkap_wanita'   => 'nullable|string|max:255',
                 'name_panggilan_pria'   => 'nullable|string|max:255',
@@ -309,7 +309,7 @@ class InvitationController extends Controller
 
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
-            'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:2048',
+            'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
             'status'  => 'nullable|string|max:255',
         ]);
 

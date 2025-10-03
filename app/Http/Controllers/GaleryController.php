@@ -15,7 +15,7 @@ class GaleryController extends Controller
 
     public function store(Request $request){
         $validateData = $request->validate([
-            'photo' => 'required|file|mimes:jpg,png,jpeg|max:2048',
+            'photo' => 'required|file|mimes:jpg,png,jpeg|max:5222',
             'url_video' => 'nullable|url',
             'nama_foto' => 'required|string|max:255',
         ]);

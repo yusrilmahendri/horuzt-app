@@ -29,6 +29,7 @@ use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
+use App\Http\Controllers\TagihanController;
 use App\Http\Controllers\TestimoniController;
 use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\UcapanController;
@@ -54,11 +55,11 @@ Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
 // Public Ucapan (Wedding Wishes & Attendance) endpoints
 Route::controller(UcapanController::class)->group(function () {
-    Route::get('/v1/ucapan', 'index');
+    Route::get('/v1/ucapan', 'publicIndex');
     Route::post('/v1/ucapan', 'store');
     Route::get('/v1/ucapan/{id}', 'show');
     Route::delete('/v1/ucapan/{id}', 'destroy');
-    Route::get('/v1/ucapan-statistics', 'statistics');
+    Route::get('/v1/ucapan-statistics', 'publicStatistics');
 });
 
 // Public Testimonial endpoints (for landing page display)
@@ -85,8 +86,8 @@ Route::controller(AttendanceController::class)->group(function () {
 Route::controller(InvitationController::class)->group(function () {
     Route::get('/v1/master-tagihan', 'masterTagihan');
     Route::post('/v1/one-step', 'storeStepOne');
-    Route::post('/v1/two-step', 'storeStepTwo');
-    Route::post('/v1/three-step', 'storeStepThree');
+    Route::post('/v1/two-step', 'storeStepTwo')->middleware(['large.files', 'bypass.post.size']);
+    Route::post('/v1/three-step', 'storeStepThree')->middleware(['large.files', 'bypass.post.size']);
     Route::post('/v1/for-step', 'storeStepFor');
 });
 
@@ -109,7 +110,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     Route::controller(ProfileController::class)->prefix('admin/profile')->group(function () {
         Route::get('/', 'show')->name('admin.profile.show');
         Route::put('/', 'update')->name('admin.profile.update');
-        Route::post('/photo', 'uploadPhoto')->name('admin.profile.upload-photo');
+        Route::post('/photo', 'uploadPhoto')->name('admin.profile.upload-photo')->middleware(['large.files', 'bypass.post.size']);
         Route::delete('/photo', 'deletePhoto')->name('admin.profile.delete-photo');
         Route::post('/change-password', 'changePassword')->name('admin.profile.change-password');
     });
@@ -242,7 +243,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {
         Route::get('/', 'show')->name('profile.show');
         Route::put('/', 'update')->name('profile.update');
-        Route::post('/photo', 'uploadPhoto')->name('profile.upload-photo');
+        Route::post('/photo', 'uploadPhoto')->name('profile.upload-photo')->middleware(['large.files', 'bypass.post.size']);
         Route::delete('/photo', 'deletePhoto')->name('profile.delete-photo');
         Route::post('/change-password', 'changePassword')->name('profile.change-password');
     });
@@ -296,7 +297,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::post('/v1/user/testimoni', 'store')->name('testimoni.store');
     });
     Route::controller(GaleryController::class)->group(function () {
-        Route::post('/v1/user/submission-galery', 'store');
+        Route::post('/v1/user/submission-galery', 'store')->middleware(['large.files', 'bypass.post.size']);
         Route::get('/v1/user/list-galery', 'index');
         Route::delete('/v1/user/delete-galery', 'destroy');
     });
@@ -306,7 +307,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::post('/v1/user/submission-acara', 'store');
         Route::put('/v1/user/update-countdown/{id}', 'updateCountDown');
         Route::put('/v1/user/update-acara', 'updateAcara');
-        Route::delete('/v1/user/delete-countdown', 'destroy');
+        Route::delete('/v1/user/delete-acara', 'destroy');
     });
 
     Route::controller(MempelaiController::class)->group(function () {
@@ -352,6 +353,17 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(WeddingProfileController::class)->group(function () {
         Route::get('/v1/user/wedding-profile', 'show');
         Route::get('/v1/user/wedding-profile/statistics', 'statistics');
+    });
+
+    // Tagihan Management endpoints (User's billing history)
+    Route::controller(TagihanController::class)->group(function () {
+        Route::get('/v1/user/tagihan', 'index');
+    });
+
+    // Ucapan Management endpoints (User's own wedding wishes)
+    Route::controller(UcapanController::class)->group(function () {
+        Route::get('/v1/user/ucapan', 'index');
+        Route::get('/v1/user/ucapan-statistics', 'statistics');
     });
 
     // Dashboard Analytics endpoints (Wedding statistics & metrics)

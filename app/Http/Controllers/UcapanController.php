@@ -12,13 +12,32 @@ use Illuminate\Validation\ValidationException;
 class UcapanController extends Controller
 {
     /**
-     * Display a listing of ucapan (public endpoint)
+     * Display a listing of all ucapan (public endpoint for guests)
+     */
+    public function publicIndex(): JsonResponse
+    {
+        try {
+            $ucapans = Ucapan::orderBy('created_at', 'desc')->get();
+
+            return response()->json(new UcapanCollection($ucapans), 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve ucapan data.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Display a listing of ucapan for authenticated user
      */
     public function index(): JsonResponse
     {
         try {
-            $ucapans = Ucapan::orderBy('created_at', 'desc')->get();
-            
+            $ucapans = Ucapan::where('user_id', auth()->id())
+                             ->orderBy('created_at', 'desc')
+                             ->get();
+
             return response()->json(new UcapanCollection($ucapans), 200);
         } catch (\Exception $e) {
             return response()->json([
@@ -74,7 +93,7 @@ class UcapanController extends Controller
     {
         try {
             $ucapan = Ucapan::findOrFail($id);
-            
+
             return response()->json([
                 'data' => new UcapanResource($ucapan)
             ], 200);
@@ -115,9 +134,9 @@ class UcapanController extends Controller
     }
 
     /**
-     * Get statistics about ucapan responses
+     * Get statistics about all ucapan responses (public endpoint)
      */
-    public function statistics(): JsonResponse
+    public function publicStatistics(): JsonResponse
     {
         try {
             $stats = [
@@ -125,6 +144,31 @@ class UcapanController extends Controller
                 'hadir' => Ucapan::where('kehadiran', 'hadir')->count(),
                 'tidak_hadir' => Ucapan::where('kehadiran', 'tidak_hadir')->count(),
                 'mungkin' => Ucapan::where('kehadiran', 'mungkin')->count(),
+            ];
+
+            return response()->json([
+                'data' => $stats
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal mengambil statistik ucapan.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Get statistics about ucapan responses for authenticated user
+     */
+    public function statistics(): JsonResponse
+    {
+        try {
+            $userId = auth()->id();
+            $stats = [
+                'total_ucapan' => Ucapan::where('user_id', $userId)->count(),
+                'hadir' => Ucapan::where('user_id', $userId)->where('kehadiran', 'hadir')->count(),
+                'tidak_hadir' => Ucapan::where('user_id', $userId)->where('kehadiran', 'tidak_hadir')->count(),
+                'mungkin' => Ucapan::where('user_id', $userId)->where('kehadiran', 'mungkin')->count(),
             ];
 
             return response()->json([
