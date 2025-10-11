@@ -20,4 +20,4 @@ jobs:
           script: |
           
             cd public_html/horuzt
-            git pull origin develop
+            git pull origin main
