@@ -2,6 +2,7 @@
 
 use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
+use App\Http\Controllers\Admin\AdminContactSettingController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\BankController;
@@ -9,6 +10,7 @@ use App\Http\Controllers\BukuTamuController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CeritaController;
+use App\Http\Controllers\ContactSettingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\InvitationController;
@@ -144,6 +146,13 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::get('/v1/admin/get-rekening', 'index');
         Route::put('/v1/admin/update-rekening/{id}', 'update');
         Route::delete('/v1/admin/delete-rekening/{id}', 'destroy');
+    });
+
+    // Admin Contact Settings Management
+    Route::controller(AdminContactSettingController::class)->group(function () {
+        Route::get('/v1/admin/contact-settings', 'index');
+        Route::put('/v1/admin/contact-settings', 'update');
+        Route::delete('/v1/admin/contact-settings', 'destroy');
     });
 
     // New Bank Account Management (Admin)
@@ -336,6 +345,11 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::get('/v1/user/list-data-setting', 'index');
         Route::delete('/v1/user/music/delete', 'deleteMusic'); // Kept for backward compatibility
     });
+
+    Route::controller(ContactSettingController::class)->group(function () {
+        Route::get('/v1/user/contact-settings', 'index');
+    });
+
     Route::controller(ThemaController::class)->group(function () {
         Route::get('/v1/user/get-themas', 'index')->name('user.thema.index');
     });
