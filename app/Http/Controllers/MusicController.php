@@ -22,7 +22,7 @@ class MusicController extends Controller
 
     /**
      * Stream music file for authenticated users
-     *
+     * 
      * @param StreamMusicRequest $request
      * @return \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\StreamedResponse
      */
@@ -41,7 +41,7 @@ class MusicController extends Controller
 
     /**
      * Stream music file for public access (wedding invitations)
-     *
+     * 
      * @param StreamMusicRequest $request
      * @return \Illuminate\Http\Response|\Symfony\Component\HttpFoundation\StreamedResponse
      */
@@ -54,7 +54,7 @@ class MusicController extends Controller
 
     /**
      * Download music file
-     *
+     * 
      * @param Request $request
      * @return \Symfony\Component\HttpFoundation\BinaryFileResponse|\Illuminate\Http\Response
      */
@@ -77,7 +77,7 @@ class MusicController extends Controller
 
     /**
      * Upload music file
-     *
+     * 
      * @param StoreMusicRequest $request
      * @return \Illuminate\Http\JsonResponse
      */
@@ -86,6 +86,13 @@ class MusicController extends Controller
         try {
             $user = Auth::user();
             $musicFile = $request->file('musik');
+
+            // Additional validation using service
+            if (!$this->musicStreamService->validateAudioFile($musicFile)) {
+                return response()->json([
+                    'message' => 'Invalid audio file format or size.'
+                ], 422);
+            }
 
             // Delete existing music file if exists
             $existingSetting = Setting::where('user_id', $user->id)->first();
@@ -123,7 +130,7 @@ class MusicController extends Controller
 
     /**
      * Delete music file
-     *
+     * 
      * @return \Illuminate\Http\JsonResponse
      */
     public function destroy()
@@ -144,7 +151,7 @@ class MusicController extends Controller
 
             if ($deleted) {
                 $setting->update(['musik' => null]);
-
+                
                 return response()->json([
                     'message' => 'Music file deleted successfully.',
                     'setting' => $setting->fresh()
@@ -164,7 +171,7 @@ class MusicController extends Controller
 
     /**
      * Get music file information
-     *
+     * 
      * @return \Illuminate\Http\JsonResponse
      */
     public function info()

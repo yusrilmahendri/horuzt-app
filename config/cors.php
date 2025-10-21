@@ -29,8 +29,7 @@ return [
         'https://sena-digital.com',
         'http://www.sena-digital.com',
         'http://sena-digital.com',
-        'https://cloud-api.sena-digital.com',
-        'https://cloud-api.sena-digital.com/api'
+        'https://cloud-api.sena-digital.com'
     ],
 
     'allowed_origins_patterns' => [],
@@ -39,6 +38,7 @@ return [
 
     'exposed_headers' => [],
 
+    'max_age' => 0,
 
     'supports_credentials' => true,
 
