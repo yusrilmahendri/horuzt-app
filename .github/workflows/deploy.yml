@@ -13,7 +13,7 @@ jobs:
       - name: 📦 Checkout repository
         uses: actions/checkout@v3
 
-      - name: 🔐 Git Pull on Hostinger
+      - name: 🔐 Git Pull
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.SSH_HOST }}

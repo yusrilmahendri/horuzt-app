@@ -5,9 +5,7 @@ use App\Models\MetodeTransaction;
 use App\Models\MidtransTransaction;
 use App\Models\PaketUndangan;
 use App\Models\Rekening;
-use App\Models\Setting;
 use App\Models\TripayTransaction;
-use App\Models\User;
 use Illuminate\Http\Request;
 
 class MethodePembayaran extends Controller
