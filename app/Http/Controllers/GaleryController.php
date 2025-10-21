@@ -14,12 +14,10 @@ class GaleryController extends Controller
     }
 
     public function store(Request $request){
-        $maxSize = config('upload.max_file_size', 51200);
-
-        $validated = $request->validate([
-            'photo' => "required|file|mimes:jpg,png,jpeg,webp|max:{$maxSize}",
-            'status' => 'sometimes|in:0,1',
-            'nama_foto' => 'nullable|string',
+        $validateData = $request->validate([
+            'photo' => 'required|file|mimes:jpg,png,jpeg|max:5222',
+            'url_video' => 'nullable|url',
+            'nama_foto' => 'required|string|max:255',
         ]);
 
         $userId = Auth::id();

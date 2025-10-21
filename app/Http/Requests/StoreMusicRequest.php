@@ -21,15 +21,12 @@ class StoreMusicRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxSize = config('upload.max_music_size', 51200);
-        $allowedTypes = implode(',', config('upload.allowed_music_types', ['mp3', 'wav', 'ogg', 'm4a']));
-
         return [
             'musik' => [
                 'required',
                 'file',
-                "mimes:{$allowedTypes}",
-                "max:{$maxSize}"
+                'mimes:mp3,wav,ogg,m4a',
+                'max:10240' // 10MB
             ]
         ];
     }
@@ -41,13 +38,11 @@ class StoreMusicRequest extends FormRequest
      */
     public function messages(): array
     {
-        $maxSizeMb = config('upload.max_music_size_mb', 50);
-
         return [
             'musik.required' => 'Music file is required.',
             'musik.file' => 'The uploaded file must be a valid file.',
-            'musik.mimes' => 'Music file must be in MP3, WAV, OGG, M4A, AAC, or FLAC format.',
-            'musik.max' => "Music file must not exceed {$maxSizeMb}MB."
+            'musik.mimes' => 'Music file must be in MP3, WAV, OGG, or M4A format.',
+            'musik.max' => 'Music file must not exceed 10MB.'
         ];
     }
 

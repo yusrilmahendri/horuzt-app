@@ -21,14 +21,11 @@ class StoreBankAccountRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxSize = config('upload.max_file_size', 51200);
-        $allowedTypes = implode(',', config('upload.allowed_image_types', ['jpeg', 'png', 'jpg', 'webp']));
-
         return [
             'kode_bank' => 'required|string|exists:banks,kode_bank',
             'nomor_rekening' => 'required|string|min:8|max:20|regex:/^[0-9]+$/',
             'nama_pemilik' => 'required|string|min:3|max:100',
-            'photo_rek' => "nullable|image|mimes:{$allowedTypes}|max:{$maxSize}",
+            'photo_rek' => 'nullable|image|mimes:jpeg,png,jpg,webp|max:2048',
         ];
     }
 
@@ -39,8 +36,6 @@ class StoreBankAccountRequest extends FormRequest
      */
     public function messages(): array
     {
-        $maxSizeMb = config('upload.max_file_size_mb', 50);
-
         return [
             'kode_bank.required' => 'Bank wajib dipilih',
             'kode_bank.exists' => 'Bank yang dipilih tidak valid',
@@ -53,7 +48,7 @@ class StoreBankAccountRequest extends FormRequest
             'nama_pemilik.max' => 'Nama pemilik maksimal 100 karakter',
             'photo_rek.image' => 'File harus berupa gambar',
             'photo_rek.mimes' => 'Format gambar yang diizinkan: jpeg, png, jpg, webp',
-            'photo_rek.max' => "Ukuran gambar maksimal {$maxSizeMb}MB",
+            'photo_rek.max' => 'Ukuran gambar maksimal 2MB',
         ];
     }
 }

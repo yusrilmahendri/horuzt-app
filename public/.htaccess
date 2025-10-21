@@ -19,28 +19,3 @@
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
 </IfModule>
-
-# PHP Settings for Large File Uploads
-<IfModule mod_php.c>
-    php_value upload_max_filesize 55M
-    php_value post_max_size 60M
-    php_value max_execution_time 300
-    php_value max_input_time 300
-    php_value memory_limit 512M
-    php_value max_file_uploads 20
-</IfModule>
-
-# For PHP-FPM (most modern servers use this)
-<IfModule mod_fcgid.c>
-    FcgidMaxRequestLen 62914560
-</IfModule>
-
-# Increase request body size (60MB = 62914560 bytes)
-LimitRequestBody 62914560
-
-# Security headers
-<IfModule mod_headers.c>
-    Header set X-Content-Type-Options "nosniff"
-    Header set X-Frame-Options "SAMEORIGIN"
-    Header set X-XSS-Protection "1; mode=block"
-</IfModule>

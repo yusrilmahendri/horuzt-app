@@ -190,13 +190,11 @@ class InvitationController extends Controller
     public function storeStepTwo(Request $request)
     {
         try {
-            $maxSize = config('upload.max_file_size', 51200);
-
             $validated = $request->validate([
                 'user_id'               => 'required|exists:users,id',
-                'photo_pria'            => "nullable|image|mimes:jpeg,png,jpg,webp|max:{$maxSize}",
-                'photo_wanita'          => "nullable|image|mimes:jpeg,png,jpg,webp|max:{$maxSize}",
-                'cover_photo'           => "nullable|image|mimes:jpeg,png,jpg,webp|max:{$maxSize}",
+                'photo_pria'            => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
+                'photo_wanita'          => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
+                'cover_photo'           => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
                 'name_lengkap_pria'     => 'nullable|string|max:255',
                 'name_lengkap_wanita'   => 'nullable|string|max:255',
                 'name_panggilan_pria'   => 'nullable|string|max:255',
@@ -308,11 +306,10 @@ class InvitationController extends Controller
 
     public function storeStepThree(Request $request)
     {
-        $maxSize = config('upload.max_file_size', 51200);
 
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
-            'photo'   => "nullable|image|mimes:jpeg,png,jpg,webp|max:{$maxSize}",
+            'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
             'status'  => 'nullable|string|max:255',
         ]);
 
