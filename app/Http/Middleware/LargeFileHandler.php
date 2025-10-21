@@ -4,44 +4,25 @@ namespace App\Http\Middleware;
 
 use Closure;
 use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Log;
 
 class LargeFileHandler
 {
+    /**
+     * Handle an incoming request.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \Closure(\Illuminate\Http\Request): (\Illuminate\Http\Response|\Illuminate\Http\RedirectResponse)  $next
+     * @return \Illuminate\Http\Response|\Illuminate\Http\RedirectResponse
+     */
     public function handle(Request $request, Closure $next)
     {
+        // Set PHP configuration for large file uploads with fallback values
         $settings = config('upload.php_settings', []);
 
-        $desiredSettings = [
-            'upload_max_filesize' => $settings['upload_max_filesize'] ?? '60M',
-            'post_max_size' => $settings['post_max_size'] ?? '200M',
-            'max_execution_time' => $settings['max_execution_time'] ?? 600,
-            'memory_limit' => $settings['memory_limit'] ?? '512M',
-        ];
-
-        $configErrors = [];
-
-        foreach ($desiredSettings as $key => $value) {
-            $before = ini_get($key);
-            $result = @ini_set($key, $value);
-
-            if ($result === false) {
-                $configErrors[] = "{$key} cannot be set via ini_set (server restriction)";
-            }
-        }
-
-        if (!empty($configErrors) && $request->hasFile('photo') || $request->hasFile('musik') || $request->hasFile('cover_photo')) {
-            Log::warning('Upload configuration warnings', [
-                'errors' => $configErrors,
-                'current_limits' => [
-                    'upload_max_filesize' => ini_get('upload_max_filesize'),
-                    'post_max_size' => ini_get('post_max_size'),
-                    'memory_limit' => ini_get('memory_limit'),
-                ],
-                'ip' => $request->ip(),
-                'path' => $request->path(),
-            ]);
-        }
+        ini_set('upload_max_filesize', $settings['upload_max_filesize'] ?? '6M');
+        ini_set('post_max_size', $settings['post_max_size'] ?? '6M');
+        ini_set('max_execution_time', $settings['max_execution_time'] ?? 300);
+        ini_set('memory_limit', $settings['memory_limit'] ?? '256M');
 
         return $next($request);
     }
