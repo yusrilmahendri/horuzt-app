@@ -25,8 +25,8 @@ class StoreMusicRequest extends FormRequest
             'musik' => [
                 'required',
                 'file',
-                'mimes:mp3,wav,ogg,m4a',
-                'max:10240' // 10MB
+                'mimes:mp3,mpga,wav,wave,ogg,oga,m4a,mp4a,aac,flac,wma,webm,opus,3gp',
+                'max:51200'
             ]
         ];
     }
@@ -41,8 +41,8 @@ class StoreMusicRequest extends FormRequest
         return [
             'musik.required' => 'Music file is required.',
             'musik.file' => 'The uploaded file must be a valid file.',
-            'musik.mimes' => 'Music file must be in MP3, WAV, OGG, or M4A format.',
-            'musik.max' => 'Music file must not exceed 10MB.'
+            'musik.mimetypes' => 'The uploaded file must be a valid audio file (MP3, WAV, OGG, M4A, AAC, FLAC, WMA, WebM, etc.).',
+            'musik.max' => 'Music file must not exceed 50MB.'
         ];
     }
 

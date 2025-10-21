@@ -38,10 +38,10 @@ class MusicStreamService
 
             $fileSize = filesize($filePath);
             $mimeType = mime_content_type($filePath) ?: 'audio/mpeg';
-            
+
             // Handle Range requests for streaming
             $range = $request->header('Range');
-            
+
             if ($range) {
                 return $this->handleRangeRequest($filePath, $fileSize, $mimeType, $range);
             }
@@ -72,37 +72,37 @@ class MusicStreamService
     {
         // Parse range header (e.g., "bytes=0-1023")
         preg_match('/bytes=(\d+)-(\d*)/', $range, $matches);
-        
+
         $start = intval($matches[1]);
         $end = !empty($matches[2]) ? intval($matches[2]) : $fileSize - 1;
-        
+
         // Ensure valid range
         if ($start > $end || $start >= $fileSize) {
             return response()->json(['message' => 'Invalid range request.'], 416);
         }
-        
+
         $contentLength = $end - $start + 1;
-        
+
         return response()->stream(function () use ($filePath, $start, $contentLength) {
             $handle = fopen($filePath, 'rb');
             fseek($handle, $start);
-            
+
             $chunkSize = 8192; // 8KB chunks
             $bytesRead = 0;
-            
+
             while ($bytesRead < $contentLength && !feof($handle)) {
                 $remainingBytes = $contentLength - $bytesRead;
                 $currentChunkSize = min($chunkSize, $remainingBytes);
-                
+
                 echo fread($handle, $currentChunkSize);
                 $bytesRead += $currentChunkSize;
-                
+
                 if (ob_get_level()) {
                     ob_flush();
                 }
                 flush();
             }
-            
+
             fclose($handle);
         }, 206, [
             'Content-Type' => $mimeType,
@@ -126,16 +126,16 @@ class MusicStreamService
     {
         return response()->stream(function () use ($filePath) {
             $handle = fopen($filePath, 'rb');
-            
+
             while (!feof($handle)) {
                 echo fread($handle, 8192); // 8KB chunks
-                
+
                 if (ob_get_level()) {
                     ob_flush();
                 }
                 flush();
             }
-            
+
             fclose($handle);
         }, 200, [
             'Content-Type' => $mimeType,
@@ -197,7 +197,7 @@ class MusicStreamService
 
             // Delete from storage
             $deleted = Storage::delete($setting->musik);
-            
+
             if ($deleted) {
                 Log::info('Music file deleted successfully', [
                     'setting_id' => $setting->id,
@@ -251,10 +251,50 @@ class MusicStreamService
      */
     public function validateAudioFile($file): bool
     {
-        $allowedMimeTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3'];
-        $maxSize = 10 * 1024 * 1024; // 10MB
+        // Daftar MIME types audio yang lebih lengkap
+        $allowedMimeTypes = [
+            'audio/mpeg',
+            'audio/mp3',
+            'audio/x-mpeg',
+            'audio/x-mp3',
+            'audio/mpeg3',
+            'audio/x-mpeg-3',
+            'audio/mpg',
+            'audio/x-mpg',
+            'audio/x-mpegaudio',
+            'audio/wav',
+            'audio/x-wav',
+            'audio/wave',
+            'audio/x-pn-wav',
+            'audio/ogg',
+            'audio/x-ogg',
+            'application/ogg',
+            'audio/mp4',
+            'audio/x-m4a',
+            'audio/aac',
+            'audio/aacp',
+            'audio/3gpp',
+            'audio/3gpp2',
+            'audio/flac',
+            'audio/x-flac',
+            'audio/webm',
+            'audio/wma',
+            'audio/x-ms-wma'
+        ];
 
-        return in_array($file->getMimeType(), $allowedMimeTypes) && 
-               $file->getSize() <= $maxSize;
+        // Ekstensi file yang diizinkan sebagai fallback
+        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a', 'aac', 'flac', 'wma', 'webm', 'opus'];
+
+        $maxSize = 50 * 1024 * 1024; // 50MB
+
+        $mimeType = $file->getMimeType();
+        $extension = strtolower($file->getClientOriginalExtension());
+
+        // Validasi: cek MIME type ATAU ekstensi file
+        $validMimeType = in_array($mimeType, $allowedMimeTypes);
+        $validExtension = in_array($extension, $allowedExtensions);
+        $validSize = $file->getSize() <= $maxSize;
+
+        return ($validMimeType || $validExtension) && $validSize;
     }
 }

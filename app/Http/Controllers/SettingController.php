@@ -83,13 +83,6 @@ class SettingController extends Controller
             $user = Auth::user();
             $musicFile = $request->file('musik');
 
-            // Additional validation using service
-            if (!$this->musicStreamService->validateAudioFile($musicFile)) {
-                return response()->json([
-                    'message' => 'Invalid audio file format or size.'
-                ], 422);
-            }
-
             // Delete existing music file if exists
             $existingSetting = Setting::where('user_id', $user->id)->first();
             if ($existingSetting && $existingSetting->musik) {
