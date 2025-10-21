@@ -1,24 +1,7 @@
 <IfModule mod_rewrite.c>
     <IfModule mod_negotiation.c>
         Options -MultiViews -Indexes
-    
-# Upload Configuration Start
-# Configure Apache to accept large file uploads
-<IfModule mod_php.c>
-    php_value upload_max_filesize 60M
-    php_value post_max_size 200M
-    php_value memory_limit 512M
-    php_value max_execution_time 600
-    php_value max_input_time 600
-</IfModule>
-
-# Increase Apache request body limit to 200MB
-LimitRequestBody 209715200
-
-# Timeout configuration
-Timeout 600
-# Upload Configuration End
-</IfModule>
+    </IfModule>
 
     RewriteEngine On
 
@@ -35,9 +18,9 @@ Timeout 600
     RewriteCond %{REQUEST_FILENAME} !-d
     RewriteCond %{REQUEST_FILENAME} !-f
     RewriteRule ^ index.php [L]
+</IfModule>
 
-# Upload Configuration Start
-# Configure Apache to accept large file uploads
+# Upload Configuration
 <IfModule mod_php.c>
     php_value upload_max_filesize 60M
     php_value post_max_size 200M
@@ -51,5 +34,3 @@ LimitRequestBody 209715200
 
 # Timeout configuration
 Timeout 600
-# Upload Configuration End
-</IfModule>
