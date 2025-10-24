@@ -38,6 +38,9 @@ use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeddingProfileController;
 use Illuminate\Support\Facades\Route;
+use App\Http\Controllers\MidtransController;
+
+
 
 /*
 |--------------------------------------------------------------------------
@@ -54,6 +57,10 @@ Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
+
+Route::post('/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])
+        ->name('midtrans.createSnapToken');
+Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook']);
 
 // Public Ucapan (Wedding Wishes & Attendance) endpoints
 Route::controller(UcapanController::class)->group(function () {
@@ -249,6 +256,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     // Profile Management endpoints
+
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {
         Route::get('/', 'show')->name('profile.show');
         Route::put('/', 'update')->name('profile.update');
