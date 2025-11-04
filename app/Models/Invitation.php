@@ -15,6 +15,8 @@ class Invitation extends Model
         'user_id',
         'paket_undangan_id',
         'status',
+        'order_id',
+        'midtrans_transaction_id',
         'payment_status',
         'domain_expires_at',
         'payment_confirmed_at',
@@ -36,6 +38,10 @@ class Invitation extends Model
 
     public function paketUndangan() {
         return $this->belongsTo(PaketUndangan::class);
+    }
+
+    public function paymentLogs() {
+        return $this->hasMany(\App\Models\PaymentLog::class);
     }
 
     /**
