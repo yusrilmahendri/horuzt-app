@@ -62,6 +62,7 @@ Route::post('/midtrans/create-snap-token', [MidtransController::class, 'createSn
         ->name('midtrans.createSnapToken');
 Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook']);
 Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
+Route::get('/v1/user/list-galery', [GaleryController::class, 'index']);
 
 // Public Ucapan (Wedding Wishes & Attendance) endpoints
 Route::controller(UcapanController::class)->group(function () {
@@ -319,6 +320,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::get('/v1/user/list-galery', 'index');
         Route::delete('/v1/user/delete-galery', 'destroy');
     });
+
     Route::controller(AcaraController::class)->group(function () {
         Route::get('/v1/user/acara', 'index');
         Route::post('/v1/user/submission-countdown', 'storeCountDown');
