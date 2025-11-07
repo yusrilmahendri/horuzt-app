@@ -62,7 +62,6 @@ Route::post('/midtrans/create-snap-token', [MidtransController::class, 'createSn
         ->name('midtrans.createSnapToken');
 Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook']);
 Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
-Route::get('/v1/user/list-galery', [GaleryController::class, 'index']);
 
 // Public Ucapan (Wedding Wishes & Attendance) endpoints
 Route::controller(UcapanController::class)->group(function () {
