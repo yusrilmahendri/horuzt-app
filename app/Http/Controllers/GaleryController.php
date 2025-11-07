@@ -99,6 +99,59 @@ class GaleryController extends Controller
     }
 
     /**
+     * Public endpoint - List galery by user_id for wedding invitation display
+     * Query params: user_id (required), status (optional), per_page (optional)
+     */
+    public function publicIndex(Request $request)
+    {
+        $validated = $request->validate([
+            'user_id' => 'required|integer|exists:users,id',
+            'status' => 'nullable|in:0,1',
+            'per_page' => 'nullable|integer|min:1|max:100',
+        ]);
+
+        $userId = $validated['user_id'];
+        $query = Galery::where('user_id', $userId);
+
+        // Filter by status if provided
+        if ($request->has('status')) {
+            $query->where('status', $request->input('status'));
+        }
+
+        // Pagination (default 10)
+        $perPage = $request->input('per_page', 10);
+        $galleries = $query->orderByDesc('id')->paginate($perPage);
+
+        // Transform data to ensure photo_url is included
+        $galleries->getCollection()->transform(function ($gallery) {
+            return [
+                'id' => $gallery->id,
+                'user_id' => $gallery->user_id,
+                'photo' => $gallery->photo,
+                'photo_url' => $gallery->photo_url,
+                'url_video' => $gallery->url_video,
+                'nama_foto' => $gallery->nama_foto,
+                'status' => $gallery->status,
+                'created_at' => $gallery->created_at,
+                'updated_at' => $gallery->updated_at,
+            ];
+        });
+
+        return response()->json([
+            'message' => 'Data galery berhasil diambil.',
+            'data' => $galleries->items(),
+            'pagination' => [
+                'current_page' => $galleries->currentPage(),
+                'last_page' => $galleries->lastPage(),
+                'per_page' => $galleries->perPage(),
+                'total' => $galleries->total(),
+                'from' => $galleries->firstItem(),
+                'to' => $galleries->lastItem(),
+            ]
+        ]);
+    }
+
+    /**
      * Hapus galery foto berdasarkan id dari query params
      */
     public function destroy(Request $request)

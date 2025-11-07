@@ -84,6 +84,11 @@ Route::get('/v1/wedding-profile/couple/{domain}', [WeddingProfileController::cla
 // Public Music Streaming endpoint (for wedding invitations)
 Route::get('/v1/music/stream/public', [MusicController::class, 'streamPublic']);
 
+// Public Gallery endpoint (for wedding invitation photo display)
+Route::controller(GaleryController::class)->group(function () {
+    Route::get('/v1/galery/public', 'publicIndex');
+});
+
 // Public Attendance endpoints (for wedding attendance confirmation)
 Route::controller(AttendanceController::class)->group(function () {
     Route::post('/v1/attendance', 'store');
