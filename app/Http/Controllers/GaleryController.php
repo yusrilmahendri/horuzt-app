@@ -15,18 +15,34 @@ class GaleryController extends Controller
 
     public function store(Request $request){
         $validateData = $request->validate([
-            'photo' => 'required|file|mimes:jpg,png,jpeg|max:5222',
-            'url_video' => 'nullable|url',
-            'nama_foto' => 'required|string|max:255',
+            'photo' => 'nullable|file|mimes:jpg,png,jpeg|max:5222',
+            'url_video' => 'nullable|string|max:500',
+            'nama_foto' => 'nullable|string|max:255',
         ]);
 
+        // Validasi: setidaknya salah satu harus ada (photo atau url_video)
+        if (!$request->hasFile('photo') && !$request->filled('url_video')) {
+            return response()->json([
+                'message' => 'Setidaknya harus mengisi photo atau url_video.',
+                'errors' => [
+                    'photo' => ['Photo atau URL video harus diisi.'],
+                    'url_video' => ['Photo atau URL video harus diisi.']
+                ]
+            ], 422);
+        }
+
         $userId = Auth::id();
-        $photoPath = $request->file('photo')->store('photos', 'public');
+        $photoPath = null;
+
+        // Proses upload photo jika ada
+        if ($request->hasFile('photo')) {
+            $photoPath = $request->file('photo')->store('photos', 'public');
+        }
 
         $galery = new Galery();
         $galery->photo = $photoPath;
-        $galery->url_video = $validateData['url_video'];
-        $galery->nama_foto = $validateData['nama_foto'];
+        $galery->url_video = $validateData['url_video'] ?? null;
+        $galery->nama_foto = $validateData['nama_foto'] ?? null;
         $galery->user_id = $userId;
         $galery->status = 1;
 
