@@ -27,10 +27,12 @@ return [
         // Production
         'https://www.sena-digital.com',
         'https://sena-digital.com',
-        'http://www.sena-digital.com',
-        'http://sena-digital.com',
-        'https://cloud-api.sena-digital.com',
         'https://pio-wedding.pioneersolve.id',
+        'http://www.sena-digital.com',
+        'http://pio-wedding.pioneersolve.id',
+        'http://sena-digital.com',
+        'https://pio-wedding.pioneersolve.id',
+        'https://cloud-api.sena-digital.com',
     ],
 
     'allowed_origins_patterns' => [],
