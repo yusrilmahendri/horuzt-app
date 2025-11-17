@@ -29,7 +29,8 @@ return [
         'https://sena-digital.com',
         'http://www.sena-digital.com',
         'http://sena-digital.com',
-        'https://cloud-api.sena-digital.com'
+        'https://cloud-api.sena-digital.com',
+        'https://pio-wedding.pioneersolve.id',
     ],
 
     'allowed_origins_patterns' => [],
