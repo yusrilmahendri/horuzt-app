@@ -60,8 +60,23 @@ Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
 Route::post('/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])
         ->name('midtrans.createSnapToken');
-Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook']);
+Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
 Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
+
+// Test endpoint for webhook connectivity
+Route::match(['get', 'post'], '/v1/midtrans/webhook-test', function(\Illuminate\Http\Request $request) {
+    \Illuminate\Support\Facades\Log::info('Webhook test endpoint hit', [
+        'method' => $request->method(),
+        'body' => $request->all(),
+        'headers' => $request->headers->all(),
+    ]);
+    return response()->json([
+        'success' => true,
+        'message' => 'Webhook endpoint is reachable',
+        'method' => $request->method(),
+        'received_data' => $request->all(),
+    ]);
+});
 
 // Public Ucapan (Wedding Wishes & Attendance) endpoints
 Route::controller(UcapanController::class)->group(function () {

@@ -264,6 +264,15 @@ class MidtransController extends Controller
 
     public function handleWebhook(Request $request): JsonResponse
     {
+        // Log all incoming request for debugging
+        Log::info('Midtrans webhook received', [
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
+            'ip' => $request->ip(),
+            'headers' => $request->headers->all(),
+            'body' => $request->all(),
+        ]);
+
         $orderId = $request->input('order_id');
         $transactionStatus = $request->input('transaction_status');
         $transactionId = $request->input('transaction_id');
