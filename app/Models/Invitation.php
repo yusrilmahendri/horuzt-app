@@ -44,6 +44,11 @@ class Invitation extends Model
         return $this->hasMany(\App\Models\PaymentLog::class);
     }
 
+    public function komentars()
+    {
+        return $this->hasMany(Komentar::class)->orderBy('created_at', 'desc');
+    }
+
     /**
      * Check if domain is still active
      */

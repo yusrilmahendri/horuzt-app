@@ -14,6 +14,7 @@ use App\Http\Controllers\ContactSettingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\InvitationController;
+use App\Http\Controllers\KomentarController;
 use App\Http\Controllers\JenisThemaController;
 use App\Http\Controllers\MempelaiController;
 use App\Http\Controllers\MethodePembayaran;
@@ -28,6 +29,7 @@ use App\Http\Controllers\QouteController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\Admin\AdminBankAccountController;
+use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
@@ -102,6 +104,20 @@ Route::get('/v1/music/stream/public', [MusicController::class, 'streamPublic']);
 // Public Gallery endpoint (for wedding invitation photo display)
 Route::controller(GaleryController::class)->group(function () {
     Route::get('/v1/galery/public', 'publicIndex');
+});
+
+// Public Buku Tamu endpoints (for guest book entries and submissions)
+Route::controller(BukuTamuController::class)->prefix('v1/buku-tamu')->group(function () {
+    Route::get('/', 'publicIndex');
+    Route::post('/', 'store');
+    Route::get('/statistics', 'publicStatistics');
+});
+
+// Public Komentar endpoints (for wedding comments)
+Route::controller(KomentarController::class)->prefix('v1')->group(function () {
+    Route::get('/komentars', 'index');              // GET /api/v1/komentars?domain=xxx
+    Route::post('/komentars', 'store');             // POST /api/v1/komentars
+    Route::get('/komentars/statistics', 'statistics'); // GET /api/v1/komentars/statistics?domain=xxx
 });
 
 // Public Attendance endpoints (for wedding attendance confirmation)
@@ -190,6 +206,18 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::delete('/v1/admin/bank-accounts/{id}', 'destroy');
         Route::get('/v1/admin/bank-accounts-statistics', 'statistics');
         Route::get('/v1/admin/user-accounts', 'userAccounts');
+    });
+
+    // Admin Buku Tamu Management
+    Route::controller(AdminBukuTamuController::class)->group(function () {
+        Route::get('/v1/admin/buku-tamu', 'index');
+        Route::get('/v1/admin/buku-tamu/statistics', 'statistics');
+        Route::patch('/v1/admin/buku-tamu/bulk-approval', 'bulkUpdateApproval');
+        Route::delete('/v1/admin/buku-tamu/bulk-delete', 'bulkDelete');
+        Route::delete('/v1/admin/buku-tamu/user/{userId}', 'deleteByUser')->where('userId', '[0-9]+');
+        Route::get('/v1/admin/buku-tamu/{id}', 'show')->where('id', '[0-9]+');
+        Route::patch('/v1/admin/buku-tamu/{id}/approval', 'updateApproval')->where('id', '[0-9]+');
+        Route::delete('/v1/admin/buku-tamu/{id}', 'destroy')->where('id', '[0-9]+');
     });
 
     Route::controller(UserController::class)->group(function () {
@@ -311,8 +339,13 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     });
     Route::controller(BukuTamuController::class)->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
+        Route::get('/v1/user/buku-tamu/statistics', 'statistics');
+        Route::get('/v1/user/buku-tamu/export', 'export');
+        Route::patch('/v1/user/buku-tamu/bulk-approval', 'bulkUpdateApproval');
         Route::delete('/v1/user/buku-tamu/delete-all', 'deleteAll');
-        Route::delete('/v1/user/buku-tamu/{id}', 'deleteById');
+        Route::get('/v1/user/buku-tamu/{id}', 'show')->where('id', '[0-9]+');
+        Route::patch('/v1/user/buku-tamu/{id}/approval', 'updateApproval')->where('id', '[0-9]+');
+        Route::delete('/v1/user/buku-tamu/{id}', 'deleteById')->where('id', '[0-9]+');
     });
     Route::controller(PengunjungController::class)->group(function () {
         Route::get('/v1/user/result-pengunjung', 'index');

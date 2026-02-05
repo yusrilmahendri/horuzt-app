@@ -35,6 +35,7 @@ class WeddingProfileResource extends JsonResource
             'filter_undangan' => $this->getFilterUndanganInfo(),
             'guest_wishes' => $this->getGuestWishesInfo(),
             'guest_book' => $this->getGuestBookInfo(),
+            'komentars' => $this->getKomentarsInfo(),
             'testimonials' => $this->getTestimonialsInfo(),
             'themes' => $this->getThemesInfo(),
             'metadata' => $this->getMetadata(),
@@ -54,21 +55,23 @@ class WeddingProfileResource extends JsonResource
 
     private function getMempelaiInfo(): ?array
     {
-        if (!$this->mempelaiOne) return null;
+        if (! $this->mempelaiOne) {
+            return null;
+        }
 
         return [
             'id' => $this->mempelaiOne->id,
-            'cover_photo' => $this->mempelaiOne->cover_photo ? asset('storage/' . $this->mempelaiOne->cover_photo) : null,
+            'cover_photo' => $this->mempelaiOne->cover_photo ? asset('storage/'.$this->mempelaiOne->cover_photo) : null,
             'urutan_mempelai' => $this->mempelaiOne->urutan_mempelai,
             'pria' => [
-                'photo' => $this->mempelaiOne->photo_pria ? asset('storage/' . $this->mempelaiOne->photo_pria) : null,
+                'photo' => $this->mempelaiOne->photo_pria ? asset('storage/'.$this->mempelaiOne->photo_pria) : null,
                 'nama_lengkap' => $this->mempelaiOne->name_lengkap_pria,
                 'nama_panggilan' => $this->mempelaiOne->name_panggilan_pria,
                 'ayah' => $this->mempelaiOne->ayah_pria,
                 'ibu' => $this->mempelaiOne->ibu_pria,
             ],
             'wanita' => [
-                'photo' => $this->mempelaiOne->photo_wanita ? asset('storage/' . $this->mempelaiOne->photo_wanita) : null,
+                'photo' => $this->mempelaiOne->photo_wanita ? asset('storage/'.$this->mempelaiOne->photo_wanita) : null,
                 'nama_lengkap' => $this->mempelaiOne->name_lengkap_wanita,
                 'nama_panggilan' => $this->mempelaiOne->name_panggilan_wanita,
                 'ayah' => $this->mempelaiOne->ayah_wanita,
@@ -81,7 +84,9 @@ class WeddingProfileResource extends JsonResource
 
     private function getInvitationPackageInfo(): ?array
     {
-        if (!$this->invitationOne) return null;
+        if (! $this->invitationOne) {
+            return null;
+        }
 
         return [
             'id' => $this->invitationOne->id,
@@ -98,14 +103,14 @@ class WeddingProfileResource extends JsonResource
                     'bebas_pilih_tema' => $this->invitationOne->paketUndangan->bebas_pilih_tema,
                     'kirim_hadiah' => $this->invitationOne->paketUndangan->kirim_hadiah,
                     'import_data' => $this->invitationOne->paketUndangan->import_data,
-                ]
+                ],
             ] : null,
         ];
     }
 
     private function getEventsInfo(): array
     {
-        if (!$this->relationLoaded('acara') || !$this->acara) {
+        if (! $this->relationLoaded('acara') || ! $this->acara) {
             return [];
         }
 
@@ -128,7 +133,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getStoriesInfo(): array
     {
-        if (!$this->relationLoaded('cerita') || !$this->cerita) {
+        if (! $this->relationLoaded('cerita') || ! $this->cerita) {
             return [];
         }
 
@@ -145,7 +150,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getQuotesInfo(): array
     {
-        if (!$this->relationLoaded('qoute') || !$this->qoute) {
+        if (! $this->relationLoaded('qoute') || ! $this->qoute) {
             return [];
         }
 
@@ -161,14 +166,14 @@ class WeddingProfileResource extends JsonResource
 
     private function getGalleryInfo(): array
     {
-        if (!$this->relationLoaded('gallery') || !$this->gallery) {
+        if (! $this->relationLoaded('gallery') || ! $this->gallery) {
             return [];
         }
 
         return $this->gallery->map(function ($gallery) {
             return [
                 'id' => $gallery->id,
-                'photo' => $gallery->photo ? asset('storage/' . $gallery->photo) : null,
+                'photo' => $gallery->photo ? asset('storage/'.$gallery->photo) : null,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,
@@ -179,7 +184,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getBankAccountsInfo(): array
     {
-        if (!$this->relationLoaded('rekening') || !$this->rekening) {
+        if (! $this->relationLoaded('rekening') || ! $this->rekening) {
             return [];
         }
 
@@ -191,7 +196,7 @@ class WeddingProfileResource extends JsonResource
                 'nama_bank' => $rekening->nama_bank,
                 'nama_pemilik' => $rekening->nama_pemilik,
                 'methode_pembayaran' => $rekening->methode_pembayaran,
-                'photo_rek' => $rekening->photo_rek ? asset('storage/photos/' . $rekening->photo_rek) : null,
+                'photo_rek' => $rekening->photo_rek ? asset('storage/photos/'.$rekening->photo_rek) : null,
                 'bank' => $rekening->bank ? [
                     'id' => $rekening->bank->id,
                     'name' => $rekening->bank->name,
@@ -203,12 +208,14 @@ class WeddingProfileResource extends JsonResource
 
     private function getSettingsInfo(): ?array
     {
-        if (!$this->settingOne) return null;
+        if (! $this->settingOne) {
+            return null;
+        }
 
         $settings = [
             'id' => $this->settingOne->id,
             'domain' => $this->settingOne->domain,
-            'musik' => $this->settingOne->musik ? asset('storage/' . $this->settingOne->musik) : null,
+            'musik' => $this->settingOne->musik ? asset('storage/'.$this->settingOne->musik) : null,
             'salam_pembuka' => $this->settingOne->salam_pembuka,
             'salam_atas' => $this->settingOne->salam_atas,
             'salam_bawah' => $this->settingOne->salam_bawah,
@@ -216,18 +223,18 @@ class WeddingProfileResource extends JsonResource
 
         // Add music streaming URL if music file exists
         if ($this->settingOne->musik) {
-            $settings['music_stream_url'] = url('/api/v1/music/stream/public?id=' . $this->settingOne->id);
+            $settings['music_stream_url'] = url('/api/v1/music/stream/public?id='.$this->settingOne->id);
             $settings['music_info'] = [
                 'has_music' => true,
                 'supports_streaming' => true,
                 'supports_range_requests' => true,
-                'format_support' => ['mp3', 'wav', 'ogg', 'm4a']
+                'format_support' => ['mp3', 'wav', 'ogg', 'm4a'],
             ];
         } else {
             $settings['music_stream_url'] = null;
             $settings['music_info'] = [
                 'has_music' => false,
-                'supports_streaming' => false
+                'supports_streaming' => false,
             ];
         }
 
@@ -236,7 +243,9 @@ class WeddingProfileResource extends JsonResource
 
     private function getFilterUndanganInfo(): ?array
     {
-        if (!$this->filterUndanganOne) return null;
+        if (! $this->filterUndanganOne) {
+            return null;
+        }
 
         return [
             'id' => $this->filterUndanganOne->id,
@@ -255,7 +264,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getGuestWishesInfo(): array
     {
-        if (!$this->relationLoaded('ucapan') || !$this->ucapan) {
+        if (! $this->relationLoaded('ucapan') || ! $this->ucapan) {
             return [];
         }
 
@@ -272,7 +281,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getGuestBookInfo(): array
     {
-        if (!$this->relationLoaded('bukuTamu') || !$this->bukuTamu) {
+        if (! $this->relationLoaded('bukuTamu') || ! $this->bukuTamu) {
             return [];
         }
 
@@ -285,9 +294,30 @@ class WeddingProfileResource extends JsonResource
         })->toArray();
     }
 
+    private function getKomentarsInfo(): array
+    {
+        if (! $this->relationLoaded('invitationOne') || ! $this->invitationOne) {
+            return [];
+        }
+
+        // Use eager loaded komentars - no extra query!
+        if (! $this->invitationOne->relationLoaded('komentars')) {
+            return [];
+        }
+
+        return $this->invitationOne->komentars->map(function ($komentar) {
+            return [
+                'id' => $komentar->id,
+                'nama' => $komentar->nama,
+                'komentar' => $komentar->komentar,
+                'created_at' => $komentar->created_at?->format('Y-m-d H:i:s'),
+            ];
+        })->toArray();
+    }
+
     private function getTestimonialsInfo(): array
     {
-        if (!$this->relationLoaded('testimoni') || !$this->testimoni) {
+        if (! $this->relationLoaded('testimoni') || ! $this->testimoni) {
             return [];
         }
 
@@ -307,14 +337,14 @@ class WeddingProfileResource extends JsonResource
     {
         $result = [
             'selected_theme' => null,
-            'legacy_themes' => []
+            'legacy_themes' => [],
         ];
 
         // Get current selected theme (from jenis_themas)
         if ($this->relationLoaded('selectedTheme') && $this->selectedTheme) {
             $selectedTheme = $this->selectedTheme;
             $jenisThema = $selectedTheme->jenisThema;
-            
+
             if ($jenisThema) {
                 $result['selected_theme'] = [
                     'id' => $jenisThema->id,
@@ -359,6 +389,9 @@ class WeddingProfileResource extends JsonResource
             'total_quotes' => $this->relationLoaded('qoute') ? $this->qoute->count() : 0,
             'total_gallery_items' => $this->relationLoaded('gallery') ? $this->gallery->count() : 0,
             'total_guest_wishes' => $this->relationLoaded('ucapan') ? $this->ucapan->count() : 0,
+            'total_komentars' => ($this->invitationOne && $this->invitationOne->relationLoaded('komentars'))
+                ? $this->invitationOne->komentars->count()
+                : 0,
             'is_public_view' => $this->isPublicView,
         ];
     }

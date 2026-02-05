@@ -4,8 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Resources\WeddingProfile\WeddingProfileResource;
 use App\Models\User;
-use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class WeddingProfileController extends Controller
@@ -31,6 +31,9 @@ class WeddingProfileController extends Controller
                 'settingOne',
                 'filterUndanganOne',
                 'invitationOne.paketUndangan',
+                'invitationOne.komentars' => function ($query) {
+                    $query->latest()->limit(50);
+                },
 
                 // Collection data
                 'acara.countdownAcara',
@@ -45,21 +48,21 @@ class WeddingProfileController extends Controller
 
                 // Theme relationships
                 'thema',
-                'selectedTheme.jenisThema.category'
+                'selectedTheme.jenisThema.category',
             ])->findOrFail($userId);
 
             return response()->json([
-                'data' => new WeddingProfileResource($user)
+                'data' => new WeddingProfileResource($user),
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
-                'message' => 'User profile not found.'
+                'message' => 'User profile not found.',
             ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve wedding profile data.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
@@ -85,13 +88,13 @@ class WeddingProfileController extends Controller
             ];
 
             return response()->json([
-                'data' => $stats
+                'data' => $stats,
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve wedding profile statistics.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
@@ -103,7 +106,7 @@ class WeddingProfileController extends Controller
     {
         $user = Auth::user();
         $completionItems = [
-            'basic_info' => !empty($user->name) && !empty($user->phone),
+            'basic_info' => ! empty($user->name) && ! empty($user->phone),
             'mempelai' => $user->mempelaiOne !== null,
             'acara' => $user->acara()->exists(),
             'cerita' => $user->cerita()->exists(),
@@ -124,7 +127,7 @@ class WeddingProfileController extends Controller
             'percentage' => $percentage,
             'completed_items' => $completedItems,
             'total_items' => $totalItems,
-            'missing_items' => array_keys(array_filter($completionItems, fn($item) => !$item))
+            'missing_items' => array_keys(array_filter($completionItems, fn ($item) => ! $item)),
         ];
     }
 
@@ -163,9 +166,9 @@ class WeddingProfileController extends Controller
                 }
             }
 
-            if (!$userId) {
+            if (! $userId) {
                 return response()->json([
-                    'message' => 'Wedding profile not found. Please check the URL parameters.'
+                    'message' => 'Wedding profile not found. Please check the URL parameters.',
                 ], 404);
             }
 
@@ -178,37 +181,37 @@ class WeddingProfileController extends Controller
                 'acara',
                 'cerita',
                 'qoute',
-                'gallery' => function($query) {
+                'gallery' => function ($query) {
                     $query->where('status', true); // Only show active gallery items
                 },
                 'rekening.bank',
                 'testimoni', // Added missing testimoni relationship
                 'bukuTamu', // Added missing bukuTamu relationship
                 'thema', // Added missing thema relationship
-                'ucapan' => function($query) {
+                'ucapan' => function ($query) {
                     $query->whereNotNull('user_id'); // Only user's own ucapan
-                }
+                },
             ])->findOrFail($userId);
 
             // Check if invitation is completed
             if ($user->invitationOne?->status !== 'step3') {
                 return response()->json([
-                    'message' => 'Wedding invitation is not yet available for public viewing.'
+                    'message' => 'Wedding invitation is not yet available for public viewing.',
                 ], 403);
             }
 
             return response()->json([
-                'data' => new WeddingProfileResource($user, true) // Pass true for public view
+                'data' => new WeddingProfileResource($user, true), // Pass true for public view
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
-                'message' => 'Wedding profile not found.'
+                'message' => 'Wedding profile not found.',
             ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve wedding profile.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
@@ -224,7 +227,7 @@ class WeddingProfileController extends Controller
             // Validate domain parameter
             if (empty(trim($domain))) {
                 return response()->json([
-                    'message' => 'Domain parameter is required.'
+                    'message' => 'Domain parameter is required.',
                 ], 400);
             }
 
@@ -232,9 +235,9 @@ class WeddingProfileController extends Controller
             $setting = \App\Models\Setting::whereRaw('LOWER(domain) = ?', [strtolower(trim($domain))])
                 ->first();
 
-            if (!$setting || !$setting->user_id) {
+            if (! $setting || ! $setting->user_id) {
                 return response()->json([
-                    'message' => 'Wedding profile not found for this domain.'
+                    'message' => 'Wedding profile not found for this domain.',
                 ], 404);
             }
 
@@ -247,7 +250,7 @@ class WeddingProfileController extends Controller
                 'acara',
                 'cerita',
                 'qoute',
-                'gallery' => function($query) {
+                'gallery' => function ($query) {
                     $query->where('status', true); // Only show active gallery items
                 },
                 'rekening.bank',
@@ -255,15 +258,15 @@ class WeddingProfileController extends Controller
                 'bukuTamu',
                 'thema',
                 'selectedTheme.jenisThema.category', // Add user's selected theme with category
-                'ucapan' => function($query) {
+                'ucapan' => function ($query) {
                     $query->whereNotNull('user_id'); // Only user's own ucapan
-                }
+                },
             ])->findOrFail($setting->user_id);
 
             // Check if invitation is completed
             if ($user->invitationOne?->status !== 'step3') {
                 return response()->json([
-                    'message' => 'Wedding invitation is not yet available for public viewing.'
+                    'message' => 'Wedding invitation is not yet available for public viewing.',
                 ], 403);
             }
 
@@ -274,30 +277,30 @@ class WeddingProfileController extends Controller
             if ($paymentStatus === 'MK') {
                 return response()->json([
                     'data' => [],
-                    'message' => 'Payment is still pending confirmation.'
+                    'message' => 'Payment is still pending confirmation.',
                 ], 200);
             }
 
             // If status is "SB" (Sudah Bayar), return full data
             if ($paymentStatus === 'SB') {
                 return response()->json([
-                    'data' => new WeddingProfileResource($user, true) // Pass true for public view
+                    'data' => new WeddingProfileResource($user, true), // Pass true for public view
                 ], 200);
             }
 
             // If no payment status or unknown status, return error
             return response()->json([
-                'message' => 'Wedding profile payment status is not valid.'
+                'message' => 'Wedding profile payment status is not valid.',
             ], 403);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
-                'message' => 'Wedding profile not found.'
+                'message' => 'Wedding profile not found.',
             ], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Failed to retrieve wedding profile.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
