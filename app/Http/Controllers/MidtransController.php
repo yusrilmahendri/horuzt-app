@@ -19,15 +19,17 @@ class MidtransController extends Controller
 
     public function __construct()
     {
-        // Removed auth middleware - now using user_id query param
+        // Auth is enforced at route level via auth:sanctum middleware
     }
 
     public function createSnapToken(CreateSnapTokenRequest $request): JsonResponse
     {
         try {
-            // Get user from query parameter instead of auth
-            $userId = $request->query('user_id');
-            $user = \App\Models\User::findOrFail($userId);
+            $user = Auth::user();
+
+            if (!$user) {
+                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+            }
 
             $validated = $request->validated();
 
@@ -158,11 +160,11 @@ class MidtransController extends Controller
                 ], 404);
             }
 
-            if ($invitation->payment_status === 'paid') {
+            if (in_array($invitation->payment_status, ['paid', 'failed', 'expired', 'refunded'])) {
                 return response()->json([
                     'success' => true,
-                    'payment_status' => 'paid',
-                    'message' => 'Payment already confirmed',
+                    'payment_status' => $invitation->payment_status,
+                    'message' => 'Payment status: ' . $invitation->payment_status,
                     'data' => [
                         'order_id' => $orderId,
                         'payment_confirmed_at' => $invitation->payment_confirmed_at,
@@ -237,16 +239,23 @@ class MidtransController extends Controller
             ]);
 
         } catch (\Midtrans\Exceptions\ApiException $e) {
-            Log::error('Midtrans API error during status check', [
+            Log::warning('Midtrans API error during status check, returning DB status', [
                 'error' => $e->getMessage(),
                 'order_id' => $orderId,
             ]);
 
+            // If the Midtrans API call fails (e.g. transaction not found, sandbox auth issues),
+            // return the current DB status rather than propagating a 5xx error.
             return response()->json([
-                'success' => false,
-                'message' => 'Failed to check payment status from Midtrans',
-                'error' => $e->getMessage(),
-            ], 503);
+                'success' => true,
+                'payment_status' => $invitation->payment_status ?? 'pending',
+                'message' => 'Payment status from DB (Midtrans API unavailable)',
+                'data' => [
+                    'order_id' => $orderId,
+                    'payment_confirmed_at' => $invitation->payment_confirmed_at ?? null,
+                    'domain_expires_at' => $invitation->domain_expires_at ?? null,
+                ],
+            ]);
 
         } catch (\Exception $e) {
             Log::error('Payment status check failed', [
@@ -254,6 +263,20 @@ class MidtransController extends Controller
                 'order_id' => $orderId,
                 'trace' => $e->getTraceAsString(),
             ]);
+
+            // Fall back to DB status rather than a 5xx if we have the invitation record.
+            if (isset($invitation)) {
+                return response()->json([
+                    'success' => true,
+                    'payment_status' => $invitation->payment_status ?? 'pending',
+                    'message' => 'Payment status from DB (API error fallback)',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'payment_confirmed_at' => $invitation->payment_confirmed_at ?? null,
+                        'domain_expires_at' => $invitation->domain_expires_at ?? null,
+                    ],
+                ]);
+            }
 
             return response()->json([
                 'success' => false,
@@ -331,10 +354,11 @@ class MidtransController extends Controller
                 return response()->json(['message' => 'Invalid signature'], 403);
             }
 
-            if ($invitation->payment_status === 'paid' && in_array($transactionStatus, ['capture', 'settlement'])) {
-                Log::info('Duplicate webhook for already paid invitation', [
+            if (in_array($invitation->payment_status, ['paid', 'failed', 'expired']) && in_array($transactionStatus, ['capture', 'settlement'])) {
+                Log::info('Duplicate webhook for already-terminal invitation', [
                     'order_id' => $orderId,
                     'invitation_id' => $invitation->id,
+                    'current_status' => $invitation->payment_status,
                 ]);
 
                 return response()->json(['message' => 'Already processed'], 200);

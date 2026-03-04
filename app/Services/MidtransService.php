@@ -102,8 +102,12 @@ class MidtransService
         return config('midtrans.is_production', false);
     }
 
-    public function verifySignature(string $orderId, string $statusCode, string $grossAmount, string $signatureKey): bool
+    public function verifySignature(string $orderId, string $statusCode, string $grossAmount, ?string $signatureKey): bool
     {
+        if ($signatureKey === null || $signatureKey === '') {
+            return false;
+        }
+
         $serverKey = $this->getServerKey();
 
         $calculatedSignature = hash('sha512', $orderId . $statusCode . $grossAmount . $serverKey);

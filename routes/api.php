@@ -60,10 +60,7 @@ Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
-Route::post('/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])
-        ->name('midtrans.createSnapToken');
 Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
-Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
 
 // Test endpoint for webhook connectivity
 Route::match(['get', 'post'], '/v1/midtrans/webhook-test', function(\Illuminate\Http\Request $request) {
@@ -143,9 +140,7 @@ Route::controller(MethodePembayaran::class)->group(function () {
     Route::get('/v1/list-paket-undangan', 'getPaketUndangan');
 });
 
-Route::controller(MempelaiController::class)->group(function () {
-    Route::put('/v1/update/status-bayar', 'updateStatusBayar');
-});
+// updateStatusBayar moved to auth:sanctum user group - see below
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
@@ -304,6 +299,15 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
 });
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
+    // Midtrans Payment endpoints (authenticated)
+    Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
+    Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
+
+    // Payment status confirmation
+    Route::controller(MempelaiController::class)->group(function () {
+        Route::put('/v1/update/status-bayar', 'updateStatusBayar');
+    });
+
     // Profile Management endpoints
 
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {

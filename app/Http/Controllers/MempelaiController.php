@@ -177,8 +177,10 @@ class MempelaiController extends Controller
                 ], 404);
             }
 
-            // Get invitation to access package duration snapshot
-            $invitation = \App\Models\Invitation::where('user_id', $user->id)->first();
+            // Get invitation with package relation to access masa_aktif
+            $invitation = \App\Models\Invitation::with('paketUndangan')
+                ->where('user_id', $user->id)
+                ->first();
 
             if (!$invitation) {
                 return response()->json([
@@ -190,10 +192,9 @@ class MempelaiController extends Controller
             return DB::transaction(function () use ($mempelai, $invitation, $user) {
                 $paymentConfirmedAt = now();
 
-                // Calculate domain expiry based on package duration snapshot
-                // This ensures users keep their original package terms even after package updates
-                $durationDays = $invitation->package_duration_snapshot ?? 30; // Default 30 days if not set
-                $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($durationDays);
+                // Calculate domain expiry in months (consistent with webhook flow)
+                $activeMonths = $invitation->paketUndangan->masa_aktif ?? 1;
+                $domainExpiresAt = $paymentConfirmedAt->copy()->addMonths($activeMonths);
 
                 // Update Mempelai payment status
                 $mempelai->update([
@@ -215,7 +216,7 @@ class MempelaiController extends Controller
                         'payment_status' => $invitation->payment_status,
                         'payment_confirmed_at' => $invitation->payment_confirmed_at,
                         'domain_expires_at' => $invitation->domain_expires_at,
-                        'domain_active_days' => $durationDays,
+                        'domain_active_months' => $activeMonths,
                         'package_used' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
                         'original_price' => $invitation->package_price_snapshot,
                     ],
