@@ -173,6 +173,17 @@ class MidtransController extends Controller
                 ]);
             }
 
+            // Log status check timing for delayed payment analysis
+            $secondsSinceCreation = now()->diffInSeconds($invitation->created_at);
+            if ($secondsSinceCreation > 180) {
+                Log::warning('Delayed payment status check detected', [
+                    'order_id' => $orderId,
+                    'seconds_since_creation' => $secondsSinceCreation,
+                    'invitation_id' => $invitation->id,
+                    'current_payment_status' => $invitation->payment_status,
+                ]);
+            }
+
             $midtransService = new MidtransService($invitation->user_id);
             $midtransService->configureMidtrans();
 
@@ -205,6 +216,15 @@ class MidtransController extends Controller
                     }
 
                     $invitation->update($updateData);
+
+                    // Sync mempelai status — polling confirms payment same as webhook
+                    $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
+                    if ($mempelai) {
+                        $mempelai->update([
+                            'status'    => 'Sudah Bayar',
+                            'kd_status' => 'SB',
+                        ]);
+                    }
                 });
 
                 Log::info('Payment status verified and updated', [
@@ -381,6 +401,17 @@ class MidtransController extends Controller
                 }
 
                 $invitation->update($updateData);
+
+                // Midtrans payments are auto-confirmed — sync mempelai status immediately
+                if (in_array($transactionStatus, ['capture', 'settlement'])) {
+                    $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
+                    if ($mempelai) {
+                        $mempelai->update([
+                            'status'    => 'Sudah Bayar',
+                            'kd_status' => 'SB',
+                        ]);
+                    }
+                }
 
                 PaymentLog::create([
                     'user_id' => $invitation->user_id,

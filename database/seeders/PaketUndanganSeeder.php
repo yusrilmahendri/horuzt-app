@@ -13,6 +13,12 @@ class PaketUndanganSeeder extends Seeder
      */
     public function run(): void
     {
+        // Check if packages already exist to prevent duplicates
+        if (PaketUndangan::count() > 0) {
+            $this->command->info('Paket undangan already exists. Skipping seeder.');
+            return;
+        }
+
         PaketUndangan::insert([
             [
                 'jenis_paket' => 'Paket 1',
