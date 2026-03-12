@@ -12,7 +12,9 @@ return new class extends Migration
     public function up(): void
     {
         Schema::table('admin_contact_settings', function (Blueprint $table) {
-            $table->string('nama')->nullable()->after('whatsapp');
+            if (!Schema::hasColumn('admin_contact_settings', 'nama')) {
+                $table->string('nama')->nullable()->after('whatsapp');
+            }
         });
     }
 
