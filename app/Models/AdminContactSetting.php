@@ -13,6 +13,7 @@ class AdminContactSetting extends Model
         'host_email',
         'email',
         'whatsapp',
+        'nama',
         'email_password',
         'whatsapp_token',
         'whatsapp_message',
@@ -32,6 +33,7 @@ class AdminContactSetting extends Model
     {
         return [
             'email' => $this->email,
+            'nama' => $this->nama,
             'whatsapp' => $this->whatsapp,
             'whatsapp_message' => $this->whatsapp_message,
         ];

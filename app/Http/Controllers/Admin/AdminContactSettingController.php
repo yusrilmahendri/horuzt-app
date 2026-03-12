@@ -34,6 +34,7 @@ class AdminContactSettingController extends Controller
         $validator = Validator::make($request->all(), [
             'host_email' => 'nullable|email|max:255',
             'email' => 'nullable|email|max:255',
+            'nama' => 'nullable|string|max:255',
             'whatsapp' => 'nullable|string|max:255',
             'email_password' => 'nullable|string',
             'whatsapp_token' => 'nullable|string',
