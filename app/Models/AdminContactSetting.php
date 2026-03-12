@@ -12,8 +12,8 @@ class AdminContactSetting extends Model
     protected $fillable = [
         'host_email',
         'email',
-        'whatsapp',
         'nama',
+        'whatsapp',
         'email_password',
         'whatsapp_token',
         'whatsapp_message',
