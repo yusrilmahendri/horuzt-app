@@ -77,7 +77,7 @@ class UserController extends Controller
 
             // Allow pagination to be controlled via query parameter
             // ?per_page=10 or ?per_page=all for no pagination
-            $perPage = request()->query('per_page', 50); // Default 50 instead of 5
+            $perPage = request()->query('per_page', 'all'); // Default all for admin dashboard
 
             if ($perPage === 'all') {
                 $users = $usersQuery->get();
