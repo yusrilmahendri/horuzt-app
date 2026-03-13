@@ -46,16 +46,20 @@ class InvitationController extends Controller
                 }
 
                 if ($user) {
+                    $errors = [];
 
                     if (User::where('email', $validated['email'])->where('id', '!=', $user->id)->exists()) {
-                        return response()->json([
-                            'message' => 'Email sudah digunakan oleh pengguna lain',
-                        ], 422);
+                        $errors['email'][] = 'Email sudah digunakan oleh pengguna lain';
                     }
 
                     if (Setting::where('domain', $validated['domain'])->where('user_id', '!=', $user->id)->exists()) {
+                        $errors['domain'][] = 'Domain sudah digunakan oleh pengguna lain';
+                    }
+
+                    if (!empty($errors)) {
                         return response()->json([
-                            'message' => 'Domain sudah digunakan oleh pengguna lain',
+                            'message' => 'Validasi gagal',
+                            'errors' => $errors,
                         ], 422);
                     }
 
@@ -110,7 +114,87 @@ class InvitationController extends Controller
                         'invitation' => $invitation,
                     ]);
                 } else {
+                    // Check for authenticated user via Sanctum (user refreshing after registration)
+                    $authUser = Auth::guard('sanctum')->user();
 
+                    if ($authUser) {
+                        // User is authenticated - check if email/domain belongs to them
+                        $errors = [];
+
+                        if (User::where('email', $validated['email'])->where('id', '!=', $authUser->id)->exists()) {
+                            $errors['email'][] = 'Email sudah digunakan oleh pengguna lain';
+                        }
+
+                        if (Setting::where('domain', $validated['domain'])->where('user_id', '!=', $authUser->id)->exists()) {
+                            $errors['domain'][] = 'Domain sudah digunakan oleh pengguna lain';
+                        }
+
+                        if (!empty($errors)) {
+                            return response()->json([
+                                'message' => 'Validasi gagal',
+                                'errors' => $errors,
+                            ], 422);
+                        }
+
+                        // Update existing authenticated user
+                        $user = $authUser;
+                        $user->update([
+                            'email'    => $validated['email'],
+                            'password' => Hash::make($validated['password']),
+                            'phone'    => $validated['phone'],
+                        ]);
+
+                        // Update or create domain
+                        $domain = Setting::updateOrCreate(
+                            ['user_id' => $user->id],
+                            ['domain' => $validated['domain']]
+                        );
+
+                        // Get package details for snapshot
+                        $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
+                        if (!$paketUndangan) {
+                            return response()->json([
+                                'message' => 'Paket undangan tidak ditemukan',
+                            ], 422);
+                        }
+
+                        $invitation = Invitation::updateOrCreate(
+                            ['user_id' => $user->id],
+                            [
+                                'status'            => 'step1',
+                                'paket_undangan_id' => $validated['paket_undangan_id'],
+                                'payment_status'    => 'pending',
+                                // Capture package snapshot to preserve original terms
+                                'package_price_snapshot' => $paketUndangan->price,
+                                'package_duration_snapshot' => $paketUndangan->masa_aktif,
+                                'package_features_snapshot' => [
+                                    'jenis_paket' => $paketUndangan->jenis_paket,
+                                    'name_paket' => $paketUndangan->name_paket,
+                                    'halaman_buku' => $paketUndangan->halaman_buku,
+                                    'kirim_wa' => $paketUndangan->kirim_wa,
+                                    'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
+                                    'kirim_hadiah' => $paketUndangan->kirim_hadiah,
+                                    'import_data' => $paketUndangan->import_data,
+                                    'snapshot_at' => now()->toISOString()
+                                ]
+                            ]
+                        );
+
+                        // Refresh token
+                        $user->tokens()->delete();
+                        $token = $user->createToken('auth_token')->plainTextToken;
+
+                        return response()->json([
+                            'message'    => 'Step 1 berhasil diperbarui',
+                            'user'       => $user,
+                            'token'      => $token,
+                            'user_id'    => $user->id,
+                            'domain'     => $domain,
+                            'invitation' => $invitation,
+                        ]);
+                    }
+
+                    // New user - validate uniqueness
                     $request->validate([
                         'email'  => 'unique:users,email',
                         'domain' => 'unique:settings,domain',
@@ -306,40 +390,55 @@ class InvitationController extends Controller
 
     public function storeStepThree(Request $request)
     {
+        try {
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+                'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
+                'status'  => 'nullable|string|in:0,1',
+            ]);
 
-        $validated = $request->validate([
-            'user_id' => 'required|exists:users,id',
-            'photo'   => 'nullable|image|mimes:jpeg,png,jpg|max:5222',
-            'status'  => 'nullable|string|max:255',
-        ]);
+            $user = User::find($validated['user_id']);
 
+            if (! $user) {
+                return response()->json(['error' => 'User tidak ditemukan.'], 404);
+            }
 
-        $user = User::find($validated['user_id']);
+            $galery = null;
 
-        if (! $user) {
-            return response()->json(['error' => 'User tidak ditemukan.'], 404);
+            // Only create gallery entry if photo is provided
+            if ($request->hasFile('photo')) {
+                $galeryPhoto = $request->file('photo')->store('photos', 'public');
+
+                // Create new gallery entry (not update) to allow multiple photos
+                $galery = Galery::create([
+                    'user_id' => $user->id,
+                    'photo'   => $galeryPhoto,
+                    'nama_foto' => 'Gallery Upload Step 3',
+                    'status'  => $validated['status'] ?? 1,
+                ]);
+            }
+
+            // Update invitation status
+            Invitation::where('user_id', $user->id)->update(['status' => 'step3']);
+
+            return response()->json([
+                'message'           => 'Step 3 berhasil disimpan',
+                'galery'            => $galery,
+                'invitation_status' => 'step3',
+            ], 200);
+
+        } catch (ValidationException $e) {
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors'  => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            Log::error('Error di storeStepThree: ' . $e->getMessage());
+            return response()->json([
+                'message' => 'Gagal menyimpan data',
+                'error'   => $e->getMessage(),
+            ], 500);
         }
-
-
-        $galeryPhoto = $request->hasFile('photo') ? $request->file('photo')->store('photos', 'public') : null;
-
-
-        $galery = Galery::updateOrCreate(
-            ['user_id' => $user->id],
-            [
-                'photo'  => $galeryPhoto,
-                'status' => $validated['status'] ?? null,
-            ]
-        );
-
-
-        Invitation::where('user_id', $user->id)->update(['status' => 'step3']);
-
-        return response()->json([
-            'message'           => 'Step 3 berhasil disimpan',
-            'galery'            => $galery,
-            'invitation_status' => 'step3',
-        ], 200);
     }
 
 

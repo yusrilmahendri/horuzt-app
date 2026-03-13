@@ -192,9 +192,9 @@ class MempelaiController extends Controller
             return DB::transaction(function () use ($mempelai, $invitation, $user) {
                 $paymentConfirmedAt = now();
 
-                // Calculate domain expiry in months (consistent with webhook flow)
-                $activeMonths = $invitation->paketUndangan->masa_aktif ?? 1;
-                $domainExpiresAt = $paymentConfirmedAt->copy()->addMonths($activeMonths);
+                // Calculate domain expiry in days (masa_aktif is in days)
+                $activeDays = $invitation->paketUndangan->masa_aktif ?? 30;
+                $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
                 $mempelai->update([

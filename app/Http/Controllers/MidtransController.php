@@ -212,7 +212,7 @@ class MidtransController extends Controller
                     ];
 
                     if ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
-                        $updateData['domain_expires_at'] = now()->addMonths($invitation->paketUndangan->masa_aktif);
+                        $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
                     }
 
                     $invitation->update($updateData);
@@ -396,7 +396,7 @@ class MidtransController extends Controller
                     $updateData['payment_confirmed_at'] = now();
 
                     if ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
-                        $updateData['domain_expires_at'] = now()->addMonths($invitation->paketUndangan->masa_aktif);
+                        $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
                     }
                 }
 
