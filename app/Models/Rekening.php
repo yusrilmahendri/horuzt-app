@@ -10,7 +10,7 @@ use App\Models\Bank;
 class Rekening extends Model
 {
     use HasFactory;
-    
+
     protected $table = 'rekenings';
 
     protected $fillable = [
@@ -26,7 +26,6 @@ class Rekening extends Model
     ];
 
     protected $hidden = [
-        'email',
         'methode_pembayaran',
         'id_methode_pembayaran'
     ];

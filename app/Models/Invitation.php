@@ -13,6 +13,7 @@ class Invitation extends Model
 
     protected $fillable = [
         'user_id',
+        'kode_pemesanan',
         'paket_undangan_id',
         'status',
         'order_id',

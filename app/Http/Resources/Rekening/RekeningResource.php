@@ -21,6 +21,9 @@ class RekeningResource extends JsonResource
             'nama_bank' => $this->nama_bank,
             'nama_pemilik' => $this->nama_pemilik,
             'photo_rek' => $this->photo_url,
+            'email' => $this->whenLoaded('user', function () {
+                return $this->user->email;
+            }) ?? $this->email,
             'bank_info' => $this->whenLoaded('bank', function () {
                 return [
                     'id' => $this->bank->id,

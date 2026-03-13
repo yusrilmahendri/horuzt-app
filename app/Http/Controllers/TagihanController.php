@@ -22,6 +22,8 @@ class TagihanController extends Controller
                 ->map(function ($invitation) {
                     return [
                         'no_invoice' => '#' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT),
+                        'kode_pemesanan' => $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '-',
+                        'midtrans_order_id' => $invitation->order_id ?? '-',
                         'tanggal_transaksi' => $invitation->payment_confirmed_at->format('d/m/Y H:i:s'),
                         'paket' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown Package',
                         'status' => 'lunas',

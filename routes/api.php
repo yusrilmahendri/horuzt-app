@@ -1,23 +1,27 @@
 <?php
 
 use App\Http\Controllers\AcaraController;
-use App\Http\Controllers\Admin\SettingControllerAdmin;
+use App\Http\Controllers\Admin\AdminBankAccountController;
+use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
+use App\Http\Controllers\Admin\SettingControllerAdmin;
+use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
+use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\BankController;
 use App\Http\Controllers\BukuTamuController;
-use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\CategoryController;
 use App\Http\Controllers\CeritaController;
 use App\Http\Controllers\ContactSettingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GaleryController;
 use App\Http\Controllers\InvitationController;
-use App\Http\Controllers\KomentarController;
 use App\Http\Controllers\JenisThemaController;
+use App\Http\Controllers\KomentarController;
 use App\Http\Controllers\MempelaiController;
 use App\Http\Controllers\MethodePembayaran;
+use App\Http\Controllers\MidtransController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\OrderController;
 use App\Http\Controllers\PaketController;
@@ -27,9 +31,6 @@ use App\Http\Controllers\PernikahanController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\RekeningController;
-use App\Http\Controllers\BankAccountController;
-use App\Http\Controllers\Admin\AdminBankAccountController;
-use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
@@ -40,9 +41,6 @@ use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeddingProfileController;
 use Illuminate\Support\Facades\Route;
-use App\Http\Controllers\MidtransController;
-
-
 
 /*
 |--------------------------------------------------------------------------
@@ -63,16 +61,16 @@ Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
 
 // Test endpoint for webhook connectivity
-Route::match(['get', 'post'], '/v1/midtrans/webhook-test', function(\Illuminate\Http\Request $request) {
+Route::match(['get', 'post'], '/v1/midtrans/webhook-test', function (\Illuminate\Http\Request $request) {
     \Illuminate\Support\Facades\Log::info('Webhook test endpoint hit', [
-        'method' => $request->method(),
-        'body' => $request->all(),
+        'method'  => $request->method(),
+        'body'    => $request->all(),
         'headers' => $request->headers->all(),
     ]);
     return response()->json([
-        'success' => true,
-        'message' => 'Webhook endpoint is reachable',
-        'method' => $request->method(),
+        'success'       => true,
+        'message'       => 'Webhook endpoint is reachable',
+        'method'        => $request->method(),
         'received_data' => $request->all(),
     ]);
 });
@@ -112,8 +110,8 @@ Route::controller(BukuTamuController::class)->prefix('v1/buku-tamu')->group(func
 
 // Public Komentar endpoints (for wedding comments)
 Route::controller(KomentarController::class)->prefix('v1')->group(function () {
-    Route::get('/komentars', 'index');              // GET /api/v1/komentars?domain=xxx
-    Route::post('/komentars', 'store');             // POST /api/v1/komentars
+    Route::get('/komentars', 'index');                 // GET /api/v1/komentars?domain=xxx
+    Route::post('/komentars', 'store');                // POST /api/v1/komentars
     Route::get('/komentars/statistics', 'statistics'); // GET /api/v1/komentars/statistics?domain=xxx
 });
 
@@ -406,7 +404,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::post('/v1/user/settings/music', 'storeMusic'); // Kept for backward compatibility
         Route::post('/v1/user/settings/salam', 'storeSalam');
         Route::get('/v1/user/music/download', 'downloadMusic'); // Kept for backward compatibility
-        Route::get('/v1/user/music/stream', 'getMusic'); // Kept for backward compatibility
+        Route::get('/v1/user/music/stream', 'getMusic');        // Kept for backward compatibility
         Route::post('/v1/user/submission-filter', 'create');
         Route::put('/v1/user/submission-filter-update', 'update');
         Route::get('/v1/user/list-data-setting', 'index');

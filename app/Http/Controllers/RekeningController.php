@@ -15,7 +15,7 @@ class RekeningController extends Controller
     public function index()
     {
         $userId    = Auth::id();
-        $rekenings = Rekening::where('user_id', $userId)->with('bank')->get();
+        $rekenings = Rekening::where('user_id', $userId)->with(['bank', 'user'])->get();
 
         return new RekeningCollection($rekenings);
     }

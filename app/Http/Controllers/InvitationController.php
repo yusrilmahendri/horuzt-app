@@ -87,6 +87,7 @@ class InvitationController extends Controller
                         [
                             'status'            => 'step1',
                             'paket_undangan_id' => $validated['paket_undangan_id'],
+                            'kode_pemesanan'    => $user->kode_pemesanan,
                             'payment_status'    => 'pending',
                             // Capture package snapshot to preserve original terms
                             'package_price_snapshot' => $paketUndangan->price,
@@ -163,6 +164,7 @@ class InvitationController extends Controller
                             [
                                 'status'            => 'step1',
                                 'paket_undangan_id' => $validated['paket_undangan_id'],
+                                'kode_pemesanan'    => $user->kode_pemesanan,
                                 'payment_status'    => 'pending',
                                 // Capture package snapshot to preserve original terms
                                 'package_price_snapshot' => $paketUndangan->price,
@@ -230,6 +232,7 @@ class InvitationController extends Controller
                         'status'            => 'step1',
                         'paket_undangan_id' => $validated['paket_undangan_id'],
                         'user_id'           => $user->id,
+                        'kode_pemesanan'    => $user->kode_pemesanan,
                         'payment_status'    => 'pending',
                         // Capture package snapshot to preserve original terms
                         'package_price_snapshot' => $paketUndangan->price,

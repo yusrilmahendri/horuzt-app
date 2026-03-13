@@ -33,16 +33,23 @@ class MidtransController extends Controller
 
             $validated = $request->validated();
 
-            $invitation = Invitation::with('paketUndangan')->findOrFail($validated['invitation_id']);
+            $invitation = Invitation::with(['paketUndangan', 'user'])->findOrFail($validated['invitation_id']);
 
-            $orderId = 'INV-' . Str::uuid()->toString();
+            // Use kode_pemesanan as order_id for Midtrans (matches user's invoice)
+            $orderId = $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '#INV-' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
             $grossAmount = $validated['amount'];
 
+            // Enrich customer details with complete user information for admin reference
+            $userDomain = $invitation->user->setting->domain ?? '-';
             $customerDetails = $validated['customer_details'] ?? [
                 'first_name' => $user->name ?? 'Guest',
                 'last_name' => '',
                 'email' => $user->email ?? 'guest@example.com',
                 'phone' => $user->phone ?? '',
+                // Additional info for Midtrans dashboard / admin reference
+                'kode_pemesanan' => $orderId,
+                'domain' => $userDomain,
+                'nama_paket' => $invitation->paketUndangan->name_paket ?? 'Unknown Package',
             ];
 
             $itemDetails = $validated['item_details'] ?? [[
