@@ -453,6 +453,7 @@ class InvitationController extends Controller
             'title'          => 'required|array',
             'lead_cerita'    => 'required|array',
             'tanggal_cerita' => 'required|array',
+            'status'         => 'nullable|string|in:0,1',
         ]);
 
         $user = User::find($validated['user_id']);
@@ -495,6 +496,17 @@ class InvitationController extends Controller
                 'tanggal_cerita' => $cerita->tanggal_cerita,
             ];
         }
+
+        // Update filter_undangan.halaman_cerita based on status
+        // status = '0' means checkbox is checked (user wants to disable the feature)
+        // status = '1' or null means checkbox is unchecked (feature remains active)
+        $statusValue = $request->input('status', '1');
+        $halamanCeritaValue = ($statusValue === '0') ? 0 : 1;
+
+        \App\Models\FilterUndangan::updateOrCreate(
+            ['user_id' => $user->id],
+            ['halaman_cerita' => $halamanCeritaValue]
+        );
 
         return response()->json([
             'data'    => $savedCerita,
