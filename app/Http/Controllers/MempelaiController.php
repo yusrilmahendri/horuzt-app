@@ -216,7 +216,7 @@ class MempelaiController extends Controller
                         'payment_status' => $invitation->payment_status,
                         'payment_confirmed_at' => $invitation->payment_confirmed_at,
                         'domain_expires_at' => $invitation->domain_expires_at,
-                        'domain_active_months' => $activeMonths,
+                        'domain_active_days' => $activeDays,
                         'package_used' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
                         'original_price' => $invitation->package_price_snapshot,
                     ],

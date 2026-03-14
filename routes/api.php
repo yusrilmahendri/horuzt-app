@@ -311,6 +311,14 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     });
 });
 
+// Tagihan Management endpoints (User's billing history) - requires auth only, not specific role
+Route::group(['middleware' => ['auth:sanctum']], function () {
+    Route::controller(TagihanController::class)->group(function () {
+        Route::get('/v1/user/tagihan', 'index');
+        Route::post('/v1/user/tagihan', 'store');
+    });
+});
+
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     // Midtrans Payment endpoints (authenticated)
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
@@ -442,12 +450,6 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(WeddingProfileController::class)->group(function () {
         Route::get('/v1/user/wedding-profile', 'show');
         Route::get('/v1/user/wedding-profile/statistics', 'statistics');
-    });
-
-    // Tagihan Management endpoints (User's billing history)
-    Route::controller(TagihanController::class)->group(function () {
-        Route::get('/v1/user/tagihan', 'index');
-        Route::post('/v1/user/tagihan', 'store');
     });
 
     // Ucapan Management endpoints (User's own wedding wishes)
