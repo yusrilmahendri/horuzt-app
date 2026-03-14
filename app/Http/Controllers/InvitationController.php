@@ -503,10 +503,27 @@ class InvitationController extends Controller
         $statusValue = $request->input('status', '1');
         $halamanCeritaValue = ($statusValue === '0') ? 0 : 1;
 
-        \App\Models\FilterUndangan::updateOrCreate(
-            ['user_id' => $user->id],
-            ['halaman_cerita' => $halamanCeritaValue]
-        );
+        $filterUndangan = \App\Models\FilterUndangan::where('user_id', $user->id)->first();
+
+        if ($filterUndangan) {
+            // Update existing record - only change halaman_cerita
+            $filterUndangan->update(['halaman_cerita' => $halamanCeritaValue]);
+        } else {
+            // Create new record with all default values
+            \App\Models\FilterUndangan::create([
+                'user_id'           => $user->id,
+                'halaman_sampul'    => 1,
+                'halaman_mempelai'  => 1,
+                'halaman_acara'     => 1,
+                'halaman_ucapan'    => 1,
+                'halaman_galery'    => 1,
+                'halaman_cerita'    => $halamanCeritaValue,
+                'halaman_lokasi'    => 1,
+                'halaman_prokes'    => 1,
+                'halaman_send_gift' => 1,
+                'halaman_qoute'     => 1,
+            ]);
+        }
 
         return response()->json([
             'data'    => $savedCerita,
