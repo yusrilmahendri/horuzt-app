@@ -304,17 +304,17 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::patch('/{id}/toggle', 'toggleActivation')->name('admin.video-categories.toggle');
         Route::get('/statistics', 'statistics')->name('admin.video-categories.statistics');
     });
+
+    // Payment confirmation - Admin confirms user manual payment
+    Route::controller(MempelaiController::class)->group(function () {
+        Route::put('/v1/update/status-bayar', 'updateStatusBayar');
+    });
 });
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     // Midtrans Payment endpoints (authenticated)
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
     Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
-
-    // Payment status confirmation
-    Route::controller(MempelaiController::class)->group(function () {
-        Route::put('/v1/update/status-bayar', 'updateStatusBayar');
-    });
 
     // Profile Management endpoints
 
@@ -447,6 +447,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     // Tagihan Management endpoints (User's billing history)
     Route::controller(TagihanController::class)->group(function () {
         Route::get('/v1/user/tagihan', 'index');
+        Route::post('/v1/user/tagihan', 'store');
     });
 
     // Ucapan Management endpoints (User's own wedding wishes)

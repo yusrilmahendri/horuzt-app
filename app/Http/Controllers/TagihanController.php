@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitation;
+use App\Models\Mempelai;
+use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
@@ -39,6 +41,80 @@ class TagihanController extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Gagal mengambil data tagihan',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
+            ], 500);
+        }
+    }
+
+    /**
+     * Create a new invoice (tagihan) when user confirms manual payment
+     * Sets payment_status to 'pending' and domain_expires_at to 3 days (trial period)
+     */
+    public function store(Request $request): JsonResponse
+    {
+        try {
+            $validated = $request->validate([
+                'user_id' => 'required|exists:users,id',
+            ]);
+
+            $user = User::find($validated['user_id']);
+
+            if (!$user) {
+                return response()->json(['message' => 'User tidak ditemukan'], 404);
+            }
+
+            // Get invitation with package data
+            $invitation = Invitation::where('user_id', $user->id)->first();
+
+            if (!$invitation) {
+                return response()->json(['message' => 'Data invitation tidak ditemukan'], 404);
+            }
+
+            // Check if invoice already exists for this invitation (pending)
+            if ($invitation->payment_status === 'pending') {
+                return response()->json([
+                    'message' => 'Tagihan sudah ada',
+                    'data' => [
+                        'kode_pemesanan' => $invitation->kode_pemesanan,
+                        'paket' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
+                        'total' => $invitation->package_price_snapshot,
+                        'status' => 'pending',
+                        'domain_expires_at' => $invitation->domain_expires_at?->format('Y-m-d H:i:s'),
+                        'trial_days' => 3
+                    ]
+                ], 200);
+            }
+
+            // Update invitation to pending status (manual payment initiated)
+            $invitation->update([
+                'payment_status' => 'pending',
+                'domain_expires_at' => now()->addDays(3), // 3 days trial
+            ]);
+
+            // Update mempelai to Menunggu Konfirmasi
+            $mempelai = Mempelai::where('user_id', $user->id)->first();
+            if ($mempelai) {
+                $mempelai->update([
+                    'status' => 'Menunggu Konfirmasi',
+                    'kd_status' => 'MK',
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Tagihan berhasil dibuat',
+                'data' => [
+                    'kode_pemesanan' => $invitation->kode_pemesanan,
+                    'paket' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
+                    'total' => $invitation->package_price_snapshot,
+                    'status' => 'pending',
+                    'domain_expires_at' => $invitation->domain_expires_at->format('Y-m-d H:i:s'),
+                    'trial_days' => 3
+                ]
+            ], 201);
+
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Gagal membuat tagihan',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
