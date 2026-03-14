@@ -193,7 +193,10 @@ class MempelaiController extends Controller
                 $paymentConfirmedAt = now();
 
                 // Calculate domain expiry in days (masa_aktif is in days)
-                $activeDays = $invitation->paketUndangan->masa_aktif ?? 30;
+                // Use snapshot data if available, otherwise try to get from relation
+                $masaAktif = $invitation->package_duration_snapshot
+                    ?? ($invitation->paketUndangan->masa_aktif ?? 30);
+                $activeDays = (int) $masaAktif;
                 $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
