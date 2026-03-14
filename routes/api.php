@@ -4,6 +4,7 @@ use App\Http\Controllers\AcaraController;
 use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
+use App\Http\Controllers\Admin\AdminInvoiceController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\Auth\LoginController;
@@ -206,6 +207,15 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::get('/v1/admin/buku-tamu', 'index');
         Route::get('/v1/admin/buku-tamu/statistics', 'statistics');
         Route::patch('/v1/admin/buku-tamu/bulk-approval', 'bulkUpdateApproval');
+    });
+
+    // Admin Invoice Monitoring
+    Route::controller(AdminInvoiceController::class)->group(function () {
+        Route::get('/v1/admin/invoices', 'index');
+    });
+
+    // Admin Buku Tamu Management - Additional routes
+    Route::controller(AdminBukuTamuController::class)->group(function () {
         Route::delete('/v1/admin/buku-tamu/bulk-delete', 'bulkDelete');
         Route::delete('/v1/admin/buku-tamu/user/{userId}', 'deleteByUser')->where('userId', '[0-9]+');
         Route::get('/v1/admin/buku-tamu/{id}', 'show')->where('id', '[0-9]+');
