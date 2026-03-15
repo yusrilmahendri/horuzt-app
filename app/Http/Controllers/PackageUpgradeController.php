@@ -148,7 +148,7 @@ class PackageUpgradeController extends Controller
                 'user_id' => $user->id,
                 'paket_undangan_id' => $newPackage->id,
                 'kode_pemesanan' => $newInvoiceNumber,
-                'status' => 'pending',
+                'status' => 'step1',
                 'payment_status' => 'pending',
                 'domain_expires_at' => null,
                 'package_price_snapshot' => $newPackage->price,
