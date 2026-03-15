@@ -41,6 +41,7 @@ use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeddingProfileController;
+use App\Http\Controllers\PackageUpgradeController;
 use Illuminate\Support\Facades\Route;
 
 /*
