@@ -71,7 +71,7 @@ class UserController extends Controller
                 'settingOne',
                 'mempelaiOne',
                 'invitationOne.paketUndangan',
-            ]);
+            ])->orderBy('updated_at', 'desc');
 
             $totalUsers = $usersQuery->count();
 

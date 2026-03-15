@@ -227,6 +227,10 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::get('/v1/admin/get-users', 'index');
     });
 
+    Route::controller(PackageUpgradeController::class)->group(function () {
+        Route::post('/v1/admin/change-package', 'changePackage');
+    });
+
     Route::controller(ThemaController::class)->group(function () {
         Route::get('/v1/admin/get-themas', 'index')->name('thema.index');
     });
@@ -340,6 +344,12 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(UserController::class)->group(function () {
         Route::get('/v1/user-profile', 'userProfile');
         Route::put('/v1/submission-update/user-profile', 'update');
+    });
+
+    // Package Upgrade endpoints
+    Route::controller(PackageUpgradeController::class)->group(function () {
+        Route::get('/v1/user/eligible-packages', 'getEligiblePackages');
+        Route::post('/v1/user/upgrade-package', 'initiateUpgrade');
     });
     Route::controller(RekeningController::class)->group(function () {
         Route::post('/v1/user/send-rekening', 'store');

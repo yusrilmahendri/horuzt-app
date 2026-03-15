@@ -23,7 +23,8 @@ class Invitation extends Model
         'payment_confirmed_at',
         'package_price_snapshot',
         'package_duration_snapshot',
-        'package_features_snapshot'
+        'package_features_snapshot',
+        'is_trial'
     ];
 
     protected $casts = [
@@ -31,7 +32,28 @@ class Invitation extends Model
         'payment_confirmed_at' => 'datetime',
         'package_features_snapshot' => 'array',
         'package_price_snapshot' => 'decimal:2',
+        'is_trial' => 'boolean',
     ];
+
+    /**
+     * Accessor to determine if still in trial
+     */
+    protected function getIsTrialAttribute($value): bool
+    {
+        // If explicitly set in database, use that value
+        if (isset($this->attributes['is_trial'])) {
+            return (bool) $this->attributes['is_trial'];
+        }
+
+        // If payment status is pending and within 3 days from creation, it's trial
+        if ($this->payment_status === 'pending' && $this->domain_expires_at) {
+            return now()->lt($this->domain_expires_at) &&
+                   now()->diffInDays($this->created_at) <= 3;
+        }
+
+        // Default to true for pending payments
+        return $this->payment_status === 'pending';
+    }
 
     public function user() {
         return $this->belongsTo(User::class, 'user_id');
