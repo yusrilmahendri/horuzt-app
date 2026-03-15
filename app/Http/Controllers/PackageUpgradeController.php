@@ -9,12 +9,21 @@ use App\Models\PaketUndangan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 
 class PackageUpgradeController extends Controller
 {
     public function __construct()
     {
         $this->middleware('auth:sanctum');
+    }
+
+    /**
+     * Check if is_trial column exists
+     */
+    private function hasIsTrialColumn(): bool
+    {
+        return Schema::hasColumn('invitations', 'is_trial');
     }
 
     /**
@@ -26,7 +35,7 @@ class PackageUpgradeController extends Controller
         $validated = $request->validate([
             'user_id' => 'required|exists:users,id',
             'paket_undangan_id' => 'required|exists:paket_undangans,id',
-            'extend_from_now' => 'nullable|boolean', // true = extend from now, false = from expiry
+            'extend_from_now' => 'nullable|boolean',
         ]);
 
         return DB::transaction(function () use ($validated, $request) {
@@ -35,22 +44,16 @@ class PackageUpgradeController extends Controller
             $invitation = Invitation::where('user_id', $user->id)->firstOrFail();
             $mempelai = Mempelai::where('user_id', $user->id)->first();
 
-            // Determine base date for expiry calculation
             $extendFromNow = $request->input('extend_from_now', false);
             $baseDate = $extendFromNow ? now() : ($invitation->domain_expires_at ?? now());
-
-            // Calculate new expiry
             $newExpiryAt = $baseDate->copy()->addDays($newPackage->masa_aktif);
 
-            // Get previous package info for snapshot
             $previousPackageId = $invitation->paket_undangan_id;
             $previousFeatures = $invitation->package_features_snapshot ?? [];
 
-            // Update invitation with new package
-            $invitation->update([
+            $updateData = [
                 'paket_undangan_id' => $newPackage->id,
                 'payment_status' => 'paid',
-                'is_trial' => false,
                 'domain_expires_at' => $newExpiryAt,
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
@@ -67,9 +70,14 @@ class PackageUpgradeController extends Controller
                     'previous_package_id' => $previousPackageId,
                     'previous_package_name' => $previousFeatures['name_paket'] ?? null
                 ]
-            ]);
+            ];
 
-            // Update mempelai status
+            if ($this->hasIsTrialColumn()) {
+                $updateData['is_trial'] = false;
+            }
+
+            $invitation->update($updateData);
+
             if ($mempelai) {
                 $mempelai->update([
                     'status' => 'Sudah Bayar',
@@ -100,8 +108,6 @@ class PackageUpgradeController extends Controller
 
         $currentPackageId = $invitation?->paket_undangan_id;
 
-        // If no current package (trial), return all packages
-        // Otherwise, exclude current package
         $query = PaketUndangan::query();
 
         if ($currentPackageId) {
@@ -110,10 +116,17 @@ class PackageUpgradeController extends Controller
 
         $packages = $query->orderBy('masa_aktif', 'asc')->get();
 
+        $isTrial = true;
+        if ($invitation && $this->hasIsTrialColumn()) {
+            $isTrial = $invitation->is_trial ?? true;
+        } elseif ($invitation) {
+            $isTrial = $invitation->payment_status === 'pending';
+        }
+
         return response()->json([
             'data' => $packages,
             'current_package_id' => $currentPackageId,
-            'is_trial' => $invitation?->is_trial ?? true
+            'is_trial' => $isTrial
         ], 200);
     }
 
@@ -132,18 +145,15 @@ class PackageUpgradeController extends Controller
             $newPackage = PaketUndangan::findOrFail($validated['paket_undangan_id']);
             $currentInvitation = Invitation::where('user_id', $user->id)->firstOrFail();
 
-            // Generate new invoice number for upgrade
             $newInvoiceNumber = '#UPG-' . str_pad($user->id, 6, '0', STR_PAD_LEFT) . '-' . time();
 
-            // Create upgrade invitation record
-            $upgradeInvitation = Invitation::create([
+            $createData = [
                 'user_id' => $user->id,
                 'paket_undangan_id' => $newPackage->id,
                 'kode_pemesanan' => $newInvoiceNumber,
                 'status' => 'upgrade_pending',
                 'payment_status' => 'pending',
-                'is_trial' => false,
-                'domain_expires_at' => null, // Set after payment
+                'domain_expires_at' => null,
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
@@ -159,7 +169,13 @@ class PackageUpgradeController extends Controller
                     'previous_package_name' => $currentInvitation->package_features_snapshot['name_paket'] ?? null,
                     'initiated_at' => now()->toISOString()
                 ]
-            ]);
+            ];
+
+            if ($this->hasIsTrialColumn()) {
+                $createData['is_trial'] = false;
+            }
+
+            $upgradeInvitation = Invitation::create($createData);
 
             return response()->json([
                 'message' => 'Upgrade initiated',

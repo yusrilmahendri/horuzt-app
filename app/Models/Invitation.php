@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
 use App\Models\PaketUndangan;
+use Illuminate\Support\Facades\Schema;
 
 class Invitation extends Model
 {
@@ -24,7 +25,6 @@ class Invitation extends Model
         'package_price_snapshot',
         'package_duration_snapshot',
         'package_features_snapshot',
-        'is_trial'
     ];
 
     protected $casts = [
@@ -32,16 +32,27 @@ class Invitation extends Model
         'payment_confirmed_at' => 'datetime',
         'package_features_snapshot' => 'array',
         'package_price_snapshot' => 'decimal:2',
-        'is_trial' => 'boolean',
     ];
+
+    /**
+     * Dynamically add is_trial to casts if column exists
+     */
+    protected function initialize()
+    {
+        parent::initialize();
+
+        if (Schema::hasColumn('invitations', 'is_trial')) {
+            $this->casts['is_trial'] = 'boolean';
+        }
+    }
 
     /**
      * Accessor to determine if still in trial
      */
     protected function getIsTrialAttribute($value): bool
     {
-        // If explicitly set in database, use that value
-        if (isset($this->attributes['is_trial'])) {
+        // If column exists and value is set, use that
+        if (Schema::hasColumn('invitations', 'is_trial') && isset($this->attributes['is_trial'])) {
             return (bool) $this->attributes['is_trial'];
         }
 
