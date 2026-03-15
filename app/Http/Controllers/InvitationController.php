@@ -89,6 +89,7 @@ class InvitationController extends Controller
                             'paket_undangan_id' => $validated['paket_undangan_id'],
                             'kode_pemesanan'    => $user->kode_pemesanan,
                             'payment_status'    => 'pending',
+                            'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
                             // Capture package snapshot to preserve original terms
                             'package_price_snapshot' => $paketUndangan->price,
                             'package_duration_snapshot' => $paketUndangan->masa_aktif,
@@ -166,6 +167,7 @@ class InvitationController extends Controller
                                 'paket_undangan_id' => $validated['paket_undangan_id'],
                                 'kode_pemesanan'    => $user->kode_pemesanan,
                                 'payment_status'    => 'pending',
+                                'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
                                 // Capture package snapshot to preserve original terms
                                 'package_price_snapshot' => $paketUndangan->price,
                                 'package_duration_snapshot' => $paketUndangan->masa_aktif,
@@ -234,6 +236,7 @@ class InvitationController extends Controller
                         'user_id'           => $user->id,
                         'kode_pemesanan'    => $user->kode_pemesanan,
                         'payment_status'    => 'pending',
+                        'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
                         // Capture package snapshot to preserve original terms
                         'package_price_snapshot' => $paketUndangan->price,
                         'package_duration_snapshot' => $paketUndangan->masa_aktif,
