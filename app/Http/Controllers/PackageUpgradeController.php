@@ -18,9 +18,6 @@ class PackageUpgradeController extends Controller
         $this->middleware('auth:sanctum');
     }
 
-    /**
-     * Check if is_trial column exists
-     */
     private function hasIsTrialColumn(): bool
     {
         return Schema::hasColumn('invitations', 'is_trial');
@@ -151,7 +148,7 @@ class PackageUpgradeController extends Controller
                 'user_id' => $user->id,
                 'paket_undangan_id' => $newPackage->id,
                 'kode_pemesanan' => $newInvoiceNumber,
-                'status' => 'upgrade_pending',
+                'status' => 'pending',
                 'payment_status' => 'pending',
                 'domain_expires_at' => null,
                 'package_price_snapshot' => $newPackage->price,
