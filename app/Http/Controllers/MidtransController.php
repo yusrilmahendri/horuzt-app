@@ -212,13 +212,27 @@ class MidtransController extends Controller
 
             if (in_array($transactionStatus, ['capture', 'settlement'])) {
                 DB::transaction(function () use ($invitation, $status) {
+                    $snapshot = $invitation->package_features_snapshot ?? [];
+
                     $updateData = [
                         'payment_status' => 'paid',
                         'midtrans_transaction_id' => $status->transaction_id,
                         'payment_confirmed_at' => now(),
                     ];
 
-                    if ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
+                    // Check if this was an upgrade payment - restore original status
+                    if (isset($snapshot['original_status'])) {
+                        $updateData['status'] = $snapshot['original_status'];
+                    }
+
+                    // Calculate expiry date
+                    $baseDate = $invitation->domain_expires_at ?? now();
+                    $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
+
+                    // For upgrade payments, extend from current expiry. For new payments, extend from now.
+                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                    } elseif ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
                         $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
                     }
 
@@ -393,6 +407,7 @@ class MidtransController extends Controller
 
             DB::transaction(function () use ($invitation, $transactionStatus, $transactionId, $midtransService, $request, $orderId, $grossAmount) {
                 $paymentStatus = $midtransService->getPaymentStatusFromTransactionStatus($transactionStatus);
+                $snapshot = $invitation->package_features_snapshot ?? [];
 
                 $updateData = [
                     'payment_status' => $paymentStatus,
@@ -402,7 +417,18 @@ class MidtransController extends Controller
                 if (in_array($transactionStatus, ['capture', 'settlement'])) {
                     $updateData['payment_confirmed_at'] = now();
 
-                    if ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
+                    // Check if this was an upgrade payment - restore original status
+                    if (isset($snapshot['original_status'])) {
+                        $updateData['status'] = $snapshot['original_status'];
+                    }
+
+                    // Calculate expiry date
+                    $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
+
+                    // For upgrade payments, extend from current expiry. For new payments, extend from now.
+                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                    } elseif ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
                         $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
                     }
                 }

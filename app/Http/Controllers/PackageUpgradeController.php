@@ -6,6 +6,7 @@ use App\Models\User;
 use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\PaketUndangan;
+use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -65,7 +66,7 @@ class PackageUpgradeController extends Controller
                     'upgraded_at' => now()->toISOString(),
                     'upgraded_by' => 'admin',
                     'previous_package_id' => $previousPackageId,
-                    'previous_package_name' => $previousFeatures['name_paket'] ?? null
+                    'previous_package_name' => $previousFeatures['name_paket'] ?? $previousFeatures['previous_package_name'] ?? $previousFeatures['name_paket'] ?? null
                 ]
             ];
 
@@ -87,6 +88,7 @@ class PackageUpgradeController extends Controller
                 'data' => [
                     'user_id' => $user->id,
                     'new_package' => $newPackage->name_paket,
+                    'new_package_id' => $newPackage->id,
                     'domain_expires_at' => $newExpiryAt->format('Y-m-d H:i:s'),
                     'active_days' => $newPackage->masa_aktif
                 ]
@@ -101,7 +103,17 @@ class PackageUpgradeController extends Controller
     public function getEligiblePackages(Request $request): JsonResponse
     {
         $user = auth()->user();
-        $invitation = Invitation::where('user_id', $user->id)->first();
+
+        // Prioritize paid invitation, fallback to latest invitation
+        // This handles cases where there might be multiple invitation records
+        $invitation = Invitation::where('user_id', $user->id)
+            ->where(function ($query) {
+                $query->where('payment_status', 'paid')
+                      ->orWhere('payment_status', 'pending');
+            })
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderBy('id', 'desc')
+            ->first();
 
         $currentPackageId = $invitation?->paket_undangan_id;
 
@@ -114,22 +126,40 @@ class PackageUpgradeController extends Controller
         $packages = $query->orderBy('masa_aktif', 'asc')->get();
 
         $isTrial = true;
+        $hasPendingUpgrade = false;
+
         if ($invitation && $this->hasIsTrialColumn()) {
             $isTrial = $invitation->is_trial ?? true;
         } elseif ($invitation) {
             $isTrial = $invitation->payment_status === 'pending';
         }
 
+        // Check for pending upgrade
+        $snapshot = $invitation?->package_features_snapshot ?? [];
+        if (isset($snapshot['upgrade_initiated_at'])) {
+            $initiatedAt = Carbon::parse($snapshot['upgrade_initiated_at']);
+            if ($initiatedAt->diffInMinutes(now()) < 30 && $invitation->payment_status === 'pending') {
+                $hasPendingUpgrade = true;
+            }
+        }
+
         return response()->json([
             'data' => $packages,
             'current_package_id' => $currentPackageId,
-            'is_trial' => $isTrial
-        ], 200);
+            'current_package_name' => $snapshot['name_paket'] ?? null,
+            'invitation_id' => $invitation?->id,
+            'payment_status' => $invitation?->payment_status,
+            'is_trial' => $isTrial,
+            'has_pending_upgrade' => $hasPendingUpgrade
+        ], 200)->header('Cache-Control', 'no-cache, no-store, must-revalidate');
     }
 
     /**
      * User initiates package upgrade
      * POST /v1/user/upgrade-package
+     *
+     * FIXED: Now updates existing invitation instead of creating new one
+     * to prevent duplicate records and dashboard 403 errors
      */
     public function initiateUpgrade(Request $request): JsonResponse
     {
@@ -140,17 +170,43 @@ class PackageUpgradeController extends Controller
         return DB::transaction(function () use ($validated) {
             $user = auth()->user();
             $newPackage = PaketUndangan::findOrFail($validated['paket_undangan_id']);
-            $currentInvitation = Invitation::where('user_id', $user->id)->firstOrFail();
+
+            // Get user's current invitation (there should only be one)
+            $invitation = Invitation::where('user_id', $user->id)->first();
+
+            if (!$invitation) {
+                return response()->json([
+                    'message' => 'Invitation tidak ditemukan. Silakan hubungi support.'
+                ], 404);
+            }
+
+            // DUPLICATE PREVENTION: Check if there's already a pending upgrade
+            $currentSnapshot = $invitation->package_features_snapshot ?? [];
+            if (isset($currentSnapshot['upgrade_initiated_at'])) {
+                $initiatedAt = Carbon::parse($currentSnapshot['upgrade_initiated_at']);
+                // If upgrade was initiated less than 30 minutes ago, prevent duplicate
+                if ($initiatedAt->diffInMinutes(now()) < 30) {
+                    return response()->json([
+                        'message' => 'Anda memiliki pengajuan upgrade yang sedang diproses. Tunggu pembayaran selesai atau hubungi support.',
+                        'data' => [
+                            'invitation_id' => $invitation->id,
+                            'pending_upgrade' => true
+                        ]
+                    ], 409); // 409 Conflict
+                }
+            }
 
             $newInvoiceNumber = '#UPG-' . str_pad($user->id, 6, '0', STR_PAD_LEFT) . '-' . time();
 
-            $createData = [
-                'user_id' => $user->id,
+            // Store current package info for history before updating
+            $previousPackageId = $invitation->paket_undangan_id;
+            $previousFeatures = $invitation->package_features_snapshot ?? [];
+
+            // Update existing invitation (not create new)
+            $updateData = [
                 'paket_undangan_id' => $newPackage->id,
                 'kode_pemesanan' => $newInvoiceNumber,
-                'status' => 'step1',
-                'payment_status' => 'pending',
-                'domain_expires_at' => null,
+                'payment_status' => 'pending', // Reset to pending for upgrade payment
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
@@ -161,23 +217,25 @@ class PackageUpgradeController extends Controller
                     'bebas_pilih_tema' => $newPackage->bebas_pilih_tema,
                     'kirim_hadiah' => $newPackage->kirim_hadiah,
                     'import_data' => $newPackage->import_data,
-                    'upgrade_from_invitation_id' => $currentInvitation->id,
-                    'previous_package_id' => $currentInvitation->paket_undangan_id,
-                    'previous_package_name' => $currentInvitation->package_features_snapshot['name_paket'] ?? null,
-                    'initiated_at' => now()->toISOString()
+                    // UPGRADE HISTORY - preserve previous package info
+                    'upgrade_initiated_at' => now()->toISOString(),
+                    'previous_package_id' => $previousPackageId,
+                    'previous_package_name' => $previousFeatures['name_paket'] ?? null,
+                    'original_status' => $invitation->status, // Remember original status
+                    'original_payment_status' => $previousFeatures['original_payment_status'] ?? $invitation->payment_status,
                 ]
             ];
 
             if ($this->hasIsTrialColumn()) {
-                $createData['is_trial'] = false;
+                $updateData['is_trial'] = false;
             }
 
-            $upgradeInvitation = Invitation::create($createData);
+            $invitation->update($updateData);
 
             return response()->json([
                 'message' => 'Upgrade initiated',
                 'data' => [
-                    'invitation_id' => $upgradeInvitation->id,
+                    'invitation_id' => $invitation->id,
                     'kode_pemesanan' => $newInvoiceNumber,
                     'package' => $newPackage->name_paket,
                     'amount' => $newPackage->price,

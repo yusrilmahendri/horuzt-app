@@ -157,9 +157,20 @@ class User extends Authenticatable
         return $this->hasOne(Invitation::class);
     }
 
+    /**
+     * Get the primary/active invitation for this user
+     * Prioritizes paid invitations, then falls back to latest by id
+     * This ensures the correct invitation is used for wedding profile display
+     */
     public function invitationOne()
     {
-        return $this->hasOne(Invitation::class, 'user_id');
+        return $this->hasOne(Invitation::class, 'user_id')
+            ->where(function ($query) {
+                $query->where('payment_status', 'paid')
+                      ->orWhere('payment_status', 'pending');
+            })
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderBy('id', 'desc');
     }
 
     public function thema()
