@@ -35,7 +35,12 @@ return [
         'https://cloud-api.sena-digital.com',
     ],
 
-    'allowed_origins_patterns' => [],
+    'allowed_origins_patterns' => [
+        // Allow any local network IP (10.x.x.x, 192.168.x.x, 172.16.x.x-172.31.x.x)
+        '/^http:\/\/10\.\d+\.\d+\.\d+:\d+$/',
+        '/^http:\/\/192\.168\.\d+\.\d+:\d+$/',
+        '/^http:\/\/172\.(1[6-9]|2\d|3[01])\.\d+\.\d+:\d+$/',
+    ],
 
     'allowed_headers' => ['*'],
 

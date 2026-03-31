@@ -17,6 +17,7 @@ class Setting extends Model
         'salam_pembuka',
         'salam_atas',
         'salam_bawah',
+        'trial_masa_aktif',
     ];
     
     public function user()

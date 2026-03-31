@@ -19,10 +19,11 @@ return new class extends Migration
             $table->string('order_id', 100)->nullable()->unique()->after('paket_undangan_id');
             $table->string('midtrans_transaction_id', 100)->nullable()->after('order_id');
 
-            // SQLite stores enum as TEXT and has no native check constraint enforcement,
-            // so ->change() is a no-op there; skip it to avoid Doctrine DBAL enum introspection errors.
-            if (DB::connection()->getDriverName() !== 'sqlite') {
-                $table->enum('payment_status', ['pending', 'paid', 'failed', 'refunded'])->default('pending')->change();
+            // Skip enum change for MySQL due to Doctrine DBAL limitations with enum columns.
+            // MySQL already handles enum modification properly, but Doctrine cannot introspect it.
+            // Use raw SQL instead for MySQL to expand enum values.
+            if (DB::connection()->getDriverName() === 'mysql') {
+                DB::statement("ALTER TABLE invitations MODIFY COLUMN payment_status ENUM('pending', 'paid', 'failed', 'refunded') NOT NULL DEFAULT 'pending'");
             }
 
             $table->index('order_id');
@@ -42,8 +43,9 @@ return new class extends Migration
             $table->dropIndex('idx_order_midtrans');
             $table->dropColumn(['order_id', 'midtrans_transaction_id']);
 
-            if (DB::connection()->getDriverName() !== 'sqlite') {
-                $table->enum('payment_status', ['pending', 'paid'])->default('pending')->change();
+            // Revert enum change for MySQL using raw SQL
+            if (DB::connection()->getDriverName() === 'mysql') {
+                DB::statement("ALTER TABLE invitations MODIFY COLUMN payment_status ENUM('pending', 'paid') NOT NULL DEFAULT 'pending'");
             }
         });
     }

@@ -18,6 +18,7 @@ use App\Models\Testimoni;
 use App\Models\Themas;
 use App\Models\Ucapan;
 use App\Models\CountdownAcara;
+use App\Models\WeddingGuest;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Notifications\Notifiable;
@@ -188,5 +189,10 @@ class User extends Authenticatable
     public function jenisThemas()
     {
         return $this->belongsToMany(\App\Models\JenisThemas::class, 'result_themas', 'user_id', 'jenis_id');
+    }
+
+    public function weddingGuests()
+    {
+        return $this->hasMany(WeddingGuest::class);
     }
 }

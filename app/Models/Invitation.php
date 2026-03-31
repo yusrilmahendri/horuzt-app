@@ -20,6 +20,7 @@ class Invitation extends Model
         'order_id',
         'midtrans_transaction_id',
         'payment_status',
+        'is_trial',
         'domain_expires_at',
         'payment_confirmed_at',
         'package_price_snapshot',
@@ -51,19 +52,14 @@ class Invitation extends Model
      */
     protected function getIsTrialAttribute($value): bool
     {
-        // If column exists and value is set, use that
+        // If column exists and value is set in database, use that value directly
         if (Schema::hasColumn('invitations', 'is_trial') && isset($this->attributes['is_trial'])) {
             return (bool) $this->attributes['is_trial'];
         }
 
-        // If payment status is pending and within 3 days from creation, it's trial
-        if ($this->payment_status === 'pending' && $this->domain_expires_at) {
-            return now()->lt($this->domain_expires_at) &&
-                   now()->diffInDays($this->created_at) <= 3;
-        }
-
-        // Default to true for pending payments
-        return $this->payment_status === 'pending';
+        // Fallback: if no is_trial column or value not set, determine from package
+        // This should not happen in normal flow as is_trial is always set in storeStepOne
+        return false;
     }
 
     public function user() {

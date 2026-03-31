@@ -3,9 +3,11 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
+use App\Models\ActivePaymentMethod;
 use App\Models\MetodeTransaction;
 use App\Models\MidtransTransaction;
 use App\Models\PaketUndangan;
+use App\Models\Setting;
 use App\Models\TransactionTagihan;
 use App\Models\TripayTransaction;
 use Illuminate\Http\Request;
@@ -460,6 +462,135 @@ class SettingControllerAdmin extends Controller
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Gagal menghapus konfigurasi Tripay',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    // ===== ACTIVE PAYMENT METHOD MANAGEMENT =====
+
+    /**
+     * Get currently active payment method
+     * GET /v1/admin/active-payment-method
+     */
+    public function getActivePaymentMethod()
+    {
+        try {
+            $active = ActivePaymentMethod::with('metodeTransaction')
+                ->where('is_active', true)
+                ->first();
+
+            return response()->json([
+                'message' => 'Active payment method retrieved successfully',
+                'data' => $active,
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve active payment method',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Set active payment method (only one can be active at a time)
+     * PUT /v1/admin/active-payment-method/{id}
+     */
+    public function setActivePaymentMethod(Request $request, $id)
+    {
+        try {
+            // Validate that the payment method exists
+            $metodeTransaction = MetodeTransaction::find($id);
+            if (!$metodeTransaction) {
+                return response()->json([
+                    'message' => 'Payment method not found',
+                ], 404);
+            }
+
+            // Deactivate all and activate the selected one
+            ActivePaymentMethod::query()->update(['is_active' => false]);
+
+            $active = ActivePaymentMethod::updateOrCreate(
+                ['metode_transaction_id' => $id],
+                ['is_active' => true]
+            );
+
+            return response()->json([
+                'message' => 'Active payment method updated successfully',
+                'data' => $active->load('metodeTransaction'),
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to update active payment method',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    // ===== TRIAL CONFIGURATION MANAGEMENT =====
+
+    /**
+     * Get trial configuration
+     * GET /v1/admin/trial-config
+     */
+    public function getTrialConfig()
+    {
+        try {
+            $config = Setting::whereNotNull('trial_masa_aktif')
+                ->where('trial_masa_aktif', '>', 0)
+                ->first();
+
+            $trialDays = $config ? $config->trial_masa_aktif : 3;
+
+            return response()->json([
+                'message' => 'Trial configuration retrieved successfully',
+                'data' => ['trial_masa_aktif' => (int) $trialDays],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve trial configuration',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
+    /**
+     * Update trial configuration
+     * PUT /v1/admin/trial-config
+     */
+    public function updateTrialConfig(Request $request)
+    {
+        try {
+            $validated = $request->validate([
+                'trial_masa_aktif' => 'required|integer|min:1|max:30',
+            ]);
+
+            // Get or create a setting record (use first available or create new)
+            $setting = Setting::first();
+
+            if (!$setting) {
+                // If no setting exists, create one with minimal required fields
+                $setting = new Setting();
+                $setting->trial_masa_aktif = $validated['trial_masa_aktif'];
+                $setting->save();
+            } else {
+                $setting->update([
+                    'trial_masa_aktif' => $validated['trial_masa_aktif'],
+                ]);
+            }
+
+            return response()->json([
+                'message' => 'Trial configuration updated successfully',
+                'data' => ['trial_masa_aktif' => (int) $setting->trial_masa_aktif],
+            ], 200);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to update trial configuration',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }

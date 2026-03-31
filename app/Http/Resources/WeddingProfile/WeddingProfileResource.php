@@ -173,7 +173,8 @@ class WeddingProfileResource extends JsonResource
         return $this->gallery->map(function ($gallery) {
             return [
                 'id' => $gallery->id,
-                'photo' => $gallery->photo ? asset('storage/'.$gallery->photo) : null,
+                'photo' => $gallery->photo,
+                'photo_url' => $gallery->photo ? asset('storage/'.$gallery->photo) : null,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,

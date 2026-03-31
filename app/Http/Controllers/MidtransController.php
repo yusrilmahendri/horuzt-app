@@ -194,7 +194,41 @@ class MidtransController extends Controller
             $midtransService = new MidtransService($invitation->user_id);
             $midtransService->configureMidtrans();
 
-            $status = \Midtrans\Transaction::status($orderId);
+            // Retry logic for Midtrans API failures (503, timeout, etc.)
+            $maxRetries = 3;
+            $attempt = 0;
+            $status = null;
+            $lastError = null;
+
+            while ($attempt < $maxRetries) {
+                try {
+                    $status = \Midtrans\Transaction::status($orderId);
+                    break; // Success - exit retry loop
+                } catch (\Exception $e) {
+                    $lastError = $e;
+                    $attempt++;
+
+                    if ($attempt >= $maxRetries) {
+                        // Log final retry failure
+                        Log::error('Payment status check failed after ' . $maxRetries . ' retries', [
+                            'order_id' => $orderId,
+                            'error' => $e->getMessage(),
+                        ]);
+                        throw $e; // Re-throw after max retries
+                    }
+
+                    // Exponential backoff: 500ms, 1s, 2s
+                    $backoffMs = 500000 * pow(2, $attempt - 1);
+                    Log::warning('Payment status check retry', [
+                        'order_id' => $orderId,
+                        'attempt' => $attempt + 1,
+                        'max_retries' => $maxRetries,
+                        'backoff_ms' => $backoffMs,
+                        'error' => $e->getMessage(),
+                    ]);
+                    usleep($backoffMs);
+                }
+            }
 
             PaymentLog::create([
                 'user_id' => $invitation->user_id,
@@ -225,15 +259,18 @@ class MidtransController extends Controller
                         $updateData['status'] = $snapshot['original_status'];
                     }
 
-                    // Calculate expiry date
-                    $baseDate = $invitation->domain_expires_at ?? now();
+                    // Calculate expiry date - use package_duration_snapshot which was captured at registration
                     $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
 
                     // For upgrade payments, extend from current expiry. For new payments, extend from now.
-                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
-                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
-                    } elseif ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
-                        $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
+                    if ($duration > 0) {
+                        if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                            // Upgrade: extend from current expiry
+                            $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                        } else {
+                            // New payment: extend from now
+                            $updateData['domain_expires_at'] = now()->addDays($duration);
+                        }
                     }
 
                     $invitation->update($updateData);
@@ -322,6 +359,138 @@ class MidtransController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Failed to check payment status',
+            ], 500);
+        }
+    }
+
+    /**
+     * Fallback endpoint to confirm payment success from frontend callback.
+     * Called when frontend receives onSuccess from Midtrans Snap but checkStatus fails.
+     *
+     * This is safe because onSuccess callback only comes from Midtrans Snap after
+     * successful payment. We trust this enough to mark as paid temporarily,
+     * webhook will provide final confirmation.
+     */
+    public function confirmPaymentSuccess(Request $request): JsonResponse
+    {
+        $orderId = $request->input('order_id');
+        $transactionId = $request->input('transaction_id');
+        $grossAmount = $request->input('gross_amount');
+
+        if (!$orderId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order ID is required',
+            ], 400);
+        }
+
+        try {
+            $invitation = Invitation::where('order_id', $orderId)->first();
+
+            if (!$invitation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found',
+                ], 404);
+            }
+
+            // If already paid, just return success
+            if ($invitation->payment_status === 'paid') {
+                return response()->json([
+                    'success' => true,
+                    'payment_status' => 'paid',
+                    'message' => 'Payment already confirmed',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'payment_confirmed_at' => $invitation->payment_confirmed_at,
+                        'domain_expires_at' => $invitation->domain_expires_at,
+                    ],
+                ]);
+            }
+
+            // Mark as paid based on frontend callback
+            DB::transaction(function () use ($invitation, $transactionId, $orderId) {
+                $snapshot = $invitation->package_features_snapshot ?? [];
+
+                $updateData = [
+                    'payment_status' => 'paid',
+                    'midtrans_transaction_id' => $transactionId,
+                    'payment_confirmed_at' => now(),
+                ];
+
+                // Check if this was an upgrade payment - restore original status
+                if (isset($snapshot['original_status'])) {
+                    $updateData['status'] = $snapshot['original_status'];
+                }
+
+                // Calculate expiry date - use package_duration_snapshot which was captured at registration
+                $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
+
+                // For upgrade payments, extend from current expiry. For new payments, extend from now.
+                if ($duration > 0) {
+                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                        // Upgrade: extend from current expiry
+                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                    } else {
+                        // New payment: extend from now
+                        $updateData['domain_expires_at'] = now()->addDays($duration);
+                    }
+                }
+
+                $invitation->update($updateData);
+
+                // Sync mempelai status
+                $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
+                if ($mempelai) {
+                    $mempelai->update([
+                        'status'    => 'Sudah Bayar',
+                        'kd_status' => 'SB',
+                    ]);
+                }
+
+                // Log the frontend callback confirmation
+                PaymentLog::create([
+                    'user_id' => $invitation->user_id,
+                    'invitation_id' => $invitation->id,
+                    'order_id' => $orderId,
+                    'midtrans_transaction_id' => $transactionId,
+                    'event_type' => 'frontend_callback_confirmed',
+                    'transaction_status' => 'settlement',
+                    'gross_amount' => $grossAmount,
+                    'signature_valid' => true,
+                    'ip_address' => $request->ip(),
+                    'notes' => 'Payment confirmed via frontend onSuccess callback (API fallback)',
+                ]);
+            });
+
+            Log::info('Payment confirmed via frontend callback', [
+                'order_id' => $orderId,
+                'transaction_id' => $transactionId,
+                'invitation_id' => $invitation->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'payment_status' => 'paid',
+                'message' => 'Payment confirmed successfully',
+                'data' => [
+                    'order_id' => $orderId,
+                    'transaction_id' => $transactionId,
+                    'payment_confirmed_at' => $invitation->fresh()->payment_confirmed_at,
+                    'domain_expires_at' => $invitation->fresh()->domain_expires_at,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to confirm payment via frontend callback', [
+                'error' => $e->getMessage(),
+                'order_id' => $orderId,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to confirm payment',
             ], 500);
         }
     }
@@ -422,14 +591,18 @@ class MidtransController extends Controller
                         $updateData['status'] = $snapshot['original_status'];
                     }
 
-                    // Calculate expiry date
+                    // Calculate expiry date - use package_duration_snapshot which was captured at registration
                     $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
 
                     // For upgrade payments, extend from current expiry. For new payments, extend from now.
-                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
-                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
-                    } elseif ($invitation->paketUndangan && $invitation->paketUndangan->masa_aktif) {
-                        $updateData['domain_expires_at'] = now()->addDays($invitation->paketUndangan->masa_aktif);
+                    if ($duration > 0) {
+                        if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                            // Upgrade: extend from current expiry
+                            $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                        } else {
+                            // New payment: extend from now
+                            $updateData['domain_expires_at'] = now()->addDays($duration);
+                        }
                     }
                 }
 

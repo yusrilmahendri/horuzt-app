@@ -2,6 +2,7 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
+use App\Models\ActivePaymentMethod;
 use App\Models\Cerita;
 use App\Models\Galery;
 use App\Models\Invitation;
@@ -24,6 +25,36 @@ class InvitationController extends Controller
         return new TagihanTransactionCollection($data);
     }
 
+    /**
+     * Get active payment method for users
+     * GET /v1/active-payment-method
+     */
+    public function getActivePaymentMethodForUser()
+    {
+        try {
+            $active = ActivePaymentMethod::with('metodeTransaction')
+                ->where('is_active', true)
+                ->first();
+
+            if (!$active) {
+                return response()->json([
+                    'message' => 'No active payment method found',
+                    'data' => [],
+                ], 200);
+            }
+
+            return response()->json([
+                'message' => 'Active payment method retrieved successfully',
+                'data' => [$active->metodeTransaction],
+            ], 200);
+        } catch (\Exception $e) {
+            return response()->json([
+                'message' => 'Failed to retrieve active payment method',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
+        }
+    }
+
 
     public function storeStepOne(Request $request)
     {
@@ -44,6 +75,30 @@ class InvitationController extends Controller
                 if (!empty($validated['kode_pemesanan'])) {
                     $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
                 }
+
+                // Get trial configuration from settings
+                $trialConfig = Setting::whereNotNull('trial_masa_aktif')
+                    ->where('trial_masa_aktif', '>', 0)
+                    ->first();
+                $trialDays = $trialConfig ? $trialConfig->trial_masa_aktif : 3;
+
+                // Get package details
+                $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
+                if (!$paketUndangan) {
+                    return response()->json([
+                        'message' => 'Paket undangan tidak ditemukan',
+                    ], 422);
+                }
+
+                // Check if this is a Trial package
+                $isTrialPackage = strtolower($paketUndangan->name_paket) === 'trial' ||
+                                  $paketUndangan->price == 0;
+
+                // Determine payment status and expiry based on package type
+                $paymentStatus = $isTrialPackage ? 'paid' : 'pending';
+                $domainExpiresAt = $isTrialPackage
+                    ? now()->addDays($trialDays)
+                    : now()->addDays($paketUndangan->masa_aktif ?? $trialDays);
 
                 if ($user) {
                     $errors = [];
@@ -74,22 +129,15 @@ class InvitationController extends Controller
                         ['domain' => $validated['domain']]
                     );
 
-                    // Get package details for snapshot
-                    $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
-                    if (!$paketUndangan) {
-                        return response()->json([
-                            'message' => 'Paket undangan tidak ditemukan',
-                        ], 422);
-                    }
-
                     $invitation = Invitation::updateOrCreate(
                         ['user_id' => $user->id],
                         [
                             'status'            => 'step1',
                             'paket_undangan_id' => $validated['paket_undangan_id'],
                             'kode_pemesanan'    => $user->kode_pemesanan,
-                            'payment_status'    => 'pending',
-                            'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
+                            'payment_status'    => $paymentStatus,
+                            'is_trial'          => $isTrialPackage,
+                            'domain_expires_at' => $domainExpiresAt,
                             // Capture package snapshot to preserve original terms
                             'package_price_snapshot' => $paketUndangan->price,
                             'package_duration_snapshot' => $paketUndangan->masa_aktif,
@@ -152,22 +200,16 @@ class InvitationController extends Controller
                             ['domain' => $validated['domain']]
                         );
 
-                        // Get package details for snapshot
-                        $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
-                        if (!$paketUndangan) {
-                            return response()->json([
-                                'message' => 'Paket undangan tidak ditemukan',
-                            ], 422);
-                        }
-
+                        // Reuse package and trial config from outer scope
                         $invitation = Invitation::updateOrCreate(
                             ['user_id' => $user->id],
                             [
                                 'status'            => 'step1',
                                 'paket_undangan_id' => $validated['paket_undangan_id'],
                                 'kode_pemesanan'    => $user->kode_pemesanan,
-                                'payment_status'    => 'pending',
-                                'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
+                                'payment_status'    => $paymentStatus,
+                                'is_trial'          => $isTrialPackage,
+                                'domain_expires_at' => $domainExpiresAt,
                                 // Capture package snapshot to preserve original terms
                                 'package_price_snapshot' => $paketUndangan->price,
                                 'package_duration_snapshot' => $paketUndangan->masa_aktif,
@@ -222,21 +264,15 @@ class InvitationController extends Controller
                         'domain'  => $validated['domain'],
                     ]);
 
-                    // Get package details for snapshot
-                    $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
-                    if (!$paketUndangan) {
-                        return response()->json([
-                            'message' => 'Paket undangan tidak ditemukan',
-                        ], 422);
-                    }
-
+                    // Reuse package and trial config from outer scope
                     $invitation = Invitation::create([
                         'status'            => 'step1',
                         'paket_undangan_id' => $validated['paket_undangan_id'],
                         'user_id'           => $user->id,
                         'kode_pemesanan'    => $user->kode_pemesanan,
-                        'payment_status'    => 'pending',
-                        'domain_expires_at' => now()->addDays(3), // 3-day trial from registration
+                        'payment_status'    => $paymentStatus,
+                        'is_trial'          => $isTrialPackage,
+                        'domain_expires_at' => $domainExpiresAt,
                         // Capture package snapshot to preserve original terms
                         'package_price_snapshot' => $paketUndangan->price,
                         'package_duration_snapshot' => $paketUndangan->masa_aktif,
@@ -351,6 +387,14 @@ class InvitationController extends Controller
                     $mempelaiPhotos['cover_photo'] = $photoPath;
                 }
 
+                // Check if user has Trial package to set correct status
+                $invitation = Invitation::where('user_id', $user->id)->first();
+                $isTrialPackage = $invitation && $invitation->is_trial;
+
+                // Set status based on package type: Trial = auto-active, Paid = waiting confirmation
+                $status = $isTrialPackage ? 'Sudah Bayar' : 'Menunggu Konfirmasi';
+                $kdStatus = $isTrialPackage ? 'SB' : 'MK';
+
                 // Update Mempelai with photo references and other data
                 $mempelai = Mempelai::updateOrCreate(
                     ['user_id' => $user->id],
@@ -363,8 +407,8 @@ class InvitationController extends Controller
                         'ayah_wanita'           => $validated['ayah_wanita'],
                         'ibu_pria'              => $validated['ibu_pria'],
                         'ibu_wanita'            => $validated['ibu_wanita'],
-                        'status'                => 'Menunggu Konfirmasi',
-                        'kd_status'             => 'MK',
+                        'status'                => $status,
+                        'kd_status'             => $kdStatus,
                     ], $mempelaiPhotos)
                 );
 

@@ -35,6 +35,15 @@ class AcaraController extends Controller
                 return !$eventsByType->has($key);
             });
 
+        // Build acaras array from events for backward compatibility
+        $acarasArray = [];
+        if ($eventsByType->has('akad')) {
+            $acarasArray[] = $eventsByType->get('akad');
+        }
+        if ($eventsByType->has('resepsi')) {
+            $acarasArray[] = $eventsByType->get('resepsi');
+        }
+
         return response()->json([
             'data' => [
                 'events' => [
@@ -63,6 +72,7 @@ class AcaraController extends Controller
                         'updated_at' => $eventsByType->get('resepsi')->updated_at,
                     ] : null,
                 ],
+                'acaras' => $acarasArray,
                 'countdown' => $countdown ? [
                     'id' => $countdown->id,
                     'name_countdown' => $countdown->name_countdown,
@@ -103,6 +113,12 @@ class AcaraController extends Controller
     public function store(Request $request)
     {
         try {
+            // Check if this is bulk submission (array of data)
+            if ($request->hasAny(['nama_acara.0', 'jenis_acara.0'])) {
+                return $this->storeBulk($request);
+            }
+
+            // Single event submission (existing logic)
             $validated = $request->validate([
                 'jenis_acara' => 'required|in:akad,resepsi',
                 'nama_acara' => 'required|string|max:255',
@@ -181,6 +197,74 @@ class AcaraController extends Controller
         }
     }
 
+    private function storeBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'jenis_acara' => 'required|array|min:1',
+            'jenis_acara.*' => 'required|in:akad,resepsi',
+            'nama_acara' => 'required|array|min:1',
+            'nama_acara.*' => 'required|string|max:255',
+            'tanggal_acara' => 'required|array|min:1',
+            'tanggal_acara.*' => 'required|date',
+            'start_acara' => 'required|array|min:1',
+            'start_acara.*' => 'required|string',
+            'end_acara' => 'required|array|min:1',
+            'end_acara.*' => 'required|string',
+            'alamat' => 'required|array|min:1',
+            'alamat.*' => 'required|string',
+            'link_maps' => 'required|array|min:1',
+            'link_maps.*' => 'required|url',
+        ]);
+
+        $userId = Auth::id();
+        $countDown = CountdownAcara::where('user_id', $userId)->latest('created_at')->first();
+
+        if (!$countDown) {
+            return response()->json([
+                'message' => 'No countdown is associated with the user.',
+            ], 400);
+        }
+
+        $createdEvents = [];
+        $errors = [];
+
+        foreach ($validated['jenis_acara'] as $index => $jenisAcara) {
+            // Check if event type already exists
+            $existingEvent = Acara::where('user_id', $userId)
+                                  ->where('jenis_acara', $jenisAcara)
+                                  ->first();
+
+            if ($existingEvent) {
+                $errors[] = "Event type \"{$jenisAcara}\" already exists.";
+                continue;
+            }
+
+            $acara = Acara::create([
+                'user_id' => $userId,
+                'countdown_id' => $countDown->id,
+                'jenis_acara' => $jenisAcara,
+                'nama_acara' => $validated['nama_acara'][$index],
+                'tanggal_acara' => $validated['tanggal_acara'][$index],
+                'start_acara' => $validated['start_acara'][$index],
+                'end_acara' => $validated['end_acara'][$index],
+                'alamat' => $validated['alamat'][$index],
+                'link_maps' => $validated['link_maps'][$index],
+            ]);
+
+            $createdEvents[] = $acara;
+        }
+
+        return response()->json([
+            'data' => [
+                'created' => $createdEvents,
+                'errors' => $errors,
+            ],
+            'message' => count($createdEvents) > 0
+                ? 'Events created successfully.'
+                : 'No events created.',
+        ], count($createdEvents) > 0 ? 201 : 422);
+    }
+
     public function destroy(Request $request)
     {
         try {
@@ -241,6 +325,12 @@ class AcaraController extends Controller
     public function updateAcara(Request $request)
     {
         try {
+            // Check if this is bulk update (array of data)
+            if ($request->has('data') && is_array($request->input('data'))) {
+                return $this->updateBulk($request);
+            }
+
+            // Single event update (existing logic)
             $validated = $request->validate([
                 'id' => 'required|integer|exists:acaras,id',
                 'jenis_acara' => 'required|in:akad,resepsi',
@@ -319,6 +409,72 @@ class AcaraController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function updateBulk(Request $request)
+    {
+        $validated = $request->validate([
+            'data' => 'required|array|min:1',
+            'data.*.id' => 'required|integer|exists:acaras,id',
+            'data.*.jenis_acara' => 'required|in:akad,resepsi',
+            'data.*.nama_acara' => 'required|string|max:255',
+            'data.*.tanggal_acara' => 'required|date',
+            'data.*.start_acara' => 'required|string',
+            'data.*.end_acara' => 'required|string',
+            'data.*.alamat' => 'required|string',
+            'data.*.link_maps' => 'required|url',
+        ]);
+
+        $userId = Auth::id();
+        $updatedEvents = [];
+        $errors = [];
+
+        foreach ($validated['data'] as $eventData) {
+            $acara = Acara::where('id', $eventData['id'])
+                          ->where('user_id', $userId)
+                          ->first();
+
+            if (!$acara) {
+                $errors[] = "Event with ID {$eventData['id']} not found or access denied.";
+                continue;
+            }
+
+            // If jenis_acara is being changed, check for conflicts
+            if ($acara->jenis_acara !== $eventData['jenis_acara']) {
+                $existingEvent = Acara::where('user_id', $userId)
+                                      ->where('jenis_acara', $eventData['jenis_acara'])
+                                      ->where('id', '!=', $eventData['id'])
+                                      ->first();
+
+                if ($existingEvent) {
+                    $errors[] = "Cannot change event ID {$eventData['id']} to type \"{$eventData['jenis_acara']}\", already exists.";
+                    continue;
+                }
+            }
+
+            $acara->update([
+                'jenis_acara' => $eventData['jenis_acara'],
+                'nama_acara' => $eventData['nama_acara'],
+                'tanggal_acara' => $eventData['tanggal_acara'],
+                'start_acara' => $eventData['start_acara'],
+                'end_acara' => $eventData['end_acara'],
+                'alamat' => $eventData['alamat'],
+                'link_maps' => $eventData['link_maps'],
+            ]);
+
+            $acara->load('countDown');
+            $updatedEvents[] = $acara;
+        }
+
+        return response()->json([
+            'data' => [
+                'updated' => $updatedEvents,
+                'errors' => $errors,
+            ],
+            'message' => count($updatedEvents) > 0
+                ? 'Events updated successfully.'
+                : 'No events updated.',
+        ], count($updatedEvents) > 0 ? 200 : 422);
     }
 
 }

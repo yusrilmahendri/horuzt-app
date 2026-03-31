@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\AcaraController;
+use App\Http\Controllers\GuestTrackingController;
 use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
 use App\Http\Controllers\Admin\AdminInvoiceController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
+use App\Http\Controllers\AttendanceScanController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\BankAccountController;
@@ -60,6 +62,29 @@ Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
+// Debug endpoint - remove after fixing the issue
+Route::get('/v1/debug/user/{userId}', function ($userId) {
+    $invitation = \App\Models\Invitation::with('paketUndangan')->where('user_id', $userId)->first();
+
+    if (!$invitation) {
+        return response()->json(['error' => 'Invitation not found'], 404);
+    }
+
+    $paket = $invitation->paketUndangan;
+
+    return response()->json([
+        'user_id' => $userId,
+        'is_trial' => $invitation->is_trial,
+        'payment_status' => $invitation->payment_status,
+        'paket_id' => $paket->id ?? null,
+        'paket_name' => $paket->name_paket ?? null,
+        'paket_price' => $paket->price ?? null,
+        'is_trial_by_name' => strtolower($paket->name_paket ?? '') === 'trial',
+        'is_trial_by_price' => ($paket->price ?? 0) == 0,
+        'should_be_trial' => strtolower($paket->name_paket ?? '') === 'trial' || ($paket->price ?? 0) == 0,
+    ]);
+});
+
 Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook'])->withoutMiddleware([\App\Http\Middleware\VerifyCsrfToken::class]);
 
 // Test endpoint for webhook connectivity
@@ -95,6 +120,12 @@ Route::controller(TestimoniController::class)->group(function () {
 Route::get('/v1/wedding-profile/public', [WeddingProfileController::class, 'publicProfile']);
 Route::get('/v1/wedding-profile/couple/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
 
+// Public Guest Tracking endpoints (for guest visit tracking and QR verification)
+Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->group(function () {
+    Route::post('/track', 'track');                    // Track guest visit (no auth)
+    Route::get('/verify/{token}', 'verify');          // Verify guest token (no auth)
+});
+
 // Public Music Streaming endpoint (for wedding invitations)
 Route::get('/v1/music/stream/public', [MusicController::class, 'streamPublic']);
 
@@ -128,6 +159,7 @@ Route::controller(AttendanceController::class)->group(function () {
 
 Route::controller(InvitationController::class)->group(function () {
     Route::get('/v1/master-tagihan', 'masterTagihan');
+    Route::get('/v1/active-payment-method', 'getActivePaymentMethodForUser');
     Route::post('/v1/one-step', 'storeStepOne');
     Route::post('/v1/two-step', 'storeStepTwo')->middleware(['large.files', 'bypass.post.size']);
     Route::post('/v1/three-step', 'storeStepThree')->middleware(['large.files', 'bypass.post.size']);
@@ -171,6 +203,12 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::get('/v1/admin/paket-undangan', 'indexPaket');
         Route::put('/v1/admin/paket-undangan/{id}', 'updatePaket');
         Route::post('/v1/admin/method-transaction', 'storeMethodTransaction');
+        // Active payment method management
+        Route::get('/v1/admin/active-payment-method', 'getActivePaymentMethod');
+        Route::put('/v1/admin/active-payment-method/{id}', 'setActivePaymentMethod');
+        // Trial configuration
+        Route::get('/v1/admin/trial-config', 'getTrialConfig');
+        Route::put('/v1/admin/trial-config', 'updateTrialConfig');
     });
     Route::controller(TestimoniController::class)->group(function () {
         Route::get('/v1/admin/testimoni', 'index');
@@ -328,6 +366,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     // Midtrans Payment endpoints (authenticated)
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
     Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
+    Route::post('/v1/midtrans/confirm-success', [MidtransController::class, 'confirmPaymentSuccess']);
 
     // Profile Management endpoints
 
@@ -413,6 +452,14 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::delete('/v1/user/delete-acara', 'destroy');
     });
 
+    // Attendance Scanning (QR Code)
+    Route::prefix('v1/user/attendance-scans')->group(function () {
+        Route::get('/', [AttendanceScanController::class, 'index']);
+        Route::post('/', [AttendanceScanController::class, 'scan']);
+        Route::get('/statistics', [AttendanceScanController::class, 'statistics']);
+        Route::delete('/{id}', [AttendanceScanController::class, 'destroy']);
+    });
+
     Route::controller(MempelaiController::class)->group(function () {
         Route::get('/v1/user/get-mempelai', 'index');
         Route::post('/v1/user/update-mempelai', 'update');
@@ -486,6 +533,12 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(\App\Http\Controllers\Api\ThemeController::class)->prefix('themes')->group(function () {
         Route::post('/select', 'selectTheme')->name('themes.select');
         Route::get('/selected', 'getSelectedTheme')->name('themes.selected');
+    });
+
+    // Guest Tracking endpoints (protected - requires authentication)
+    Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->group(function () {
+        Route::get('/', 'index');                         // Get guest list
+        Route::post('/confirm-attendance', 'confirmAttendance'); // Confirm attendance from QR scan
     });
 });
 
