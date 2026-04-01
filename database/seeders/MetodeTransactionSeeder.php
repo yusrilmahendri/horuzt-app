@@ -13,23 +13,18 @@ class MetodeTransactionSeeder extends Seeder
      */
     public function run(): void
     {
-        MetodeTransaction::insert([
-            [
-                'id' => 1,
-                'name' => 'Manual'
-            ],
-            [
-                'id' => 2,
-                'name' => 'Tripay'
-            ],
-            [
-                'id' => 3,
-                'name' => 'Midtrans'
-            ],
-             [
-                'id' => 4,
-                'name' => 'Trial'
-            ]
-        ]);
+        $methods = [
+            ['id' => 1, 'name' => 'Manual'],
+            ['id' => 2, 'name' => 'Tripay'],
+            ['id' => 3, 'name' => 'Midtrans'],
+            ['id' => 4, 'name' => 'Trial']
+        ];
+
+        foreach ($methods as $method) {
+            MetodeTransaction::firstOrCreate(
+                ['id' => $method['id']],
+                ['name' => $method['name']]
+            );
+        }
     }
 }
