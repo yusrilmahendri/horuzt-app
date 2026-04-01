@@ -13,12 +13,14 @@ class UserTableSeeder extends Seeder
      */
     public function run()
     {
-        $user = User::create([
-            'name' => 'Ahmad',
-            'email' => 'ahmad@gmail.com',
-            'email_verified_at' => now(),
-            'password' => bcrypt('12345678'),
-        ]);
+        $user = User::firstOrCreate(
+            ['email' => 'ahmad@gmail.com'],
+            [
+                'name' => 'Ahmad',
+                'email_verified_at' => now(),
+                'password' => bcrypt('12345678'),
+            ]
+        );
         $user->assignRole('user');
         $user->createToken('auth_token')->plainTextToken;
         return $user;
