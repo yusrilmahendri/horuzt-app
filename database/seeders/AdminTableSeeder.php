@@ -13,7 +13,7 @@ class AdminTableSeeder extends Seeder
      */
     public function run()
     {
-        $user = User::firstOrCreate(
+        $user = User::updateOrCreate(
             ['email' => 'admin@gmail.com'],
             [
                 'name' => 'admin',
