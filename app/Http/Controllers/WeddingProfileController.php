@@ -272,23 +272,31 @@ class WeddingProfileController extends Controller
 
             // Check payment status from mempelai
             $paymentStatus = $user->mempelaiOne?->kd_status;
+            $invitation = $user->invitationOne;
 
-            // If status is "MK" (Menunggu Konfirmasi), return empty data
+            // MK (Menunggu Konfirmasi) = pending manual payment.
+            // Allow access only if the trial window (domain_expires_at) is still active.
+            // Once the trial window lapses, block access until admin confirms payment.
             if ($paymentStatus === 'MK') {
+                if ($invitation && $invitation->isDomainActive()) {
+                    return response()->json([
+                        'data' => new WeddingProfileResource($user, true),
+                    ], 200);
+                }
+
                 return response()->json([
-                    'data' => [],
-                    'message' => 'Payment is still pending confirmation.',
-                ], 200);
+                    'message' => 'Masa aktif domain habis. Menunggu konfirmasi pembayaran dari admin.',
+                ], 403);
             }
 
-            // If status is "SB" (Sudah Bayar), return full data
+            // SB (Sudah Bayar) = payment confirmed by admin, full access.
             if ($paymentStatus === 'SB') {
                 return response()->json([
-                    'data' => new WeddingProfileResource($user, true), // Pass true for public view
+                    'data' => new WeddingProfileResource($user, true),
                 ], 200);
             }
 
-            // If no payment status or unknown status, return error
+            // Unknown or unset payment status
             return response()->json([
                 'message' => 'Wedding profile payment status is not valid.',
             ], 403);

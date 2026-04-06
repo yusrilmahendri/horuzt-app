@@ -94,11 +94,14 @@ class InvitationController extends Controller
                 $isTrialPackage = strtolower($paketUndangan->name_paket) === 'trial' ||
                                   $paketUndangan->price == 0;
 
-                // Determine payment status and expiry based on package type
+                // Determine payment status and expiry based on package type.
+                // Trial packages: immediately paid, domain active for trialDays.
+                // Non-trial (paid package, pending manual payment): domain gets a trial window
+                // equal to trialDays so the user can preview their invitation while awaiting
+                // admin payment confirmation. TagihanController::store refreshes this value
+                // when the user submits their manual payment proof.
                 $paymentStatus = $isTrialPackage ? 'paid' : 'pending';
-                $domainExpiresAt = $isTrialPackage
-                    ? now()->addDays($trialDays)
-                    : now()->addDays($paketUndangan->masa_aktif ?? $trialDays);
+                $domainExpiresAt = now()->addDays($trialDays);
 
                 if ($user) {
                     $errors = [];

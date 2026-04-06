@@ -80,11 +80,14 @@ class Invitation extends Model
     }
 
     /**
-     * Check if domain is still active
+     * Check if domain is still active.
+     * Paid users: active when domain_expires_at is in the future.
+     * Pending users: active during their trial window (domain_expires_at is still in the future).
+     * This allows manual-payment users to preview their invitation while awaiting admin confirmation.
      */
     public function isDomainActive(): bool
     {
-        if (!$this->domain_expires_at || $this->payment_status !== 'paid') {
+        if (!$this->domain_expires_at) {
             return false;
         }
 
@@ -104,20 +107,22 @@ class Invitation extends Model
     }
 
     /**
-     * Scope for active domains
+     * Scope for active domains.
+     * Includes both paid users with valid expiry and pending users still within their trial window.
      */
     public function scopeActiveDomains($query)
     {
-        return $query->where('payment_status', 'paid')
+        return $query->whereIn('payment_status', ['paid', 'pending'])
                     ->where('domain_expires_at', '>', now());
     }
 
     /**
-     * Scope for expired domains
+     * Scope for expired domains.
+     * Includes paid and pending invitations where the domain window has lapsed.
      */
     public function scopeExpiredDomains($query)
     {
-        return $query->where('payment_status', 'paid')
+        return $query->whereIn('payment_status', ['paid', 'pending'])
                     ->where('domain_expires_at', '<=', now());
     }
 }

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Invitation;
 use App\Models\Mempelai;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -47,8 +48,10 @@ class TagihanController extends Controller
     }
 
     /**
-     * Create a new invoice (tagihan) when user confirms manual payment
-     * Sets payment_status to 'pending' and domain_expires_at to 3 days (trial period)
+     * Create a new invoice (tagihan) when user confirms manual payment.
+     * Sets payment_status to 'pending' and domain_expires_at to the admin-configured
+     * trial_masa_aktif value from the settings table (defaults to 3 days if not set).
+     * This gives pending users a preview window while awaiting admin payment confirmation.
      */
     public function store(Request $request): JsonResponse
     {
@@ -70,6 +73,12 @@ class TagihanController extends Controller
                 return response()->json(['message' => 'Data invitation tidak ditemukan'], 404);
             }
 
+            // Read trial duration from admin-configurable settings, fallback to 3 days
+            $trialConfig = Setting::whereNotNull('trial_masa_aktif')
+                ->where('trial_masa_aktif', '>', 0)
+                ->first();
+            $trialDays = $trialConfig ? (int) $trialConfig->trial_masa_aktif : 3;
+
             // Check if invoice already exists for this invitation (pending)
             if ($invitation->payment_status === 'pending') {
                 return response()->json([
@@ -80,7 +89,7 @@ class TagihanController extends Controller
                         'total' => $invitation->package_price_snapshot,
                         'status' => 'pending',
                         'domain_expires_at' => $invitation->domain_expires_at?->format('Y-m-d H:i:s'),
-                        'trial_days' => 3
+                        'trial_days' => $trialDays,
                     ]
                 ], 200);
             }
@@ -88,7 +97,7 @@ class TagihanController extends Controller
             // Update invitation to pending status (manual payment initiated)
             $invitation->update([
                 'payment_status' => 'pending',
-                'domain_expires_at' => now()->addDays(3), // 3 days trial
+                'domain_expires_at' => now()->addDays($trialDays),
             ]);
 
             // Update mempelai to Menunggu Konfirmasi
@@ -108,7 +117,7 @@ class TagihanController extends Controller
                     'total' => $invitation->package_price_snapshot,
                     'status' => 'pending',
                     'domain_expires_at' => $invitation->domain_expires_at->format('Y-m-d H:i:s'),
-                    'trial_days' => 3
+                    'trial_days' => $trialDays,
                 ]
             ], 201);
 

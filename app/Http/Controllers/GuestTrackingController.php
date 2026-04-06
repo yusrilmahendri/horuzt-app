@@ -152,6 +152,13 @@ class GuestTrackingController extends Controller
                 ], 404);
             }
 
+            // Ownership check: scanner must own the invitation being scanned
+            if ($guest->user_id !== auth()->id()) {
+                return response()->json([
+                    'message' => 'Anda tidak memiliki akses untuk memindai QR undangan ini',
+                ], 403);
+            }
+
             // Check if already attended this event
             if ($guest->attended && $guest->attended_acara_id == $request->acara_id) {
                 return response()->json([
