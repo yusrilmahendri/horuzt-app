@@ -26,6 +26,7 @@ class WeddingGuest extends Model
     ];
 
     protected $casts = [
+        'user_id' => 'integer',
         'first_visit_at' => 'datetime',
         'attended_at' => 'datetime',
         'attended' => 'boolean',
