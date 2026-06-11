@@ -12,8 +12,19 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class MusicStreamService
 {
+    protected MusicResolverService $resolver;
+
+    public function __construct(MusicResolverService $resolver)
+    {
+        $this->resolver = $resolver;
+    }
+
     /**
-     * Stream music file with Range header support for better performance
+     * Stream the effective music for a setting with Range header support.
+     *
+     * Effective music is resolved with priority: custom upload > selected
+     * catalog track > default track. This keeps existing endpoints unchanged
+     * while supporting catalog/default playback.
      *
      * @param Setting $setting
      * @param Request $request
@@ -22,16 +33,19 @@ class MusicStreamService
     public function streamMusic(Setting $setting, Request $request)
     {
         try {
-            if (!$setting->musik) {
+            $resolved = $this->resolver->resolve($setting);
+
+            if (!$resolved) {
                 return response()->json(['message' => 'No music file associated with this setting.'], 404);
             }
 
-            $filePath = storage_path('app/' . $setting->musik);
+            $filePath = $resolved['absolute_path'];
 
             if (!file_exists($filePath)) {
                 Log::warning('Music file not found', [
                     'setting_id' => $setting->id,
-                    'file_path' => $setting->musik
+                    'source' => $resolved['source'] ?? null,
+                    'file_path' => $resolved['storage_path'] ?? null,
                 ]);
                 return response()->json(['message' => 'Music file not found.'], 404);
             }
@@ -234,13 +248,29 @@ class MusicStreamService
             return null;
         }
 
+        // Normalize stored path so the public URL never becomes /storage/public/music/...
+        // DB may store "public/music/file.mp3"; public URL must be /storage/music/file.mp3
+        $publicPath = preg_replace('#^public/#', '', $setting->musik);
+
         return [
             'file_name' => basename($filePath),
             'file_size' => filesize($filePath),
             'mime_type' => mime_content_type($filePath),
-            'url' => Storage::url($setting->musik),
+            'url' => asset('storage/' . $publicPath),
             'last_modified' => filemtime($filePath)
         ];
+    }
+
+    /**
+     * Get the effective music info (custom / catalog / default) for a setting.
+     * Delegates to the resolver so the priority logic lives in one place.
+     *
+     * @param Setting $setting
+     * @return array<string,mixed>|null
+     */
+    public function getEffectiveMusicInfo(Setting $setting): ?array
+    {
+        return $this->resolver->resolveInfo($setting);
     }
 
     /**
@@ -251,7 +281,16 @@ class MusicStreamService
      */
     public function validateAudioFile($file): bool
     {
-        $allowedMimeTypes = ['audio/mpeg', 'audio/wav', 'audio/ogg', 'audio/mp3'];
+        $allowedMimeTypes = [
+            'audio/mpeg',
+            'audio/mp3',
+            'audio/wav',
+            'audio/x-wav',
+            'audio/ogg',
+            'audio/mp4',
+            'audio/x-m4a',
+            'audio/m4a',
+        ];
         $maxSize = 10 * 1024 * 1024; // 10MB
 
         return in_array($file->getMimeType(), $allowedMimeTypes) && 

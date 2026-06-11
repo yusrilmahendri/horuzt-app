@@ -14,6 +14,7 @@ class Setting extends Model
         'domain',
         'token',
         'musik',
+        'music_track_id',
         'salam_pembuka',
         'salam_atas',
         'salam_bawah',
@@ -23,5 +24,10 @@ class Setting extends Model
     public function user()
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function musicTrack()
+    {
+        return $this->belongsTo(MusicTrack::class, 'music_track_id');
     }
 }

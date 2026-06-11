@@ -129,6 +129,9 @@ Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->
 // Public Music Streaming endpoint (for wedding invitations)
 Route::get('/v1/music/stream/public', [MusicController::class, 'streamPublic']);
 
+// Public Music Catalog (Sena Digital song list for selection)
+Route::get('/music/tracks', [\App\Http\Controllers\MusicTrackController::class, 'index']);
+
 // Public Gallery endpoint (for wedding invitation photo display)
 Route::controller(GaleryController::class)->group(function () {
     Route::get('/v1/galery/public', 'publicIndex');
@@ -265,6 +268,18 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     Route::controller(UserController::class)->group(function () {
         Route::get('/v1/admin/get-users', 'index');
     });
+
+    // Admin Music Catalog Management (Sena Digital songs)
+    Route::controller(\App\Http\Controllers\Admin\AdminMusicTrackController::class)
+        ->prefix('v1/admin/music-tracks')->group(function () {
+            Route::get('/', 'index');
+            Route::post('/', 'store');
+            Route::put('/{id}', 'update')->where('id', '[0-9]+');
+            Route::patch('/{id}', 'update')->where('id', '[0-9]+');
+            Route::patch('/{id}/set-default', 'setDefault')->where('id', '[0-9]+');
+            Route::patch('/{id}/toggle-active', 'toggleActive')->where('id', '[0-9]+');
+            Route::delete('/{id}', 'destroy')->where('id', '[0-9]+');
+        });
 
     Route::controller(PackageUpgradeController::class)->group(function () {
         Route::post('/v1/admin/change-package', 'changePackage');
@@ -473,6 +488,12 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::get('/download', 'download');
         Route::delete('/delete', 'destroy');
         Route::get('/info', 'info');
+    });
+
+    // Music Catalog selection (all packages may pick a catalog track)
+    Route::controller(\App\Http\Controllers\MusicTrackController::class)->prefix('music')->group(function () {
+        Route::post('/select-track', 'selectTrack');
+        Route::post('/clear-selection', 'clearSelection');
     });
 
     Route::controller(SettingController::class)->group(function () {

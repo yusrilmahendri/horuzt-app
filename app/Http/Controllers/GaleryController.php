@@ -10,13 +10,13 @@ use Illuminate\Support\Facades\Storage;
 class GaleryController extends Controller
 {
     public function __construct(){
-        $this->middleware('auth:sanctum');
+        $this->middleware('auth:sanctum')->except(['publicIndex']);
     }
 
     public function store(Request $request){
         $validateData = $request->validate([
             'photo' => 'nullable|file|mimes:jpg,png,jpeg|max:5222',
-            'url_video' => 'nullable|string|max:500',
+            'url_video' => 'nullable|url|max:500',
             'nama_foto' => 'nullable|string|max:255',
         ]);
 
@@ -129,9 +129,12 @@ class GaleryController extends Controller
         $userId = $validated['user_id'];
         $query = Galery::where('user_id', $userId);
 
-        // Filter by status if provided
+        // Filter by status. For the public wedding view, default to active (status = 1)
+        // when the caller does not explicitly request a status.
         if ($request->has('status')) {
             $query->where('status', $request->input('status'));
+        } else {
+            $query->where('status', 1);
         }
 
         // Pagination (default 10)
@@ -178,7 +181,11 @@ class GaleryController extends Controller
                 'message' => 'Parameter id wajib diisi.'
             ], 400);
         }
-        $galery = Galery::find($id);
+
+        // Ownership check: only allow deleting the authenticated user's own gallery item.
+        $galery = Galery::where('id', $id)
+            ->where('user_id', Auth::id())
+            ->first();
         if (!$galery) {
             return response()->json([
                 'message' => 'Galery tidak ditemukan.'

@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CategoryThemas;
+use App\Models\Invitation;
 use App\Models\JenisThemas;
 use App\Models\ResultThemas;
 use Illuminate\Http\Request;
@@ -183,6 +184,31 @@ class ThemeController extends Controller
                     'status' => false,
                     'message' => 'Selected theme is not available.'
                 ], 400);
+            }
+
+            // Package-based theme access control (BE-1).
+            // Use the bebas_pilih_tema flag on the user's package, not the package label.
+            $invitation = Invitation::with('paketUndangan')
+                ->where('user_id', $user->id)
+                ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+                ->orderBy('id', 'desc')
+                ->first();
+
+            $bebasPilihTema = false;
+            if ($invitation) {
+                if ($invitation->paketUndangan) {
+                    $bebasPilihTema = (bool) $invitation->paketUndangan->bebas_pilih_tema;
+                } elseif (is_array($invitation->package_features_snapshot)) {
+                    $bebasPilihTema = (bool) ($invitation->package_features_snapshot['bebas_pilih_tema'] ?? false);
+                }
+            }
+
+            // Packages without free theme selection (e.g. Ruby/Trial) may only pick free themes.
+            if (!$bebasPilihTema && (float) $theme->price > 0) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Paket Anda belum termasuk bebas pilih tema premium. Silakan upgrade paket untuk memilih tema ini.'
+                ], 403);
             }
 
             DB::beginTransaction();

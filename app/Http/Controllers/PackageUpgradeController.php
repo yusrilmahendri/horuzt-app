@@ -147,6 +147,8 @@ class PackageUpgradeController extends Controller
             'data' => $packages,
             'current_package_id' => $currentPackageId,
             'current_package_name' => $snapshot['name_paket'] ?? null,
+            'current_package_name_display' => PaketUndangan::canonicalName($snapshot['name_paket'] ?? null),
+            'current_package_tier' => PaketUndangan::tierCode($snapshot['name_paket'] ?? null),
             'invitation_id' => $invitation?->id,
             'payment_status' => $invitation?->payment_status,
             'is_trial' => $isTrial,

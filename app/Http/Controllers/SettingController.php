@@ -3,6 +3,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMusicRequest;
 use App\Models\FilterUndangan;
+use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\MusicStreamService;
@@ -81,6 +83,16 @@ class SettingController extends Controller
     {
         try {
             $user = Auth::user();
+
+            // Business rule (BE-4C hardening): the legacy upload endpoint must
+            // enforce the same Diamond-only restriction as MusicController::store
+            // so it cannot be used to bypass the package lock.
+            if (!$this->userCanUploadCustomMusic($user)) {
+                return response()->json([
+                    'message' => 'Custom music upload is only available for Diamond package.'
+                ], 403);
+            }
+
             $musicFile = $request->file('musik');
 
             // Additional validation using service
@@ -336,6 +348,51 @@ class SettingController extends Controller
             Log::error('Filter update failed', ['error' => $e->getMessage()]);
             return response()->json(['message' => 'Terjadi kesalahan saat memperbarui data.'], 500);
         }
+    }
+
+    /**
+     * Determine whether the authenticated user may upload/replace custom music.
+     * Only the Diamond tier (incl. legacy "Platinum") is allowed.
+     * Mirrors MusicController::userCanUploadCustomMusic so the legacy upload
+     * endpoint enforces the same Diamond lock.
+     *
+     * @param  mixed  $user
+     * @return bool
+     */
+    private function userCanUploadCustomMusic($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Pick the relevant invitation: prefer a paid one, then the latest.
+        $invitation = Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (!$invitation) {
+            return false;
+        }
+
+        $rawName = null;
+        if ($invitation->paketUndangan) {
+            $rawName = $invitation->paketUndangan->name_paket;
+        } elseif (is_array($invitation->package_features_snapshot)) {
+            $rawName = $invitation->package_features_snapshot['name_paket'] ?? null;
+        }
+
+        if ($rawName === null || trim($rawName) === '') {
+            return false;
+        }
+
+        // Use the brand-aware tier helper (Platinum/Diamond => "diamond").
+        $tier = method_exists(PaketUndangan::class, 'tierCode')
+            ? PaketUndangan::tierCode($rawName)
+            : strtolower(trim($rawName));
+
+        return $tier === 'diamond';
     }
 
 }

@@ -44,13 +44,20 @@ class WeddingProfileResource extends JsonResource
 
     private function getUserInfo(): array
     {
-        return [
+        $info = [
             'id' => $this->id,
             'name' => $this->name,
-            'email' => $this->email,
-            'phone' => $this->phone,
-            'kode_pemesanan' => $this->kode_pemesanan,
         ];
+
+        // Hide sensitive contact data on public wedding view.
+        // Keep them available for the authenticated dashboard response.
+        if (! $this->isPublicView) {
+            $info['email'] = $this->email;
+            $info['phone'] = $this->phone;
+            $info['kode_pemesanan'] = $this->kode_pemesanan;
+        }
+
+        return $info;
     }
 
     private function getMempelaiInfo(): ?array
@@ -88,23 +95,75 @@ class WeddingProfileResource extends JsonResource
             return null;
         }
 
+        $invitation = $this->invitationOne;
+
+        // Guard snapshot so it never breaks when null.
+        $snapshot = is_array($invitation->package_features_snapshot)
+            ? $invitation->package_features_snapshot
+            : [];
+
+        // Pending upgrade = an upgrade was initiated but payment is still pending.
+        $hasPendingUpgrade = isset($snapshot['upgrade_initiated_at'])
+            && $invitation->payment_status === 'pending';
+
+        // Use model helpers when available, otherwise fall back gracefully.
+        $isDomainActive = method_exists($invitation, 'isDomainActive')
+            ? $invitation->isDomainActive()
+            : ($invitation->domain_expires_at ? $invitation->domain_expires_at->isFuture() : false);
+
+        $daysUntilExpiry = method_exists($invitation, 'getDaysUntilExpiry')
+            ? $invitation->getDaysUntilExpiry()
+            : null;
+
+        $paketUndangan = $invitation->paketUndangan ? [
+            'id' => $invitation->paketUndangan->id,
+            'jenis_paket' => $invitation->paketUndangan->jenis_paket,
+            // Keep original value for backward compatibility, expose rebranded fields alongside.
+            'name_paket' => $invitation->paketUndangan->name_paket,
+            'name_paket_original' => $invitation->paketUndangan->name_paket,
+            'name_paket_display' => \App\Models\PaketUndangan::canonicalName($invitation->paketUndangan->name_paket),
+            'package_tier' => \App\Models\PaketUndangan::tierCode($invitation->paketUndangan->name_paket),
+            'display_label' => $invitation->paketUndangan->display_label,
+            'price' => $invitation->paketUndangan->price,
+            'masa_aktif' => $invitation->paketUndangan->masa_aktif,
+            'features' => [
+                'halaman_buku' => $invitation->paketUndangan->halaman_buku,
+                'kirim_wa' => $invitation->paketUndangan->kirim_wa,
+                'bebas_pilih_tema' => $invitation->paketUndangan->bebas_pilih_tema,
+                'kirim_hadiah' => $invitation->paketUndangan->kirim_hadiah,
+                'import_data' => $invitation->paketUndangan->import_data,
+            ],
+        ] : null;
+
+        // Public wedding view (tamu undangan): only expose safe, non-internal fields.
+        if ($this->isPublicView) {
+            return [
+                'id' => $invitation->id,
+                'status' => $invitation->status,
+                'is_domain_active' => $isDomainActive,
+                'days_until_expiry' => $daysUntilExpiry,
+                'paket_undangan' => $paketUndangan,
+            ];
+        }
+
+        // Authenticated dashboard: full account / domain status fields.
         return [
-            'id' => $this->invitationOne->id,
-            'status' => $this->invitationOne->status,
-            'paket_undangan' => $this->invitationOne->paketUndangan ? [
-                'id' => $this->invitationOne->paketUndangan->id,
-                'jenis_paket' => $this->invitationOne->paketUndangan->jenis_paket,
-                'name_paket' => $this->invitationOne->paketUndangan->name_paket,
-                'price' => $this->invitationOne->paketUndangan->price,
-                'masa_aktif' => $this->invitationOne->paketUndangan->masa_aktif,
-                'features' => [
-                    'halaman_buku' => $this->invitationOne->paketUndangan->halaman_buku,
-                    'kirim_wa' => $this->invitationOne->paketUndangan->kirim_wa,
-                    'bebas_pilih_tema' => $this->invitationOne->paketUndangan->bebas_pilih_tema,
-                    'kirim_hadiah' => $this->invitationOne->paketUndangan->kirim_hadiah,
-                    'import_data' => $this->invitationOne->paketUndangan->import_data,
-                ],
-            ] : null,
+            'id' => $invitation->id,
+            'status' => $invitation->status,
+            'payment_status' => $invitation->payment_status,
+            'is_trial' => (bool) $invitation->is_trial,
+            'domain_expires_at' => $invitation->domain_expires_at
+                ? $invitation->domain_expires_at->format('Y-m-d H:i:s')
+                : null,
+            'payment_confirmed_at' => $invitation->payment_confirmed_at
+                ? $invitation->payment_confirmed_at->format('Y-m-d H:i:s')
+                : null,
+            'kode_pemesanan' => $invitation->kode_pemesanan,
+            'is_domain_active' => $isDomainActive,
+            'days_until_expiry' => $daysUntilExpiry,
+            'has_pending_upgrade' => $hasPendingUpgrade,
+            'package_features_snapshot' => $snapshot,
+            'paket_undangan' => $paketUndangan,
         ];
     }
 
@@ -117,6 +176,7 @@ class WeddingProfileResource extends JsonResource
         return $this->acara->map(function ($acara) {
             return [
                 'id' => $acara->id,
+                'jenis_acara' => $acara->jenis_acara ?? null,
                 'nama_acara' => $acara->nama_acara,
                 'tanggal_acara' => $acara->tanggal_acara,
                 'start_acara' => $acara->start_acara,
@@ -213,24 +273,31 @@ class WeddingProfileResource extends JsonResource
             return null;
         }
 
+        // Normalize music path so it never produces /storage/public/...
+        // DB may store "public/music/file.mp3"; public URL must be /storage/music/file.mp3
+        $musikPath = $this->settingOne->musik
+            ? preg_replace('#^public/#', '', $this->settingOne->musik)
+            : null;
+
         $settings = [
             'id' => $this->settingOne->id,
             'domain' => $this->settingOne->domain,
-            'musik' => $this->settingOne->musik ? asset('storage/'.$this->settingOne->musik) : null,
+            // Keep existing field: the user's custom uploaded file (null if none).
+            'musik' => $musikPath ? asset('storage/'.$musikPath) : null,
             'salam_pembuka' => $this->settingOne->salam_pembuka,
             'salam_atas' => $this->settingOne->salam_atas,
             'salam_bawah' => $this->settingOne->salam_bawah,
         ];
 
-        // Add music streaming URL if music file exists
-        if ($this->settingOne->musik) {
+        // Resolve effective music (custom upload > selected catalog > default).
+        // The public stream endpoint resolves the same priority server-side,
+        // so a single URL works for all three sources.
+        $effective = app(\App\Services\MusicResolverService::class)
+            ->resolveInfo($this->settingOne);
+
+        if ($effective) {
             $settings['music_stream_url'] = url('/api/v1/music/stream/public?id='.$this->settingOne->id);
-            $settings['music_info'] = [
-                'has_music' => true,
-                'supports_streaming' => true,
-                'supports_range_requests' => true,
-                'format_support' => ['mp3', 'wav', 'ogg', 'm4a'],
-            ];
+            $settings['music_info'] = $effective;
         } else {
             $settings['music_stream_url'] = null;
             $settings['music_info'] = [

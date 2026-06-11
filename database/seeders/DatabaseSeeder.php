@@ -15,14 +15,14 @@ class DatabaseSeeder extends Seeder
         $this->call(RolesTableSeeder::class);
         $this->call(AdminTableSeeder::class);
         $this->call(UserTableSeeder::class);
-        // $this->call(ThemasSeeder::class);
-        // $this->call(CategoryThemasSeeder::class);
-        // $this->call(JenisThemasSeeder::class);
-        // $this->call(ResultThemasSeeder::class);
-        // $this->call(PaketNikahSeeder::class);
+        $this->call(ThemasSeeder::class);
+        $this->call(CategoryThemasSeeder::class);
+        $this->call(JenisThemasSeeder::class);
+        $this->call(ResultThemasSeeder::class);
+        $this->call(PaketNikahSeeder::class);
         $this->call(BankSeeder::class);
-        // $this->call(OrderSeeder::class);
-        // $this->call(PembayaranSeeder::class);
+        $this->call(OrderSeeder::class);
+        $this->call(PembayaranSeeder::class);
         // $this->call(MempelaiSeeder::class);
         // $this->call(AcaraSeeder::class);
         // $this->call(PengunjungSeeder::class);
@@ -35,5 +35,6 @@ class DatabaseSeeder extends Seeder
         $this->call(PaketUndanganSeeder::class);
         $this->call(MetodeTransactionSeeder::class);
         // $this->call(CeritaSeeder::class);
+        $this->call(PaketNikahSeeder::class);
     }
 }

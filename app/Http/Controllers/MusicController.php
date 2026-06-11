@@ -4,6 +4,8 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMusicRequest;
 use App\Http\Requests\StreamMusicRequest;
+use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Services\MusicStreamService;
 use Illuminate\Http\Request;
@@ -85,6 +87,16 @@ class MusicController extends Controller
     {
         try {
             $user = Auth::user();
+
+            // Business rule (BE-4B): custom music upload is restricted to the
+            // Diamond package only. Use the brand-aware tier helper so legacy
+            // labels (e.g. "Paket Platinum") still resolve to "diamond".
+            if (!$this->userCanUploadCustomMusic($user)) {
+                return response()->json([
+                    'message' => 'Custom music upload is only available for Diamond package.'
+                ], 403);
+            }
+
             $musicFile = $request->file('musik');
 
             // Additional validation using service
@@ -184,7 +196,9 @@ class MusicController extends Controller
                 return response()->json(['message' => 'Setting not found.'], 404);
             }
 
-            $musicInfo = $this->musicStreamService->getMusicInfo($setting);
+            // Return the effective music (custom upload, selected catalog track,
+            // or system default) so the dashboard reflects what actually plays.
+            $musicInfo = $this->musicStreamService->getEffectiveMusicInfo($setting);
 
             if (!$musicInfo) {
                 return response()->json(['message' => 'No music file found.'], 404);
@@ -203,5 +217,51 @@ class MusicController extends Controller
             ]);
             return response()->json(['message' => 'Failed to retrieve music information.'], 500);
         }
+    }
+
+    /**
+     * Determine whether the authenticated user may upload/replace custom music.
+     * Only the Diamond tier (incl. legacy "Platinum") is allowed.
+     *
+     * @param  mixed  $user
+     * @return bool
+     */
+    private function userCanUploadCustomMusic($user): bool
+    {
+        if (!$user) {
+            return false;
+        }
+
+        // Pick the relevant invitation: prefer a paid one, then the latest.
+        // Mirrors the selection logic used for package-based theme access.
+        $invitation = Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (!$invitation) {
+            return false;
+        }
+
+        // Resolve the raw package label from the relation, falling back to the
+        // stored snapshot so legacy/edge data still works.
+        $rawName = null;
+        if ($invitation->paketUndangan) {
+            $rawName = $invitation->paketUndangan->name_paket;
+        } elseif (is_array($invitation->package_features_snapshot)) {
+            $rawName = $invitation->package_features_snapshot['name_paket'] ?? null;
+        }
+
+        if ($rawName === null || trim($rawName) === '') {
+            return false;
+        }
+
+        // Use the brand-aware tier helper (Platinum/Diamond => "diamond").
+        $tier = method_exists(PaketUndangan::class, 'tierCode')
+            ? PaketUndangan::tierCode($rawName)
+            : strtolower(trim($rawName));
+
+        return $tier === 'diamond';
     }
 }
