@@ -20,6 +20,18 @@ return [
 
     /*
     |--------------------------------------------------------------------------
+    | Frontend URL
+    |--------------------------------------------------------------------------
+    |
+    | Base URL of the Angular frontend. Used to build links that are sent to
+    | users (e.g. the password reset link in emails).
+    |
+    */
+
+    'frontend_url' => env('FRONTEND_URL', 'https://sena-digital.com'),
+
+    /*
+    |--------------------------------------------------------------------------
     | Application Environment
     |--------------------------------------------------------------------------
     |

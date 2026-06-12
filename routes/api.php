@@ -10,6 +10,7 @@ use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AttendanceScanController;
 use App\Http\Controllers\Auth\LoginController;
+use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterController;
 use App\Http\Controllers\BankAccountController;
 use App\Http\Controllers\BankController;
@@ -59,6 +60,10 @@ use Illuminate\Support\Facades\Route;
 
 Route::post('/v1/register', [RegisterController::class, 'index']);
 Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
+
+// Public password reset endpoints (used by the Angular frontend)
+Route::post('/v1/forgot-password', [PasswordResetController::class, 'forgotPassword'])->name('password.email');
+Route::post('/v1/reset-password', [PasswordResetController::class, 'resetPassword'])->name('password.reset');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
