@@ -524,20 +524,36 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            $popularThemes = JenisThemas::with(['category:id,name,type,slug'])
+            // select() must come before withCount() so the count alias is not
+            // dropped from the final SELECT (which breaks orderBy result_themas_count).
+            $popularThemes = JenisThemas::select(
+                    'id',
+                    'category_id',
+                    'name',
+                    'price',
+                    'preview',
+                    'preview_image',
+                    'thumbnail_image',
+                    'image',
+                    'demo_url',
+                    'features',
+                    'url_thema',
+                    'sort_order'
+                )
+                ->with(['category:id,name,type,slug'])
                 ->withCount('resultThemas')
-                ->whereHas('category', function($query) use ($type) {
+                ->whereHas('category', function ($query) use ($type) {
                     $query->where('type', $type)->where('is_active', true);
                 })
                 ->where('is_active', true)
-                ->orderBy('result_themas_count', 'desc')
+                ->orderByDesc('result_themas_count')
                 ->orderBy('name', 'asc')
-                ->limit($limit)
-                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'url_thema', 'sort_order')
+                ->limit((int) $limit)
                 ->get();
 
             return response()->json([
                 'status' => true,
+                'message' => 'Popular themes retrieved successfully.',
                 'data' => [
                     'type' => $type,
                     'themes' => $popularThemes,
