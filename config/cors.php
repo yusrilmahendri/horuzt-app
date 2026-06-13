@@ -33,7 +33,7 @@ return [
         'http://sena-digital.com',
         'https://pio-wedding.pioneersolve.id',
         'https://cloud-api.sena-digital.com',
-        'https://sena-digital.vercel.app/'
+        'https://sena-digital.vercel.app'
     ],
 
     'allowed_origins_patterns' => [
