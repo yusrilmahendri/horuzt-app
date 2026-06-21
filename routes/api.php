@@ -180,7 +180,7 @@ Route::controller(MethodePembayaran::class)->group(function () {
     Route::get('/v1/list-paket-undangan', 'getPaketUndangan');
 });
 
-// updateStatusBayar moved to auth:sanctum user group - see below
+// updateStatusBayar is declared in the admin-only group below.
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
@@ -368,7 +368,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::get('/statistics', 'statistics')->name('admin.video-categories.statistics');
     });
 
-    // Payment confirmation - Admin confirms user manual payment
+    // Payment confirmation - only admins may confirm manual payments.
     Route::controller(MempelaiController::class)->group(function () {
         Route::put('/v1/update/status-bayar', 'updateStatusBayar');
     });
@@ -383,7 +383,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 });
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
-    // Midtrans Payment endpoints (authenticated)
+    // Midtrans payment endpoints require the registered user role.
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
     Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);
     Route::post('/v1/midtrans/confirm-success', [MidtransController::class, 'confirmPaymentSuccess']);
