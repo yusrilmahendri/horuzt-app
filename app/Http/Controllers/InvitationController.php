@@ -256,7 +256,9 @@ class InvitationController extends Controller
                         'kode_pemesanan' => '#' . mt_rand(1000000000, 9999999999),
                     ]);
 
-                    $user->assignRole('user');
+                    if (method_exists($user, 'assignRole')) {
+                        $user->assignRole('user');
+                    }
 
                     $token = $user->createToken('auth_token')->plainTextToken;
 

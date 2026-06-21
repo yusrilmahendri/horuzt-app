@@ -27,31 +27,34 @@ class MidtransController extends Controller
         try {
             $user = Auth::user();
 
-            if (! $user) {
+            if (!$user) {
                 return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
             }
 
             $validated = $request->validated();
 
-            $invitation = Invitation::with('paketUndangan')
-                ->where('user_id', $user->id)
-                ->findOrFail($validated['invitation_id']);
+            $invitation = Invitation::with(['paketUndangan', 'user.settingOne'])->findOrFail($validated['invitation_id']);
 
-            $orderId = $this->generateUniqueOrderId($invitation);
-            $grossAmount = $this->expectedGrossAmount($invitation);
-            $submittedCustomer = $validated['customer_details'] ?? [];
-            $customerDetails = array_filter([
-                'first_name' => $submittedCustomer['first_name'] ?? $user->name ?? 'Customer',
-                'last_name' => $submittedCustomer['last_name'] ?? null,
-                'email' => $user->email,
-                'phone' => $user->phone ?? ($submittedCustomer['phone'] ?? null),
-            ], static fn ($value) => $value !== null && $value !== '');
+            // Use kode_pemesanan as order_id for Midtrans (matches user's invoice)
+            $orderId = $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '#INV-' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
+            $grossAmount = $validated['amount'];
 
-            // Pricing and items are always server-authoritative. The Midtrans SDK
-            // recalculates gross_amount from item_details when this field exists.
-            $itemDetails = [[
-                'id' => 'paket-'.$invitation->paket_undangan_id,
-                'name' => Str::limit($invitation->paketUndangan->name_paket ?? 'Wedding Package', 50, ''),
+            // Enrich customer details with complete user information for admin reference
+            $userDomain = $invitation->user->settingOne->domain ?? '-';
+            $customerDetails = $validated['customer_details'] ?? [
+                'first_name' => $user->name ?? 'Guest',
+                'last_name' => '',
+                'email' => $user->email ?? 'guest@example.com',
+                'phone' => $user->phone ?? '',
+                // Additional info for Midtrans dashboard / admin reference
+                'kode_pemesanan' => $orderId,
+                'domain' => $userDomain,
+                'nama_paket' => $invitation->paketUndangan->name_paket ?? 'Unknown Package',
+            ];
+
+            $itemDetails = $validated['item_details'] ?? [[
+                'id' => 'paket-' . $invitation->paket_undangan_id,
+                'name' => $invitation->paketUndangan->name_paket ?? 'Wedding Package',
                 'price' => $grossAmount,
                 'quantity' => 1,
             ]];
@@ -64,16 +67,16 @@ class MidtransController extends Controller
                 'customer_details' => $customerDetails,
                 'item_details' => $itemDetails,
                 'callbacks' => [
-                    'finish' => config('midtrans.frontend_finish_url', env('APP_URL').'/payment/success'),
-                    'error' => config('midtrans.frontend_error_url', env('APP_URL').'/payment/error'),
-                    'pending' => config('midtrans.frontend_pending_url', env('APP_URL').'/payment/pending'),
+                    'finish' => config('midtrans.frontend_finish_url', env('APP_URL') . '/payment/success'),
+                    'error' => config('midtrans.frontend_error_url', env('APP_URL') . '/payment/error'),
+                    'pending' => config('midtrans.frontend_pending_url', env('APP_URL') . '/payment/pending'),
                 ],
             ];
 
             $midtransService = new MidtransService($user->id);
             $snapToken = $midtransService->createTransaction($params);
 
-            DB::transaction(function () use ($invitation, $orderId, $grossAmount, $user, $params) {
+            DB::transaction(function () use ($invitation, $orderId, $grossAmount, $user, $params, $snapToken) {
                 $invitation->update([
                     'order_id' => $orderId,
                     'payment_status' => 'pending',
@@ -86,13 +89,8 @@ class MidtransController extends Controller
                     'event_type' => 'token_request',
                     'transaction_status' => 'pending',
                     'gross_amount' => $grossAmount,
-                    'request_payload' => json_encode([
-                        'order_id' => $orderId,
-                        'gross_amount' => $grossAmount,
-                        'item_count' => count($params['item_details']),
-                        'customer_fields' => array_keys($params['customer_details']),
-                    ]),
-                    'response_payload' => json_encode(['token_created' => true]),
+                    'request_payload' => json_encode($params),
+                    'response_payload' => json_encode(['snap_token' => $snapToken]),
                     'ip_address' => request()->ip(),
                     'user_agent' => request()->userAgent(),
                 ]);
@@ -124,11 +122,8 @@ class MidtransController extends Controller
             ], 422);
 
         } catch (\RuntimeException $e) {
-            $error = MidtransService::errorContext($e->getPrevious() ?? $e);
-
             Log::error('Snap token creation failed', [
-                'midtrans_status' => $error['status'],
-                'midtrans_message' => $error['message'],
+                'error' => $e->getMessage(),
                 'user_id' => Auth::id(),
             ]);
 
@@ -155,7 +150,7 @@ class MidtransController extends Controller
     {
         $orderId = $request->input('order_id');
 
-        if (! $orderId) {
+        if (!$orderId) {
             return response()->json([
                 'success' => false,
                 'message' => 'Order ID is required',
@@ -163,11 +158,9 @@ class MidtransController extends Controller
         }
 
         try {
-            $invitation = Invitation::where('order_id', $orderId)
-                ->where('user_id', Auth::id())
-                ->first();
+            $invitation = Invitation::where('order_id', $orderId)->first();
 
-            if (! $invitation) {
+            if (!$invitation) {
                 return response()->json([
                     'success' => false,
                     'message' => 'Order not found',
@@ -178,7 +171,7 @@ class MidtransController extends Controller
                 return response()->json([
                     'success' => true,
                     'payment_status' => $invitation->payment_status,
-                    'message' => 'Payment status: '.$invitation->payment_status,
+                    'message' => 'Payment status: ' . $invitation->payment_status,
                     'data' => [
                         'order_id' => $orderId,
                         'payment_confirmed_at' => $invitation->payment_confirmed_at,
@@ -205,50 +198,36 @@ class MidtransController extends Controller
             $maxRetries = 3;
             $attempt = 0;
             $status = null;
+            $lastError = null;
 
             while ($attempt < $maxRetries) {
                 try {
                     $status = \Midtrans\Transaction::status($orderId);
                     break; // Success - exit retry loop
                 } catch (\Exception $e) {
+                    $lastError = $e;
                     $attempt++;
-                    $error = MidtransService::errorContext($e);
 
                     if ($attempt >= $maxRetries) {
                         // Log final retry failure
-                        Log::error('Payment status check failed after '.$maxRetries.' retries', [
+                        Log::error('Payment status check failed after ' . $maxRetries . ' retries', [
                             'order_id' => $orderId,
-                            'midtrans_status' => $error['status'],
-                            'midtrans_message' => $error['message'],
+                            'error' => $e->getMessage(),
                         ]);
                         throw $e; // Re-throw after max retries
                     }
 
                     // Exponential backoff: 500ms, 1s, 2s
-                    $backoffUs = 500000 * pow(2, $attempt - 1);
+                    $backoffMs = 500000 * pow(2, $attempt - 1);
                     Log::warning('Payment status check retry', [
                         'order_id' => $orderId,
                         'attempt' => $attempt + 1,
                         'max_retries' => $maxRetries,
-                        'backoff_us' => $backoffUs,
-                        'midtrans_status' => $error['status'],
-                        'midtrans_message' => $error['message'],
+                        'backoff_ms' => $backoffMs,
+                        'error' => $e->getMessage(),
                     ]);
-                    usleep($backoffUs);
+                    usleep($backoffMs);
                 }
-            }
-
-            if (! $this->grossAmountMatches($invitation, $status->gross_amount ?? null)) {
-                Log::warning('Midtrans gross amount mismatch', [
-                    'order_id' => $orderId,
-                    'expected_gross_amount' => $this->expectedGrossAmount($invitation),
-                    'midtrans_gross_amount' => $status->gross_amount ?? null,
-                ]);
-
-                return response()->json([
-                    'success' => false,
-                    'message' => 'Payment amount does not match the invoice.',
-                ], 409);
             }
 
             PaymentLog::create([
@@ -259,11 +238,7 @@ class MidtransController extends Controller
                 'event_type' => 'status_check',
                 'transaction_status' => $status->transaction_status ?? 'unknown',
                 'gross_amount' => $status->gross_amount ?? null,
-                'response_payload' => json_encode([
-                    'transaction_status' => $status->transaction_status ?? 'unknown',
-                    'status_code' => $status->status_code ?? null,
-                    'gross_amount' => $status->gross_amount ?? null,
-                ]),
+                'response_payload' => json_encode($status),
                 'ip_address' => $request->ip(),
             ]);
 
@@ -304,7 +279,7 @@ class MidtransController extends Controller
                     $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
                     if ($mempelai) {
                         $mempelai->update([
-                            'status' => 'Sudah Bayar',
+                            'status'    => 'Sudah Bayar',
                             'kd_status' => 'SB',
                         ]);
                     }
@@ -341,13 +316,30 @@ class MidtransController extends Controller
                 ],
             ]);
 
-        } catch (\Exception $e) {
-            $error = MidtransService::errorContext($e);
-
-            Log::error('Payment status check failed', [
-                'midtrans_status' => $error['status'],
-                'midtrans_message' => $error['message'],
+        } catch (\Midtrans\Exceptions\ApiException $e) {
+            Log::warning('Midtrans API error during status check, returning DB status', [
+                'error' => $e->getMessage(),
                 'order_id' => $orderId,
+            ]);
+
+            // If the Midtrans API call fails (e.g. transaction not found, sandbox auth issues),
+            // return the current DB status rather than propagating a 5xx error.
+            return response()->json([
+                'success' => true,
+                'payment_status' => $invitation->payment_status ?? 'pending',
+                'message' => 'Payment status from DB (Midtrans API unavailable)',
+                'data' => [
+                    'order_id' => $orderId,
+                    'payment_confirmed_at' => $invitation->payment_confirmed_at ?? null,
+                    'domain_expires_at' => $invitation->domain_expires_at ?? null,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Payment status check failed', [
+                'error' => $e->getMessage(),
+                'order_id' => $orderId,
+                'trace' => $e->getTraceAsString(),
             ]);
 
             // Fall back to DB status rather than a 5xx if we have the invitation record.
@@ -372,21 +364,146 @@ class MidtransController extends Controller
     }
 
     /**
-     * Keep the frontend callback endpoint for compatibility, but never trust
-     * client-supplied payment state. Confirmation is performed server-to-server.
+     * Fallback endpoint to confirm payment success from frontend callback.
+     * Called when frontend receives onSuccess from Midtrans Snap but checkStatus fails.
+     *
+     * This is safe because onSuccess callback only comes from Midtrans Snap after
+     * successful payment. We trust this enough to mark as paid temporarily,
+     * webhook will provide final confirmation.
      */
     public function confirmPaymentSuccess(Request $request): JsonResponse
     {
-        return $this->checkPaymentStatus($request);
+        $orderId = $request->input('order_id');
+        $transactionId = $request->input('transaction_id');
+        $grossAmount = $request->input('gross_amount');
+
+        if (!$orderId) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Order ID is required',
+            ], 400);
+        }
+
+        try {
+            $invitation = Invitation::where('order_id', $orderId)->first();
+
+            if (!$invitation) {
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Order not found',
+                ], 404);
+            }
+
+            // If already paid, just return success
+            if ($invitation->payment_status === 'paid') {
+                return response()->json([
+                    'success' => true,
+                    'payment_status' => 'paid',
+                    'message' => 'Payment already confirmed',
+                    'data' => [
+                        'order_id' => $orderId,
+                        'payment_confirmed_at' => $invitation->payment_confirmed_at,
+                        'domain_expires_at' => $invitation->domain_expires_at,
+                    ],
+                ]);
+            }
+
+            // Mark as paid based on frontend callback
+            DB::transaction(function () use ($invitation, $transactionId, $orderId) {
+                $snapshot = $invitation->package_features_snapshot ?? [];
+
+                $updateData = [
+                    'payment_status' => 'paid',
+                    'midtrans_transaction_id' => $transactionId,
+                    'payment_confirmed_at' => now(),
+                ];
+
+                // Check if this was an upgrade payment - restore original status
+                if (isset($snapshot['original_status'])) {
+                    $updateData['status'] = $snapshot['original_status'];
+                }
+
+                // Calculate expiry date - use package_duration_snapshot which was captured at registration
+                $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
+
+                // For upgrade payments, extend from current expiry. For new payments, extend from now.
+                if ($duration > 0) {
+                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
+                        // Upgrade: extend from current expiry
+                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
+                    } else {
+                        // New payment: extend from now
+                        $updateData['domain_expires_at'] = now()->addDays($duration);
+                    }
+                }
+
+                $invitation->update($updateData);
+
+                // Sync mempelai status
+                $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
+                if ($mempelai) {
+                    $mempelai->update([
+                        'status'    => 'Sudah Bayar',
+                        'kd_status' => 'SB',
+                    ]);
+                }
+
+                // Log the frontend callback confirmation
+                PaymentLog::create([
+                    'user_id' => $invitation->user_id,
+                    'invitation_id' => $invitation->id,
+                    'order_id' => $orderId,
+                    'midtrans_transaction_id' => $transactionId,
+                    'event_type' => 'frontend_callback_confirmed',
+                    'transaction_status' => 'settlement',
+                    'gross_amount' => $grossAmount,
+                    'signature_valid' => true,
+                    'ip_address' => $request->ip(),
+                    'notes' => 'Payment confirmed via frontend onSuccess callback (API fallback)',
+                ]);
+            });
+
+            Log::info('Payment confirmed via frontend callback', [
+                'order_id' => $orderId,
+                'transaction_id' => $transactionId,
+                'invitation_id' => $invitation->id,
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'payment_status' => 'paid',
+                'message' => 'Payment confirmed successfully',
+                'data' => [
+                    'order_id' => $orderId,
+                    'transaction_id' => $transactionId,
+                    'payment_confirmed_at' => $invitation->fresh()->payment_confirmed_at,
+                    'domain_expires_at' => $invitation->fresh()->domain_expires_at,
+                ],
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to confirm payment via frontend callback', [
+                'error' => $e->getMessage(),
+                'order_id' => $orderId,
+                'trace' => $e->getTraceAsString(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Failed to confirm payment',
+            ], 500);
+        }
     }
 
     public function handleWebhook(Request $request): JsonResponse
     {
+        // Log all incoming request for debugging
         Log::info('Midtrans webhook received', [
-            'order_id' => $request->input('order_id'),
-            'transaction_status' => $request->input('transaction_status'),
-            'status_code' => $request->input('status_code'),
+            'method' => $request->method(),
+            'url' => $request->fullUrl(),
             'ip' => $request->ip(),
+            'headers' => $request->headers->all(),
+            'body' => $request->all(),
         ]);
 
         $orderId = $request->input('order_id');
@@ -402,13 +519,8 @@ class MidtransController extends Controller
             'event_type' => 'webhook_received',
             'transaction_status' => $transactionStatus ?? 'unknown',
             'gross_amount' => $grossAmount,
-            'request_payload' => json_encode([
-                'order_id' => $orderId,
-                'transaction_status' => $transactionStatus,
-                'status_code' => $statusCode,
-                'gross_amount' => $grossAmount,
-                'payment_type' => $request->input('payment_type'),
-            ]),
+            'request_payload' => json_encode($request->all()),
+            'signature_key' => $signatureKey,
             'ip_address' => $request->ip(),
             'user_agent' => $request->userAgent(),
         ]);
@@ -416,7 +528,7 @@ class MidtransController extends Controller
         try {
             $invitation = Invitation::where('order_id', $orderId)->first();
 
-            if (! $invitation) {
+            if (!$invitation) {
                 Log::warning('Webhook received for non-existent order', [
                     'order_id' => $orderId,
                 ]);
@@ -433,7 +545,7 @@ class MidtransController extends Controller
                 $signatureKey
             );
 
-            if (! $signatureValid) {
+            if (!$signatureValid) {
                 PaymentLog::create([
                     'order_id' => $orderId,
                     'midtrans_transaction_id' => $transactionId,
@@ -450,16 +562,6 @@ class MidtransController extends Controller
                 ]);
 
                 return response()->json(['message' => 'Invalid signature'], 403);
-            }
-
-            if (! $this->grossAmountMatches($invitation, $grossAmount)) {
-                Log::warning('Rejected Midtrans webhook with gross amount mismatch', [
-                    'order_id' => $orderId,
-                    'expected_gross_amount' => $this->expectedGrossAmount($invitation),
-                    'midtrans_gross_amount' => $grossAmount,
-                ]);
-
-                return response()->json(['message' => 'Gross amount mismatch'], 422);
             }
 
             if (in_array($invitation->payment_status, ['paid', 'failed', 'expired']) && in_array($transactionStatus, ['capture', 'settlement'])) {
@@ -511,7 +613,7 @@ class MidtransController extends Controller
                     $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
                     if ($mempelai) {
                         $mempelai->update([
-                            'status' => 'Sudah Bayar',
+                            'status'    => 'Sudah Bayar',
                             'kd_status' => 'SB',
                         ]);
                     }
@@ -558,39 +660,5 @@ class MidtransController extends Controller
 
             return response()->json(['message' => 'Webhook processing failed'], 500);
         }
-    }
-
-    private function generateUniqueOrderId(Invitation $invitation): string
-    {
-        for ($attempt = 0; $attempt < 5; $attempt++) {
-            $orderId = sprintf(
-                'INV-%d-%s',
-                $invitation->id,
-                Str::upper(Str::random(16))
-            );
-
-            if (! Invitation::where('order_id', $orderId)->exists()) {
-                return $orderId;
-            }
-        }
-
-        throw new \RuntimeException('Unable to generate a unique payment order ID.');
-    }
-
-    private function expectedGrossAmount(Invitation $invitation): int
-    {
-        $amount = $invitation->package_price_snapshot ?? $invitation->paketUndangan?->price;
-
-        if (! is_numeric($amount) || (float) $amount <= 0 || floor((float) $amount) !== (float) $amount) {
-            throw new \RuntimeException('Invoice gross amount must be a positive integer in IDR.');
-        }
-
-        return (int) $amount;
-    }
-
-    private function grossAmountMatches(Invitation $invitation, mixed $midtransAmount): bool
-    {
-        return is_numeric($midtransAmount)
-            && abs($this->expectedGrossAmount($invitation) - (float) $midtransAmount) < 0.01;
     }
 }

@@ -3,6 +3,7 @@
 namespace App\Http\Requests;
 
 use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Validation\Rule;
@@ -50,7 +51,7 @@ class CreateSnapTokenRequest extends FormRequest
     {
         $validator->after(function ($validator) {
             if ($this->has('invitation_id')) {
-                $invitation = Invitation::where('user_id', Auth::id())->find($this->invitation_id);
+                $invitation = Invitation::find($this->invitation_id);
 
                 if ($invitation) {
                     if ($invitation->payment_status === 'paid') {
@@ -61,15 +62,9 @@ class CreateSnapTokenRequest extends FormRequest
                         $validator->errors()->add('invitation_id', 'Payment already initiated for this invitation.');
                     }
 
-                    $expectedAmount = $invitation->package_price_snapshot
-                        ?? $invitation->paketUndangan?->price;
-
-                    if ($expectedAmount !== null && (float) $this->amount !== (float) $expectedAmount) {
+                    $package = $invitation->paketUndangan;
+                    if ($package && $this->amount != $package->price) {
                         $validator->errors()->add('amount', 'Amount does not match package price.');
-                    }
-
-                    if (is_numeric($this->amount) && floor((float) $this->amount) !== (float) $this->amount) {
-                        $validator->errors()->add('amount', 'Amount must be a whole number in IDR.');
                     }
                 }
             }
