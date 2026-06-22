@@ -86,6 +86,11 @@ return new class extends Migration
 
     public function up(): void
     {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('paket_undangans', 'code')
+            || ! \Illuminate\Support\Facades\Schema::hasTable('paket_undangan_category_thema')) {
+            return;
+        }
+
         $now = now();
         $packageIds = [];
 
@@ -193,6 +198,11 @@ return new class extends Migration
 
     public function down(): void
     {
+        if (! \Illuminate\Support\Facades\Schema::hasColumn('paket_undangans', 'code')
+            || ! \Illuminate\Support\Facades\Schema::hasTable('paket_undangan_category_thema')) {
+            return;
+        }
+
         $legacyNames = [
             'ruby' => 'Paket Silver',
             'sapphire' => 'Paket Gold',
