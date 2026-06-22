@@ -81,6 +81,10 @@ class PackageThemeAccessService
             return false;
         }
 
+        if ($this->usesLegacyThemeSelection($package)) {
+            return false;
+        }
+
         if (! $theme->relationLoaded('category')) {
             $theme->load('category');
         }
@@ -102,6 +106,11 @@ class PackageThemeAccessService
 
     private function baseCategoryQueryForPackage(PaketUndangan $package)
     {
+        if ($this->usesLegacyThemeSelection($package)) {
+            return CategoryThemas::query()
+                ->whereRaw('1 = 0');
+        }
+
         if ($this->packageHasCategoryPivot($package)) {
             return $package->accessibleCategories()
                 ->active()
@@ -126,5 +135,10 @@ class PackageThemeAccessService
     private function packageHasCategoryPivot(PaketUndangan $package): bool
     {
         return $package->accessibleCategories()->exists();
+    }
+
+    private function usesLegacyThemeSelection(PaketUndangan $package): bool
+    {
+        return $package->code === 'trial';
     }
 }

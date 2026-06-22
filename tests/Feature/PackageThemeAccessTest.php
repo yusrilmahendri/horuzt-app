@@ -23,7 +23,7 @@ class PackageThemeAccessTest extends TestCase
     public function test_each_package_has_the_expected_cumulative_category_access(): void
     {
         $expected = [
-            'trial' => ['minimalis'],
+            'trial' => [],
             'ruby' => ['minimalis', 'floral'],
             'sapphire' => ['minimalis', 'floral', 'modern', 'elegant'],
             'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],
@@ -122,6 +122,17 @@ class PackageThemeAccessTest extends TestCase
         $this->assertContains('Garden Whisper', $themeNames);
         $this->assertNotContains('Modern Vows', $themeNames);
         $this->assertNotContains('Velvet Mauve', $themeNames);
+    }
+
+    public function test_trial_package_uses_legacy_default_theme_flow(): void
+    {
+        $response = $this->getJson('/api/themes/categories?package_code=trial');
+
+        $response->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.categories', [])
+            ->assertJsonPath('data.total_categories', 0)
+            ->assertJsonPath('data.total_themes', 0);
     }
 
     public function test_public_catalog_without_package_code_preserves_legacy_contract(): void
