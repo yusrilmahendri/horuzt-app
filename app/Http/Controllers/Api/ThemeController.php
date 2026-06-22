@@ -4,9 +4,10 @@ namespace App\Http\Controllers\Api;
 
 use App\Http\Controllers\Controller;
 use App\Models\CategoryThemas;
-use App\Models\Invitation;
 use App\Models\JenisThemas;
 use App\Models\ResultThemas;
+use App\Models\PaketUndangan;
+use App\Services\PackageThemeAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -14,9 +15,17 @@ use Illuminate\Support\Facades\Log;
 
 class ThemeController extends Controller
 {
-    public function __construct()
+    public function __construct(private PackageThemeAccessService $themeAccess)
     {
-        $this->middleware('auth:sanctum')->only(['selectTheme', 'getSelectedTheme']);
+        $this->middleware('auth:sanctum')->except([
+            'getCategories',
+            'getThemesByCategory',
+            'getTheme',
+            'getThemesByLayout',
+            'searchThemes',
+            'getDemoUrl',
+            'getPopularThemes',
+        ]);
     }
 
     /**
@@ -26,6 +35,8 @@ class ThemeController extends Controller
     {
         try {
             $type = $request->get('type', 'website'); // Default to website themes
+            $package = $this->resolvePackageContext($request);
+            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -34,12 +45,21 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            $categories = CategoryThemas::with(['jenisThemas' => function($query) {
+            if (! $request->user() && ! $package) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Package code atau package id wajib dikirim untuk akses publik.'
+                ], 422);
+            }
+
+            $categories = CategoryThemas::with(['jenisThemas' => function($query) use ($package) {
                 $query->active()->ordered()
+                    ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
                     ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'sort_order', 'description');
             }])
             ->where('type', $type)
             ->where('is_active', true)
+            ->whereIn('id', $categoryIds)
             ->ordered()
             ->select('id', 'name', 'slug', 'type', 'description', 'icon', 'sort_order')
             ->get();
@@ -80,12 +100,19 @@ class ThemeController extends Controller
     public function getThemesByCategory(Request $request, $categoryId)
     {
         try {
-            $category = CategoryThemas::where('is_active', true)->findOrFail($categoryId);
+            $package = $this->resolvePackageContext($request);
+            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+
+            $category = CategoryThemas::where('is_active', true)
+                ->where('type', 'website')
+                ->whereIn('id', $categoryIds)
+                ->findOrFail($categoryId);
 
             $themes = JenisThemas::with('category:id,name,type,slug')
                 ->where('category_id', $categoryId)
                 ->active()
                 ->ordered()
+                ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
                 ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
                 ->get();
 
@@ -122,6 +149,8 @@ class ThemeController extends Controller
     public function getTheme($themeId)
     {
         try {
+            $request = request();
+            $package = $this->resolvePackageContext($request);
             $theme = JenisThemas::with(['category' => function($query) {
                 $query->where('is_active', true);
             }])
@@ -133,6 +162,13 @@ class ThemeController extends Controller
                 return response()->json([
                     'status' => false,
                     'message' => 'Theme category is inactive.'
+                ], 404);
+            }
+
+            if (! $this->canAccessThemeInCurrentContext($request, $package, $theme)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Theme not found or inactive.'
                 ], 404);
             }
 
@@ -170,10 +206,11 @@ class ThemeController extends Controller
             ]);
 
             $user = Auth::user();
+            $package = $this->themeAccess->packageForUser($user);
 
             // Verify theme is active and available
             $theme = JenisThemas::with(['category' => function($query) {
-                $query->where('is_active', true);
+                $query->where('is_active', true)->where('type', 'website');
             }])
             ->where('id', $request->theme_id)
             ->where('is_active', true)
@@ -186,28 +223,10 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            // Package-based theme access control (BE-1).
-            // Use the bebas_pilih_tema flag on the user's package, not the package label.
-            $invitation = Invitation::with('paketUndangan')
-                ->where('user_id', $user->id)
-                ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
-                ->orderBy('id', 'desc')
-                ->first();
-
-            $bebasPilihTema = false;
-            if ($invitation) {
-                if ($invitation->paketUndangan) {
-                    $bebasPilihTema = (bool) $invitation->paketUndangan->bebas_pilih_tema;
-                } elseif (is_array($invitation->package_features_snapshot)) {
-                    $bebasPilihTema = (bool) ($invitation->package_features_snapshot['bebas_pilih_tema'] ?? false);
-                }
-            }
-
-            // Packages without free theme selection (e.g. Ruby/Trial) may only pick free themes.
-            if (!$bebasPilihTema && (float) $theme->price > 0) {
+            if (! $this->themeAccess->canPackageAccessTheme($package, $theme)) {
                 return response()->json([
                     'status' => false,
-                    'message' => 'Paket Anda belum termasuk bebas pilih tema premium. Silakan upgrade paket untuk memilih tema ini.'
+                    'message' => 'Tema ini tidak tersedia untuk paket Anda.'
                 ], 403);
             }
 
@@ -281,6 +300,16 @@ class ThemeController extends Controller
                 ], 200);
             }
 
+            if (! $selectedTheme->jenisThema
+                || ! $selectedTheme->jenisThema->category
+                || ! $this->themeAccess->canAccessTheme($user, $selectedTheme->jenisThema)) {
+                return response()->json([
+                    'status' => true,
+                    'data' => null,
+                    'message' => 'Selected theme is no longer available for this package.'
+                ], 200);
+            }
+
             return response()->json([
                 'status' => true,
                 'data' => [
@@ -310,6 +339,8 @@ class ThemeController extends Controller
         try {
             $layout = $request->get('layout');
             $type = $request->get('type', 'website');
+            $package = $this->resolvePackageContext($request);
+            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
 
             if (!$layout) {
                 return response()->json([
@@ -333,6 +364,8 @@ class ThemeController extends Controller
                 $query->where('type', $type)->where('is_active', true);
             })
             ->where('is_active', true)
+            ->whereIn('category_id', $categoryIds)
+            ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
             ->where(function($query) use ($layout) {
                 $query->where('name', 'LIKE', '%' . $layout . '%')
                       ->orWhere('description', 'LIKE', '%' . $layout . '%')
@@ -379,6 +412,8 @@ class ThemeController extends Controller
             $priceMax = $request->get('price_max');
             $layout = $request->get('layout');
             $limit = $request->get('limit', 20);
+            $package = $this->resolvePackageContext($request);
+            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -393,7 +428,9 @@ class ThemeController extends Controller
             ->whereHas('category', function($categoryQuery) use ($type) {
                 $categoryQuery->where('type', $type)->where('is_active', true);
             })
-            ->where('is_active', true);
+            ->where('is_active', true)
+            ->whereIn('category_id', $categoryIds)
+            ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package));
 
             // Text search
             if (!empty($query)) {
@@ -465,12 +502,21 @@ class ThemeController extends Controller
     public function getDemoUrl($themeId)
     {
         try {
+            $request = request();
+            $package = $this->resolvePackageContext($request);
             $theme = JenisThemas::where('is_active', true)
                                ->whereHas('category', function($query) {
                                    $query->where('is_active', true);
                                })
                                ->select('id', 'name', 'demo_url', 'url_thema')
                                ->findOrFail($themeId);
+
+            if (! $this->canAccessThemeInCurrentContext($request, $package, $theme)) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Theme not found or inactive.'
+                ], 404);
+            }
 
             $demoUrl = $theme->demo_url ?: $theme->url_thema;
 
@@ -516,6 +562,8 @@ class ThemeController extends Controller
         try {
             $type = $request->get('type', 'website');
             $limit = $request->get('limit', 10);
+            $package = $this->resolvePackageContext($request);
+            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -546,6 +594,8 @@ class ThemeController extends Controller
                     $query->where('type', $type)->where('is_active', true);
                 })
                 ->where('is_active', true)
+                ->whereIn('category_id', $categoryIds)
+                ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
                 ->orderByDesc('result_themas_count')
                 ->orderBy('name', 'asc')
                 ->limit((int) $limit)
@@ -572,5 +622,55 @@ class ThemeController extends Controller
                 'message' => 'Failed to retrieve popular themes.'
             ], 500);
         }
+    }
+
+    private function resolvePackageContext(Request $request): ?PaketUndangan
+    {
+        if ($request->user()) {
+            return $this->themeAccess->packageForUser($request->user());
+        }
+
+        $identifier = $request->query('package_code')
+            ?? $request->query('package_id')
+            ?? $request->query('package');
+
+        return $this->themeAccess->packageFromCodeOrId($identifier);
+    }
+
+    private function resolveAccessibleCategoryIds(Request $request, ?PaketUndangan $package): array
+    {
+        if ($request->user()) {
+            return $this->themeAccess->accessibleCategoryIds($request->user());
+        }
+
+        return $this->themeAccess->accessibleCategoryIdsForPackage($package);
+    }
+
+    private function canAccessThemeInCurrentContext(Request $request, ?PaketUndangan $package, JenisThemas $theme): bool
+    {
+        if ($request->user()) {
+            return $this->themeAccess->canAccessTheme($request->user(), $theme);
+        }
+
+        return $this->themeAccess->canPackageAccessTheme($package, $theme);
+    }
+
+    private function packageHasPivotAccess(?PaketUndangan $package): bool
+    {
+        return $package?->accessibleCategories()->exists() ?? false;
+    }
+
+    private function packageAllowsAllThemesFallback(?PaketUndangan $package): bool
+    {
+        return $package && (! $this->packageHasPivotAccess($package)) && (bool) $package->bebas_pilih_tema;
+    }
+
+    private function applyThemeVisibilityFilter($query, PaketUndangan $package)
+    {
+        if ($this->packageHasPivotAccess($package) || $this->packageAllowsAllThemesFallback($package)) {
+            return $query;
+        }
+
+        return $query->where('price', '<=', 0);
     }
 }

@@ -30,7 +30,7 @@ class WeddingProfileController extends Controller
                 'mempelaiOne',
                 'settingOne',
                 'filterUndanganOne',
-                'invitationOne.paketUndangan',
+                'invitationOne.paketUndangan.accessibleCategories',
                 'invitationOne.komentars' => function ($query) {
                     $query->latest()->limit(50);
                 },
@@ -177,7 +177,7 @@ class WeddingProfileController extends Controller
                 'mempelaiOne',
                 'settingOne',
                 'filterUndanganOne',
-                'invitationOne.paketUndangan',
+                'invitationOne.paketUndangan.accessibleCategories',
                 'acara',
                 'cerita',
                 'qoute',
@@ -246,7 +246,7 @@ class WeddingProfileController extends Controller
                 'mempelaiOne',
                 'settingOne',
                 'filterUndanganOne',
-                'invitationOne.paketUndangan',
+                'invitationOne.paketUndangan.accessibleCategories',
                 'acara',
                 'cerita',
                 'qoute',

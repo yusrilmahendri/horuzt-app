@@ -2,7 +2,6 @@
 
 namespace Database\Seeders;
 
-use Illuminate\Database\Console\Seeds\WithoutModelEvents;
 use Illuminate\Database\Seeder;
 use App\Models\PaketUndangan;
 
@@ -13,16 +12,21 @@ class PaketUndanganSeeder extends Seeder
      */
     public function run(): void
     {
-        // Check if packages already exist to prevent duplicates
-        if (PaketUndangan::count() > 0) {
-            $this->command->info('Paket undangan already exists. Skipping seeder.');
-            return;
-        }
-
-        PaketUndangan::insert([
-            [
-                'jenis_paket' => 'Paket 1',
-                'name_paket' => 'Paket Silver',
+        $packages = [
+            'trial' => [
+                'jenis_paket' => 'Paket Trial',
+                'name_paket' => 'Paket Trial',
+                'price' => 0,
+                'masa_aktif' => 3,
+                'halaman_buku' => 0,
+                'kirim_wa' => false,
+                'bebas_pilih_tema' => false,
+                'kirim_hadiah' => false,
+                'import_data' => false,
+            ],
+            'ruby' => [
+                'jenis_paket' => 'Paket Ruby',
+                'name_paket' => 'Paket Ruby',
                 'price' => 99000,
                 'masa_aktif' => 30,
                 'halaman_buku' => 50,
@@ -30,12 +34,10 @@ class PaketUndanganSeeder extends Seeder
                 'bebas_pilih_tema' => false,
                 'kirim_hadiah' => false,
                 'import_data' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
-            [
-                'jenis_paket' => 'Paket 2',
-                'name_paket' => 'Paket Gold',
+            'sapphire' => [
+                'jenis_paket' => 'Paket Sapphire',
+                'name_paket' => 'Paket Sapphire',
                 'price' => 199000,
                 'masa_aktif' => 60,
                 'halaman_buku' => 100,
@@ -43,12 +45,10 @@ class PaketUndanganSeeder extends Seeder
                 'bebas_pilih_tema' => true,
                 'kirim_hadiah' => false,
                 'import_data' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
-            [
-                'jenis_paket' => 'Paket 3',
-                'name_paket' => 'Paket Platinum',
+            'diamond' => [
+                'jenis_paket' => 'Paket Diamond',
+                'name_paket' => 'Paket Diamond',
                 'price' => 299000,
                 'masa_aktif' => 90,
                 'halaman_buku' => 200,
@@ -56,9 +56,11 @@ class PaketUndanganSeeder extends Seeder
                 'bebas_pilih_tema' => true,
                 'kirim_hadiah' => true,
                 'import_data' => true,
-                'created_at' => now(),
-                'updated_at' => now(),
             ],
-        ]);
+        ];
+
+        foreach ($packages as $code => $attributes) {
+            PaketUndangan::updateOrCreate(['code' => $code], $attributes);
+        }
     }
 }

@@ -2,13 +2,12 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Invitation;
 use App\Models\Ucapan;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
-use Illuminate\Support\Facades\DB;
 use Carbon\Carbon;
-use Illuminate\Validation\Rule;
 
 class DashboardController extends Controller
 {
@@ -16,7 +15,7 @@ class DashboardController extends Controller
      * Get comprehensive dashboard overview for specific wedding
      * GET /v1/dashboard/overview/{user_id}
      */
-    public function overview(Request $request, string $user_id): JsonResponse
+    public function overview(Request $request, ?string $user_id = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -25,23 +24,13 @@ class DashboardController extends Controller
                 'date_to' => 'sometimes|date|after_or_equal:date_from',
             ]);
 
-            // Verify user exists
-            $user = User::findOrFail($user_id);
-
-            // TODO: Re-enable security check after debugging SQL issue
-            // Security check: User can only access their own dashboard
-            // $authenticatedUser = $request->user();
-            // if (!$authenticatedUser || $authenticatedUser->id != $user_id) {
-            //     return response()->json([
-            //         'message' => 'Access denied. You can only view your own dashboard.'
-            //     ], 403);
-            // }
+            [$user, $dashboardUserId] = $this->resolveDashboardUser($request);
 
             // Determine date range
             $dateRange = $this->getDateRange($validated);
 
             // Build base query
-            $baseQuery = Ucapan::where('user_id', $user_id);
+            $baseQuery = Ucapan::where('user_id', $dashboardUserId);
 
             if ($dateRange['start']) {
                 $baseQuery->where('created_at', '>=', $dateRange['start']);
@@ -64,11 +53,17 @@ class DashboardController extends Controller
             $attendanceRate = $totalResponses > 0 ? round(($metrics->konfirmasi_kehadiran / $totalResponses) * 100, 1) : 0;
 
             // Get comparison data (previous period)
-            $previousPeriodData = $this->getPreviousPeriodComparison($user_id, $dateRange);
+            $previousPeriodData = $this->getPreviousPeriodComparison((string) $dashboardUserId, $dateRange);
+            $invitation = $this->resolveInvitationForUser($dashboardUserId);
 
             $response = [
-                'user_id' => (int) $user_id,
+                'user_id' => $dashboardUserId,
                 'wedding_owner' => $user->name,
+                'invitation_package' => $invitation?->paketUndangan ? [
+                    'id' => $invitation->paketUndangan->id,
+                    'code' => $invitation->paketUndangan->code,
+                    'name_paket' => $invitation->paketUndangan->name_paket,
+                ] : null,
                 'period' => [
                     'from' => $dateRange['start']?->format('Y-m-d'),
                     'to' => $dateRange['end']?->format('Y-m-d'),
@@ -137,7 +132,7 @@ class DashboardController extends Controller
      * Get visitor trends over time for charts
      * GET /v1/dashboard/trends/{user_id}
      */
-    public function trends(Request $request, string $user_id): JsonResponse
+    public function trends(Request $request, ?string $user_id = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -147,24 +142,14 @@ class DashboardController extends Controller
                 'group_by' => 'sometimes|in:day,week,month',
             ]);
 
-            // Verify user exists
-            User::findOrFail($user_id);
-
-            // TODO: Re-enable security check after debugging SQL issue
-            // Security check: User can only access their own dashboard
-            // $authenticatedUser = $request->user();
-            // if (!$authenticatedUser || $authenticatedUser->id != $user_id) {
-            //     return response()->json([
-            //         'message' => 'Access denied. You can only view your own dashboard.'
-            //     ], 403);
-            // }
+            [, $dashboardUserId] = $this->resolveDashboardUser($request);
 
             // Determine date range and grouping
             $dateRange = $this->getDateRange($validated);
             $groupBy = $validated['group_by'] ?? $this->getDefaultGrouping($dateRange['days']);
 
             // Build trends query
-            $trendsQuery = Ucapan::where('user_id', $user_id);
+            $trendsQuery = Ucapan::where('user_id', $dashboardUserId);
 
             if ($dateRange['start']) {
                 $trendsQuery->where('created_at', '>=', $dateRange['start']);
@@ -212,7 +197,7 @@ class DashboardController extends Controller
 
             return response()->json([
                 'data' => [
-                    'user_id' => (int) $user_id,
+                    'user_id' => $dashboardUserId,
                     'period' => [
                         'from' => $dateRange['start']?->format('Y-m-d'),
                         'to' => $dateRange['end']?->format('Y-m-d'),
@@ -241,7 +226,7 @@ class DashboardController extends Controller
      * Get recent messages/ucapan for dashboard display
      * GET /v1/dashboard/messages/{user_id}
      */
-    public function messages(Request $request, string $user_id): JsonResponse
+    public function messages(Request $request, ?string $user_id = null): JsonResponse
     {
         try {
             $validated = $request->validate([
@@ -252,23 +237,14 @@ class DashboardController extends Controller
                 'date_to' => 'sometimes|date|after_or_equal:date_from',
             ]);
 
-            // Verify user exists and authenticate access
-            $user = User::findOrFail($user_id);
-
-            // Security check: User can only access their own dashboard
-            $authenticatedUser = $request->user();
-            if (!$authenticatedUser || $authenticatedUser->id != $user_id) {
-                return response()->json([
-                    'message' => 'Access denied. You can only view your own dashboard.'
-                ], 403);
-            }
+            [$user, $dashboardUserId] = $this->resolveDashboardUser($request);
 
             $limit = $validated['limit'] ?? 10;
             $offset = $validated['offset'] ?? 0;
             $dateRange = $this->getDateRange($validated);
 
             // Build messages query
-            $messagesQuery = Ucapan::where('user_id', $user_id);
+            $messagesQuery = Ucapan::where('user_id', $dashboardUserId);
 
             if ($dateRange['start']) {
                 $messagesQuery->where('created_at', '>=', $dateRange['start']);
@@ -302,7 +278,7 @@ class DashboardController extends Controller
 
             return response()->json([
                 'data' => [
-                    'user_id' => (int) $user_id,
+                    'user_id' => $dashboardUserId,
                     'wedding_owner' => $user->name,
                     'pagination' => [
                         'total' => $totalCount,
@@ -314,8 +290,6 @@ class DashboardController extends Controller
                 ]
             ], 200);
 
-        } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            return response()->json(['message' => 'User tidak ditemukan.'], 404);
         } catch (\Exception $e) {
             return response()->json([
                 'message' => 'Gagal mengambil data pesan.',
@@ -480,5 +454,26 @@ class DashboardController extends Controller
             case 'mungkin': return 'Mungkin Hadir';
             default: return 'Belum Dikonfirmasi';
         }
+    }
+
+    private function resolveDashboardUser(Request $request): array
+    {
+        $authenticatedUser = $request->user();
+
+        if (! $authenticatedUser) {
+            abort(403, 'Access denied. You can only view your own dashboard.');
+        }
+
+        return [$authenticatedUser, (int) $authenticatedUser->id];
+    }
+
+    private function resolveInvitationForUser(int $userId): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $userId)
+            ->whereIn('payment_status', ['paid', 'pending'])
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderByDesc('id')
+            ->first();
     }
 }

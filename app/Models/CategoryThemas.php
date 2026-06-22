@@ -6,6 +6,7 @@ use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\JenisThemas;
 use Illuminate\Support\Str;
+use App\Models\PaketUndangan;
 
 class CategoryThemas extends Model
 {
@@ -66,6 +67,16 @@ class CategoryThemas extends Model
     public function activeJenisThemas()
     {
         return $this->hasMany(JenisThemas::class, 'category_id')->where('is_active', true);
+    }
+
+    public function paketUndangans()
+    {
+        return $this->belongsToMany(
+            PaketUndangan::class,
+            'paket_undangan_category_thema',
+            'category_thema_id',
+            'paket_undangan_id'
+        )->withTimestamps();
     }
 
     // Scopes

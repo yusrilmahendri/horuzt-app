@@ -12,12 +12,14 @@ use App\Models\TransactionTagihan;
 use App\Models\TripayTransaction;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Validation\Rule;
 
 class SettingControllerAdmin extends Controller
 {
     public function __construct()
     {
-        $this->middleware('auth:sanctum');
+        $this->middleware('auth:sanctum')->except(['indexPaket']);
     }
 
     public function masterTagihan()
@@ -137,7 +139,9 @@ class SettingControllerAdmin extends Controller
 
     public function indexPaket()
     {
-        $pakets = PaketUndangan::all();
+        $pakets = PaketUndangan::with(['accessibleCategories' => function ($query) {
+            $query->website()->ordered();
+        }])->get();
         return response()->json([
             'message' => 'Data paket undangan yang tersedia saat ini.!',
             'data'    => $pakets,
@@ -167,23 +171,38 @@ class SettingControllerAdmin extends Controller
             'bebas_pilih_tema' => 'boolean',
             'kirim_hadiah'     => 'boolean',
             'import_data'      => 'boolean',
+            'category_ids' => 'sometimes|array|min:1',
+            'category_ids.*' => [
+                'integer',
+                'distinct',
+                Rule::exists('category_themas', 'id')->where(
+                    fn ($query) => $query->where('type', 'website')
+                ),
+            ],
         ]);
 
+        DB::transaction(function () use ($request, $paket) {
+            $paket->update([
+                'name_paket'       => $request->name_paket,
+                'price'            => $request->price,
+                'masa_aktif'       => $request->masa_aktif,
+                'halaman_buku'     => $request->halaman_buku,
+                'kirim_wa'         => $request->kirim_wa,
+                'bebas_pilih_tema' => $request->bebas_pilih_tema,
+                'kirim_hadiah'     => $request->kirim_hadiah,
+                'import_data'      => $request->import_data,
+            ]);
 
-        $paket->update([
-            'name_paket'       => $request->name_paket,
-            'price'            => $request->price,
-            'masa_aktif'       => $request->masa_aktif,
-            'halaman_buku'     => $request->halaman_buku,
-            'kirim_wa'         => $request->kirim_wa,
-            'bebas_pilih_tema' => $request->bebas_pilih_tema,
-            'kirim_hadiah'     => $request->kirim_hadiah,
-            'import_data'      => $request->import_data,
-        ]);
+            if ($request->has('category_ids')) {
+                $paket->accessibleCategories()->sync($request->input('category_ids'));
+            }
+        });
 
         return response()->json([
             'message' => 'Paket berhasil diperbarui',
-            'data'    => $paket,
+            'data'    => $paket->fresh()->load(['accessibleCategories' => function ($query) {
+                $query->website()->ordered();
+            }]),
         ], 200);
     }
 

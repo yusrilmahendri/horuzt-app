@@ -544,15 +544,9 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
 
     // Dashboard Analytics endpoints (Wedding statistics & metrics)
     Route::controller(DashboardController::class)->group(function () {
-        Route::get('/v1/dashboard/overview/{user_id}', 'overview')
-            ->where('user_id', '[0-9]+')
-            ->name('dashboard.overview');
-        Route::get('/v1/dashboard/trends/{user_id}', 'trends')
-            ->where('user_id', '[0-9]+')
-            ->name('dashboard.trends');
-        Route::get('/v1/dashboard/messages/{user_id}', 'messages')
-            ->where('user_id', '[0-9]+')
-            ->name('dashboard.messages');
+        Route::get('/v1/dashboard/overview/{user_id?}', 'overview')->name('dashboard.overview');
+        Route::get('/v1/dashboard/trends/{user_id?}', 'trends')->name('dashboard.trends');
+        Route::get('/v1/dashboard/messages/{user_id?}', 'messages')->name('dashboard.messages');
     });
 
     // Theme Selection for Users

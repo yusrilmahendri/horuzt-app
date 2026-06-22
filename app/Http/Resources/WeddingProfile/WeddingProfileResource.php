@@ -117,11 +117,13 @@ class WeddingProfileResource extends JsonResource
 
         $paketUndangan = $invitation->paketUndangan ? [
             'id' => $invitation->paketUndangan->id,
+            'code' => $invitation->paketUndangan->code,
             'jenis_paket' => $invitation->paketUndangan->jenis_paket,
             // Keep original value for backward compatibility, expose rebranded fields alongside.
             'name_paket' => $invitation->paketUndangan->name_paket,
             'name_paket_original' => $invitation->paketUndangan->name_paket,
             'name_paket_display' => \App\Models\PaketUndangan::canonicalName($invitation->paketUndangan->name_paket),
+            'name_display' => $invitation->paketUndangan->name_paket_display,
             'package_tier' => \App\Models\PaketUndangan::tierCode($invitation->paketUndangan->name_paket),
             'display_label' => $invitation->paketUndangan->display_label,
             'price' => $invitation->paketUndangan->price,
@@ -133,6 +135,16 @@ class WeddingProfileResource extends JsonResource
                 'kirim_hadiah' => $invitation->paketUndangan->kirim_hadiah,
                 'import_data' => $invitation->paketUndangan->import_data,
             ],
+            'accessible_categories' => $invitation->paketUndangan->accessibleCategories
+                ->where('type', 'website')
+                ->where('is_active', true)
+                ->sortBy('sort_order')
+                ->values()
+                ->map(fn ($category) => [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                ]),
         ] : null;
 
         // Public wedding view (tamu undangan): only expose safe, non-internal fields.

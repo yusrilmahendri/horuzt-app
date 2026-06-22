@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\Invitation;
+use App\Models\CategoryThemas;
 
 class PaketUndangan extends Model
 {
@@ -59,8 +60,7 @@ class PaketUndangan extends Model
 
     /**
      * Stable lowercase tier code derived from the package name.
-     * Useful for frontend styling / ordering. Display-only, never used
-     * for access control (that stays on bebas_pilih_tema).
+     * Useful for legacy records that have not been backfilled yet.
      */
     public static function tierCode(?string $rawName): ?string
     {
@@ -89,7 +89,7 @@ class PaketUndangan extends Model
 
     public function getPackageTierAttribute(): ?string
     {
-        return self::tierCode($this->name_paket ?? null);
+        return $this->code ?: self::tierCode($this->name_paket ?? null);
     }
 
     public function getDisplayLabelAttribute(): ?string
@@ -106,5 +106,15 @@ class PaketUndangan extends Model
 
     public function invitations() {
         return $this->hasMany(Invitation::class);
+    }
+
+    public function accessibleCategories()
+    {
+        return $this->belongsToMany(
+            CategoryThemas::class,
+            'paket_undangan_category_thema',
+            'paket_undangan_id',
+            'category_thema_id'
+        )->withTimestamps();
     }
 }

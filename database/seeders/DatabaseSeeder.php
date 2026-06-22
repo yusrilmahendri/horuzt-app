@@ -18,6 +18,8 @@ class DatabaseSeeder extends Seeder
         $this->call(ThemasSeeder::class);
         $this->call(CategoryThemasSeeder::class);
         $this->call(JenisThemasSeeder::class);
+        $this->call(PaketUndanganSeeder::class);
+        $this->call(PackageThemeAccessSeeder::class);
         $this->call(ResultThemasSeeder::class);
         $this->call(PaketNikahSeeder::class);
         $this->call(BankSeeder::class);
@@ -32,9 +34,7 @@ class DatabaseSeeder extends Seeder
         $this->call(TestimoniSeeder::class);
         // $this->call(BukuTamuSeeder::class);
         // $this->call(UcapanSeeder::class);
-        $this->call(PaketUndanganSeeder::class);
         $this->call(MetodeTransactionSeeder::class);
         // $this->call(CeritaSeeder::class);
-        $this->call(PaketNikahSeeder::class);
     }
 }

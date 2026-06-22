@@ -90,9 +90,8 @@ class InvitationController extends Controller
                     ], 422);
                 }
 
-                // Check if this is a Trial package
-                $isTrialPackage = strtolower($paketUndangan->name_paket) === 'trial' ||
-                                  $paketUndangan->price == 0;
+                // Package codes are stable; labels and prices may change over time.
+                $isTrialPackage = $paketUndangan->code === 'trial';
 
                 // Determine payment status and expiry based on package type.
                 // Trial packages: immediately paid, domain active for trialDays.

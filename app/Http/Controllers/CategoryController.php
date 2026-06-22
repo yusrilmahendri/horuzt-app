@@ -7,17 +7,24 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Validation\Rule;
+use App\Services\PackageThemeAccessService;
+use Illuminate\Support\Facades\Auth;
 
 class CategoryController extends Controller
 {
-    public function __construct()
+    public function __construct(private PackageThemeAccessService $themeAccess)
     {
         $this->middleware('auth:sanctum');
     }
 
     public function index()
     {
-        $data = CategoryThemas::select('id', 'name', 'slug')->get();
+        $data = CategoryThemas::active()
+            ->website()
+            ->whereIn('id', $this->themeAccess->accessibleCategoryIds(Auth::user()))
+            ->ordered()
+            ->select('id', 'name', 'slug')
+            ->get();
         return response()->json([
             'status' => true,
             'data' => $data

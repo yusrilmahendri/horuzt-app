@@ -30,7 +30,7 @@ class ProfileController extends Controller
     {
         try {
             $user = Auth::user()->load([
-                'invitationOne.paketUndangan',
+                'invitationOne.paketUndangan.accessibleCategories',
                 'settingOne',
                 'mempelaiOne'
             ]);
@@ -84,7 +84,7 @@ class ProfileController extends Controller
 
             // Reload user with relationships
             $user->load([
-                'invitationOne.paketUndangan',
+                'invitationOne.paketUndangan.accessibleCategories',
                 'settingOne',
                 'mempelaiOne'
             ]);
@@ -255,11 +255,23 @@ class ProfileController extends Controller
         return [
             'id' => $package->id,
             'name' => $packageName,
+            'code' => $package->code,
+            'name_display' => $package->name_paket_display,
             'jenis_paket' => $invitation->package_features_snapshot['jenis_paket'] ?? $package->jenis_paket,
             'price' => $packagePrice,
             'currency' => 'IDR',
             'payment_status' => $invitation->payment_status,
             'is_active' => $invitation->isDomainActive(),
+            'accessible_categories' => $package->accessibleCategories
+                ->where('type', 'website')
+                ->where('is_active', true)
+                ->sortBy('sort_order')
+                ->values()
+                ->map(fn ($category) => [
+                    'id' => $category->id,
+                    'name' => $category->name,
+                    'slug' => $category->slug,
+                ]),
         ];
     }
 
