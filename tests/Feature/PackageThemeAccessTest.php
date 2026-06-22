@@ -97,6 +97,10 @@ class PackageThemeAccessTest extends TestCase
         $this->getJson('/api/themes/categories?package_id='.$package->id)
             ->assertOk()
             ->assertJsonPath('status', true);
+
+        $this->getJson('/api/themes/categories?type=website')
+            ->assertOk()
+            ->assertJsonPath('status', true);
     }
 
     public function test_public_themes_are_filtered_by_package_code(): void
@@ -118,6 +122,32 @@ class PackageThemeAccessTest extends TestCase
         $this->assertContains('Garden Whisper', $themeNames);
         $this->assertNotContains('Modern Vows', $themeNames);
         $this->assertNotContains('Velvet Mauve', $themeNames);
+    }
+
+    public function test_public_catalog_without_package_code_preserves_legacy_contract(): void
+    {
+        $response = $this->getJson('/api/themes/categories?type=website');
+
+        $response->assertOk()
+            ->assertJsonPath('data.total_categories', 5)
+            ->assertJsonPath('data.total_themes', 6);
+    }
+
+    public function test_valid_package_with_no_active_themes_returns_empty_array(): void
+    {
+        JenisThemas::whereIn('category_id', function ($query) {
+            $query->select('category_thema_id')
+                ->from('paket_undangan_category_thema')
+                ->join('paket_undangans', 'paket_undangans.id', '=', 'paket_undangan_category_thema.paket_undangan_id')
+                ->where('paket_undangans.code', 'ruby');
+        })->update(['is_active' => false]);
+
+        $this->getJson('/api/themes/categories?package_code=ruby')
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.categories', [])
+            ->assertJsonPath('data.total_categories', 0)
+            ->assertJsonPath('data.total_themes', 0);
     }
 
     public function test_theme_selection_without_login_is_rejected(): void

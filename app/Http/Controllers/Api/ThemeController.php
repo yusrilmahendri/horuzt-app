@@ -45,13 +45,6 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            if (! $request->user() && ! $package) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Package code atau package id wajib dikirim untuk akses publik.'
-                ], 422);
-            }
-
             $categories = CategoryThemas::with(['jenisThemas' => function($query) use ($package) {
                 $query->active()->ordered()
                     ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
@@ -643,6 +636,15 @@ class ThemeController extends Controller
             return $this->themeAccess->accessibleCategoryIds($request->user());
         }
 
+        if (! $package) {
+            return CategoryThemas::query()
+                ->active()
+                ->website()
+                ->ordered()
+                ->pluck('id')
+                ->all();
+        }
+
         return $this->themeAccess->accessibleCategoryIdsForPackage($package);
     }
 
@@ -650,6 +652,16 @@ class ThemeController extends Controller
     {
         if ($request->user()) {
             return $this->themeAccess->canAccessTheme($request->user(), $theme);
+        }
+
+        if (! $package) {
+            if (! $theme->relationLoaded('category')) {
+                $theme->load('category');
+            }
+
+            return (bool) $theme->is_active
+                && $theme->category
+                && $theme->category->is_active;
         }
 
         return $this->themeAccess->canPackageAccessTheme($package, $theme);
