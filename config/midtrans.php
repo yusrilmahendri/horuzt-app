@@ -1,5 +1,7 @@
 <?php
 
+$frontendUrl = rtrim(env('FRONTEND_URL', 'https://www.sena-digital.com'), '/');
+
 return [
     'server_key' => env('MIDTRANS_SERVER_KEY'),
     'client_key' => env('MIDTRANS_CLIENT_KEY'),
@@ -7,9 +9,9 @@ return [
     'is_sanitized' => env('MIDTRANS_IS_SANITIZED', true),
     'is_3ds' => env('MIDTRANS_IS_3DS', true),
 
-    'frontend_finish_url' => env('MIDTRANS_FINISH_URL', env('APP_URL') . '/payment/success'),
-    'frontend_error_url' => env('MIDTRANS_ERROR_URL', env('APP_URL') . '/payment/error'),
-    'frontend_pending_url' => env('MIDTRANS_PENDING_URL', env('APP_URL') . '/payment/pending'),
+    'frontend_finish_url' => env('MIDTRANS_FINISH_URL', $frontendUrl . '/buat-undangan?payment=finish'),
+    'frontend_error_url' => env('MIDTRANS_ERROR_URL', $frontendUrl . '/buat-undangan?payment=error'),
+    'frontend_pending_url' => env('MIDTRANS_PENDING_URL', $frontendUrl . '/buat-undangan?payment=unfinish'),
 
     'payment_limits' => [
         'min_amount' => env('MIDTRANS_MIN_AMOUNT', 10000),

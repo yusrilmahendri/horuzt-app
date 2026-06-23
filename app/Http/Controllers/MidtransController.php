@@ -39,18 +39,31 @@ class MidtransController extends Controller
             $orderId = $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '#INV-' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
             $grossAmount = $validated['amount'];
 
-            // Enrich customer details with complete user information for admin reference
+            // Always send a usable email to Midtrans so payment notifications can be delivered.
             $userDomain = $invitation->user->settingOne->domain ?? '-';
-            $customerDetails = $validated['customer_details'] ?? [
+            $defaultCustomerDetails = [
                 'first_name' => $user->name ?? 'Guest',
                 'last_name' => '',
-                'email' => $user->email ?? 'guest@example.com',
+                'email' => $user->email ?? $invitation->user->email,
                 'phone' => $user->phone ?? '',
-                // Additional info for Midtrans dashboard / admin reference
-                'kode_pemesanan' => $orderId,
-                'domain' => $userDomain,
-                'nama_paket' => $invitation->paketUndangan->name_paket ?? 'Unknown Package',
             ];
+            $customerDetails = array_merge(
+                $defaultCustomerDetails,
+                is_array($validated['customer_details'] ?? null) ? $validated['customer_details'] : []
+            );
+
+            if (empty($customerDetails['email'])) {
+                Log::warning('Midtrans snap token blocked because customer email is empty', [
+                    'user_id' => $user->id,
+                    'invitation_id' => $invitation->id,
+                    'order_id' => $orderId,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'message' => 'Email pengguna wajib tersedia sebelum memulai pembayaran Midtrans.',
+                ], 422);
+            }
 
             $itemDetails = $validated['item_details'] ?? [[
                 'id' => 'paket-' . $invitation->paket_undangan_id,
@@ -67,10 +80,14 @@ class MidtransController extends Controller
                 'customer_details' => $customerDetails,
                 'item_details' => $itemDetails,
                 'callbacks' => [
-                    'finish' => config('midtrans.frontend_finish_url', env('APP_URL') . '/payment/success'),
-                    'error' => config('midtrans.frontend_error_url', env('APP_URL') . '/payment/error'),
-                    'pending' => config('midtrans.frontend_pending_url', env('APP_URL') . '/payment/pending'),
+                    'finish' => config('midtrans.frontend_finish_url'),
+                    'error' => config('midtrans.frontend_error_url'),
+                    'pending' => config('midtrans.frontend_pending_url'),
                 ],
+                // Keep admin reference data out of customer_details so Midtrans receives a valid schema.
+                'custom_field1' => $orderId,
+                'custom_field2' => $userDomain,
+                'custom_field3' => $invitation->paketUndangan->name_paket ?? 'Unknown Package',
             ];
 
             $midtransService = new MidtransService($user->id);

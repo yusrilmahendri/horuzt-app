@@ -23,3 +23,20 @@ Route::get('/payment', function () {
 });
 
 Route::post('/payment', [PaymentController::class, 'create'])->name('payment.create');
+
+$frontendBaseUrl = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'https://www.sena-digital.com')), '/');
+
+Route::get('/payment/success', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
+    $query = array_merge($request->query(), ['payment' => 'finish']);
+    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+});
+
+Route::get('/payment/pending', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
+    $query = array_merge($request->query(), ['payment' => 'unfinish']);
+    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+});
+
+Route::get('/payment/error', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
+    $query = array_merge($request->query(), ['payment' => 'error']);
+    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+});
