@@ -26,6 +26,7 @@ class WeddingProfileResource extends JsonResource
             'user_info' => $this->getUserInfo(),
             'mempelai' => $this->getMempelaiInfo(),
             'invitation_package' => $this->getInvitationPackageInfo(),
+            'selected_theme' => $this->getSelectedThemeSummary(),
             'events' => $this->getEventsInfo(),
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
@@ -39,6 +40,26 @@ class WeddingProfileResource extends JsonResource
             'testimonials' => $this->getTestimonialsInfo(),
             'themes' => $this->getThemesInfo(),
             'metadata' => $this->getMetadata(),
+        ];
+    }
+
+    private function getSelectedThemeSummary(): ?array
+    {
+        if (! $this->relationLoaded('selectedTheme') || ! $this->selectedTheme) {
+            return null;
+        }
+
+        $jenisThema = $this->selectedTheme->jenisThema;
+
+        if (! $jenisThema || ! $jenisThema->slug) {
+            return null;
+        }
+
+        return [
+            'id' => $jenisThema->id,
+            'slug' => $jenisThema->slug,
+            'name' => $jenisThema->name,
+            'category_slug' => $jenisThema->category->slug ?? null,
         ];
     }
 
