@@ -449,6 +449,7 @@ class WeddingProfileResource extends JsonResource
             if ($jenisThema) {
                 $result['selected_theme'] = [
                     'id' => $jenisThema->id,
+                    'slug' => $jenisThema->slug,
                     'name' => $jenisThema->name,
                     'price' => $jenisThema->price,
                     'preview' => $jenisThema->preview,
@@ -459,6 +460,7 @@ class WeddingProfileResource extends JsonResource
                     'category' => [
                         'id' => $jenisThema->category->id ?? null,
                         'name' => $jenisThema->category->name ?? null,
+                        'slug' => $jenisThema->category->slug ?? null,
                         'type' => $jenisThema->category->type ?? null,
                     ],
                     'selected_at' => $selectedTheme->selected_at?->format('Y-m-d H:i:s'),

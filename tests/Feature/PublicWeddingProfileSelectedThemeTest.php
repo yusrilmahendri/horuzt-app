@@ -38,6 +38,8 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
             ->assertJsonPath('data.selected_theme.slug', 'soft-ivory')
             ->assertJsonPath('data.selected_theme.name', $theme->name)
             ->assertJsonPath('data.selected_theme.category_slug', $theme->category->slug)
+            ->assertJsonPath('data.themes.selected_theme.id', $theme->id)
+            ->assertJsonPath('data.themes.selected_theme.slug', 'soft-ivory')
             ->assertJsonPath('data.themes.selected_theme.name', $theme->name);
     }
 
