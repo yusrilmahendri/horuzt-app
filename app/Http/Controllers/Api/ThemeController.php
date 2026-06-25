@@ -46,15 +46,34 @@ class ThemeController extends Controller
             }
 
             $categories = CategoryThemas::with(['jenisThemas' => function($query) use ($package) {
-                $query->active()->ordered()
+                $query->active()
+                    ->whereNotNull('slug')
+                    ->where('slug', '!=', '')
+                    ->ordered()
                     ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
-                    ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'sort_order', 'description');
+                    ->select(
+                        'id',
+                        'category_id',
+                        'name',
+                        'slug',
+                        'price',
+                        'preview',
+                        'preview_image',
+                        'thumbnail_image',
+                        'image',
+                        'demo_url',
+                        'url_thema',
+                        'features',
+                        'sort_order',
+                        'description',
+                        'is_active'
+                    );
             }])
             ->where('type', $type)
             ->where('is_active', true)
             ->whereIn('id', $categoryIds)
             ->ordered()
-            ->select('id', 'name', 'slug', 'type', 'description', 'icon', 'sort_order')
+            ->select('id', 'name', 'slug', 'type', 'description', 'icon', 'sort_order', 'is_active')
             ->get();
 
             // Filter out categories with no active themes
