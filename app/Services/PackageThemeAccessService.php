@@ -13,14 +13,29 @@ class PackageThemeAccessService
 {
     public function packageForUser(User $user): ?PaketUndangan
     {
-        $invitation = Invitation::with('paketUndangan')
+        $invitations = Invitation::with('paketUndangan')
             ->where('user_id', $user->id)
             ->whereIn('payment_status', ['paid', 'pending'])
-            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
             ->orderByDesc('id')
-            ->first();
+            ->get();
 
-        return $invitation?->paketUndangan;
+        $trialFallback = null;
+
+        foreach ($invitations as $invitation) {
+            $package = $this->resolvePackageFromInvitation($invitation);
+
+            if (! $package) {
+                continue;
+            }
+
+            if (! $this->usesLegacyThemeSelection($package)) {
+                return $package;
+            }
+
+            $trialFallback ??= $package;
+        }
+
+        return $trialFallback;
     }
 
     public function packageFromCodeOrId(null|int|string $identifier): ?PaketUndangan
@@ -29,12 +44,18 @@ class PackageThemeAccessService
             return null;
         }
 
+        if (! is_numeric($identifier)) {
+            $normalizedCode = PaketUndangan::tierCode((string) $identifier) ?? strtolower(trim((string) $identifier));
+
+            return PaketUndangan::query()
+                ->where('code', $normalizedCode)
+                ->orWhereRaw('LOWER(name_paket) = ?', [strtolower(trim((string) $identifier))])
+                ->orWhereRaw('LOWER(jenis_paket) = ?', [strtolower(trim((string) $identifier))])
+                ->first();
+        }
+
         return PaketUndangan::query()
-            ->when(is_numeric($identifier), function ($query) use ($identifier) {
-                $query->where('id', (int) $identifier);
-            }, function ($query) use ($identifier) {
-                $query->where('code', (string) $identifier);
-            })
+            ->where('id', (int) $identifier)
             ->first();
     }
 
@@ -137,8 +158,54 @@ class PackageThemeAccessService
         return $package->accessibleCategories()->exists();
     }
 
+    private function resolvePackageFromInvitation(Invitation $invitation): ?PaketUndangan
+    {
+        $packageCodeHint = $this->resolvePackageCodeHint($invitation);
+
+        foreach ($invitation->packageIdentifierHints() as $packageId) {
+            $package = ($invitation->relationLoaded('paketUndangan') && (int) $invitation->paketUndangan?->id === $packageId)
+                ? $invitation->paketUndangan
+                : PaketUndangan::find($packageId);
+
+            if (! $package) {
+                continue;
+            }
+
+            $resolvedCode = $package->package_tier
+                ?: $package->code
+                ?: PaketUndangan::tierCode($package->name_paket ?? $package->jenis_paket ?? null);
+
+            if ($packageCodeHint && $resolvedCode && $packageCodeHint !== $resolvedCode) {
+                $hintPackage = $this->packageFromCodeOrId($packageCodeHint);
+
+                if ($hintPackage) {
+                    return $hintPackage;
+                }
+            }
+
+            return $package;
+        }
+
+        return $packageCodeHint
+            ? $this->packageFromCodeOrId($packageCodeHint)
+            : null;
+    }
+
+    private function resolvePackageCodeHint(Invitation $invitation): ?string
+    {
+        foreach ($invitation->packageNameHints() as $name) {
+            $code = PaketUndangan::tierCode($name);
+
+            if (in_array($code, ['trial', 'ruby', 'sapphire', 'diamond'], true)) {
+                return $code;
+            }
+        }
+
+        return null;
+    }
+
     private function usesLegacyThemeSelection(PaketUndangan $package): bool
     {
-        return $package->code === 'trial';
+        return ($package->code ?: $package->package_tier) === 'trial';
     }
 }

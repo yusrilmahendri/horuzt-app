@@ -169,6 +169,74 @@ class PackageThemeAccessTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_ruby_user_can_select_soft_ivory_with_minimalis_access(): void
+    {
+        $user = $this->createUserWithPackage('ruby');
+        $theme = JenisThemas::where('slug', 'soft-ivory')->firstOrFail();
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
+            ->assertOk()
+            ->assertJson([
+                'status' => true,
+                'message' => 'Theme selected successfully',
+            ])
+            ->assertJsonPath('data.theme.id', $theme->id)
+            ->assertJsonPath('data.theme.slug', 'soft-ivory');
+
+        $this->assertDatabaseHas('result_themas', [
+            'user_id' => $user->id,
+            'jenis_id' => $theme->id,
+        ]);
+    }
+
+    public function test_package_for_user_prefers_snapshot_package_when_latest_active_invitation_is_stale(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'snapshot-ruby@example.test',
+        ]);
+
+        $trial = PaketUndangan::where('code', 'trial')->firstOrFail();
+        $ruby = PaketUndangan::where('code', 'ruby')->firstOrFail();
+
+        Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $trial->id,
+            'status' => 'step1',
+            'payment_status' => 'paid',
+            'is_trial' => true,
+            'domain_expires_at' => now()->addDays($trial->masa_aktif),
+            'package_price_snapshot' => $trial->price,
+            'package_duration_snapshot' => $trial->masa_aktif,
+            'package_features_snapshot' => [
+                'name_paket' => $trial->name_paket,
+                'jenis_paket' => $trial->jenis_paket,
+            ],
+        ]);
+
+        Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $trial->id,
+            'status' => 'step3',
+            'payment_status' => 'pending',
+            'is_trial' => false,
+            'domain_expires_at' => now()->addDays($ruby->masa_aktif),
+            'package_price_snapshot' => $ruby->price,
+            'package_duration_snapshot' => $ruby->masa_aktif,
+            'package_features_snapshot' => [
+                'name_paket' => 'Paket Ruby',
+                'jenis_paket' => 'Paket Ruby',
+            ],
+        ]);
+
+        $resolvedPackage = app(PackageThemeAccessService::class)->packageForUser($user);
+
+        $this->assertNotNull($resolvedPackage);
+        $this->assertSame($ruby->id, $resolvedPackage->id);
+        $this->assertSame('ruby', $resolvedPackage->code);
+    }
+
     public function test_user_cannot_select_a_theme_outside_their_package_categories(): void
     {
         $user = $this->createUserWithPackage('ruby');

@@ -82,6 +82,11 @@ class PaketUndangan extends Model
         return $this->name_paket ?? null;
     }
 
+    public function getNameAttribute(): ?string
+    {
+        return $this->name_paket ?? $this->jenis_paket ?? null;
+    }
+
     public function getNamePaketDisplayAttribute(): ?string
     {
         return self::canonicalName($this->name_paket ?? null);

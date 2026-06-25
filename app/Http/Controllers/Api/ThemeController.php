@@ -219,6 +219,9 @@ class ThemeController extends Controller
 
             $user = Auth::user();
             $package = $this->themeAccess->packageForUser($user);
+            $accessibleCategorySlugs = $package
+                ? $this->themeAccess->accessibleCategoriesForPackage($package)->pluck('slug')->values()->all()
+                : [];
 
             // Verify theme is active and available
             $theme = JenisThemas::with(['category' => function($query) {
@@ -226,16 +229,135 @@ class ThemeController extends Controller
             }])
             ->where('id', $request->theme_id)
             ->where('is_active', true)
+            ->whereNotNull('slug')
+            ->where('slug', '!=', '')
             ->first();
 
+            Log::info('Theme selection validation snapshot', [
+                'user_id' => $user?->id,
+                'email' => $user?->email,
+                'package' => [
+                    'id' => $package?->id,
+                    'code' => $package?->code,
+                    'name' => $package?->name_paket_display ?? $package?->name_paket,
+                ],
+                'requested_theme_id' => (int) $request->theme_id,
+                'accessible_category_slugs' => $accessibleCategorySlugs,
+                'resolved_theme' => [
+                    'id' => $theme?->id,
+                    'name' => $theme?->name,
+                    'slug' => $theme?->slug,
+                    'is_active' => $theme?->is_active,
+                ],
+                'resolved_theme_category' => [
+                    'id' => $theme?->category?->id,
+                    'slug' => $theme?->category?->slug,
+                    'name' => $theme?->category?->name,
+                    'type' => $theme?->category?->type,
+                    'is_active' => $theme?->category?->is_active,
+                ],
+            ]);
+
             if (!$theme || !$theme->category) {
+                Log::warning('[ThemeSelectUnavailable]', [
+                    'user_id' => $user?->id,
+                    'email' => $user?->email,
+                    'requested_theme_id' => $request->theme_id,
+                    'theme' => $theme ? [
+                        'id' => $theme->id,
+                        'name' => $theme->name,
+                        'slug' => $theme->slug,
+                        'category_id' => $theme->category_id,
+                        'is_active' => $theme->is_active,
+                    ] : null,
+                    'category' => $theme?->category ? [
+                        'id' => $theme->category->id,
+                        'name' => $theme->category->name,
+                        'slug' => $theme->category->slug,
+                        'type' => $theme->category->type,
+                        'is_active' => $theme->category->is_active,
+                    ] : null,
+                    'package' => $package ? [
+                        'id' => $package->id,
+                        'code' => $package->code ?? null,
+                        'name' => $package->name ?? null,
+                        'jenis_paket' => $package->jenis_paket ?? null,
+                    ] : null,
+                    'latest_invitations' => DB::table('invitations')
+                        ->where('user_id', $user?->id)
+                        ->orderByDesc('id')
+                        ->limit(5)
+                        ->get(),
+                ]);
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Selected theme is not available.'
                 ], 400);
             }
 
-            if (! $this->themeAccess->canPackageAccessTheme($package, $theme)) {
+            $canAccessTheme = $this->themeAccess->canPackageAccessTheme($package, $theme);
+
+            Log::info('Theme selection package access decision', [
+                'user_id' => $user?->id,
+                'package' => [
+                    'id' => $package?->id,
+                    'code' => $package?->code,
+                    'name' => $package?->name_paket_display ?? $package?->name_paket,
+                ],
+                'theme' => [
+                    'id' => $theme->id,
+                    'name' => $theme->name,
+                    'slug' => $theme->slug,
+                ],
+                'theme_category' => [
+                    'id' => $theme->category?->id,
+                    'slug' => $theme->category?->slug,
+                    'name' => $theme->category?->name,
+                ],
+                'accessible_category_slugs' => $accessibleCategorySlugs,
+                'can_package_access_theme' => $canAccessTheme,
+            ]);
+
+            if (! $canAccessTheme) {
+                Log::warning('[ThemeSelectDenied]', [
+                    'user_id' => $user?->id,
+                    'email' => $user?->email,
+                    'requested_theme_id' => $request->theme_id,
+                    'theme' => $theme ? [
+                        'id' => $theme->id,
+                        'name' => $theme->name,
+                        'slug' => $theme->slug,
+                        'category_id' => $theme->category_id,
+                        'is_active' => $theme->is_active,
+                    ] : null,
+                    'category' => $theme?->category ? [
+                        'id' => $theme->category->id,
+                        'name' => $theme->category->name,
+                        'slug' => $theme->category->slug,
+                        'type' => $theme->category->type,
+                        'is_active' => $theme->category->is_active,
+                    ] : null,
+                    'package' => $package ? [
+                        'id' => $package->id,
+                        'code' => $package->code ?? null,
+                        'name' => $package->name ?? null,
+                        'jenis_paket' => $package->jenis_paket ?? null,
+                    ] : null,
+                    'latest_invitations' => DB::table('invitations')
+                        ->where('user_id', $user?->id)
+                        ->orderByDesc('id')
+                        ->limit(5)
+                        ->get(),
+                    'package_access_categories' => $package
+                        ? DB::table('paket_undangan_category_thema as pc')
+                            ->join('category_themas as c', 'c.id', '=', 'pc.category_thema_id')
+                            ->where('pc.paket_undangan_id', $package->id)
+                            ->select('c.id', 'c.slug', 'c.name', 'c.type', 'c.is_active')
+                            ->get()
+                        : [],
+                ]);
+
                 return response()->json([
                     'status' => false,
                     'message' => 'Tema ini tidak tersedia untuk paket Anda.'
@@ -256,6 +378,25 @@ class ThemeController extends Controller
             ]);
 
             DB::commit();
+
+            Log::info('Theme selected successfully', [
+                'user_id' => $user?->id,
+                'package' => [
+                    'id' => $package?->id,
+                    'code' => $package?->code,
+                    'name' => $package?->name_paket_display ?? $package?->name_paket,
+                ],
+                'theme' => [
+                    'id' => $theme->id,
+                    'name' => $theme->name,
+                    'slug' => $theme->slug,
+                ],
+                'theme_category' => [
+                    'id' => $theme->category?->id,
+                    'slug' => $theme->category?->slug,
+                    'name' => $theme->category?->name,
+                ],
+            ]);
 
             return response()->json([
                 'status' => true,

@@ -79,6 +79,41 @@ class Invitation extends Model
         return $this->hasMany(Komentar::class)->orderBy('created_at', 'desc');
     }
 
+    public function packageIdentifierHints(): array
+    {
+        return collect([
+            $this->getAttribute('paket_undangan_id'),
+            $this->getAttribute('package_id'),
+            $this->getAttribute('paket_id'),
+        ])->filter(fn ($value) => is_numeric($value) && (int) $value > 0)
+            ->map(fn ($value) => (int) $value)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    public function packageNameHints(): array
+    {
+        $snapshot = is_array($this->package_features_snapshot)
+            ? $this->package_features_snapshot
+            : [];
+
+        return collect([
+            $snapshot['name_paket'] ?? null,
+            $snapshot['jenis_paket'] ?? null,
+            $snapshot['package_name'] ?? null,
+            $this->getAttribute('name_paket'),
+            $this->getAttribute('jenis_paket'),
+            $this->getAttribute('package_name'),
+            $this->paketUndangan?->name_paket,
+            $this->paketUndangan?->jenis_paket,
+        ])->filter(fn ($value) => is_string($value) && trim($value) !== '')
+            ->map(fn ($value) => trim($value))
+            ->unique()
+            ->values()
+            ->all();
+    }
+
     /**
      * Check if domain is still active.
      * Paid users: active when domain_expires_at is in the future.
