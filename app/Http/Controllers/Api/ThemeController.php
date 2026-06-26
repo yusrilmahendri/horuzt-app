@@ -438,7 +438,7 @@ class ThemeController extends Controller
 
             $selectedTheme = ResultThemas::with([
                 'jenisThema' => function($query) {
-                    $query->with('category:id,name,type');
+                    $query->with('category:id,name,slug,type,is_active');
                 }
             ])
             ->where('user_id', $user->id)
@@ -453,9 +453,33 @@ class ThemeController extends Controller
                 ], 200);
             }
 
+            $package = $this->themeAccess->packageForUser($user);
+            $theme = $selectedTheme->jenisThema;
+            $themeCategoryId = (int) ($theme?->category_id ?? 0);
+            $pivotExists = $package && $themeCategoryId > 0
+                ? DB::table('paket_undangan_category_thema')
+                    ->where('paket_undangan_id', (int) $package->id)
+                    ->where('category_thema_id', $themeCategoryId)
+                    ->exists()
+                : false;
+            $canAccessTheme = $this->themeAccess->canPackageAccessTheme($package, $theme);
+
+            Log::info('Selected theme access audit', [
+                'user_id' => $user?->id,
+                'selected_result_themas_id' => $selectedTheme->id,
+                'jenis_id' => $selectedTheme->jenis_id,
+                'theme_slug' => $theme?->slug,
+                'theme_category_id' => $themeCategoryId,
+                'theme_category_slug' => $theme?->category?->slug,
+                'package_id' => (int) ($package?->id ?? 0),
+                'package_code' => $package?->code,
+                'pivot_exists' => $pivotExists,
+                'can_package_access_theme' => $canAccessTheme,
+            ]);
+
             if (! $selectedTheme->jenisThema
                 || ! $selectedTheme->jenisThema->category
-                || ! $this->themeAccess->canAccessTheme($user, $selectedTheme->jenisThema)) {
+                || ! $canAccessTheme) {
                 return response()->json([
                     'status' => true,
                     'data' => null,

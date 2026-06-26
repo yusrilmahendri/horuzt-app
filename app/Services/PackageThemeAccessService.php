@@ -129,7 +129,7 @@ class PackageThemeAccessService
             return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
-        if (! $theme->relationLoaded('category')) {
+        if (! $theme->relationLoaded('category') || $this->themeCategoryNeedsReload($theme)) {
             $theme->load('category');
         }
 
@@ -210,6 +210,19 @@ class PackageThemeAccessService
             ->where('paket_undangan_id', $packageId)
             ->where('category_thema_id', $categoryId)
             ->exists();
+    }
+
+    private function themeCategoryNeedsReload(JenisThemas $theme): bool
+    {
+        if (! $theme->category) {
+            return false;
+        }
+
+        $attributes = $theme->category->getAttributes();
+
+        return ! array_key_exists('is_active', $attributes)
+            || ! array_key_exists('type', $attributes)
+            || ! array_key_exists('slug', $attributes);
     }
 
     private function logThemeAccessDecision(

@@ -201,6 +201,13 @@ class PackageThemeAccessTest extends TestCase
             'user_id' => $user->id,
             'jenis_id' => $theme->id,
         ]);
+
+        $this->getJson('/api/themes/selected')
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.theme.id', $theme->id)
+            ->assertJsonPath('data.theme.slug', 'soft-ivory')
+            ->assertJsonPath('data.theme.name', 'Soft Ivory');
     }
 
     public function test_package_for_user_prefers_snapshot_package_when_latest_active_invitation_is_stale(): void
