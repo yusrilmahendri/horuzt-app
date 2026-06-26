@@ -169,6 +169,18 @@ class PackageThemeAccessTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_can_package_access_theme_uses_pivot_membership_even_with_string_ids(): void
+    {
+        $service = app(PackageThemeAccessService::class);
+        $package = PaketUndangan::where('code', 'ruby')->firstOrFail();
+        $theme = JenisThemas::where('slug', 'soft-ivory')->firstOrFail();
+
+        $package->id = (string) $package->id;
+        $theme->category_id = (string) $theme->category_id;
+
+        $this->assertTrue($service->canPackageAccessTheme($package, $theme));
+    }
+
     public function test_ruby_user_can_select_soft_ivory_with_minimalis_access(): void
     {
         $user = $this->createUserWithPackage('ruby');

@@ -8,6 +8,8 @@ use App\Models\JenisThemas;
 use App\Models\PaketUndangan;
 use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class PackageThemeAccessService
 {
@@ -83,12 +85,12 @@ class PackageThemeAccessService
 
     public function accessibleCategoryIds(User $user): array
     {
-        return $this->accessibleCategories($user)->modelKeys();
+        return array_map('intval', $this->accessibleCategories($user)->modelKeys());
     }
 
     public function accessibleCategoryIdsForPackage(?PaketUndangan $package): array
     {
-        return $this->accessibleCategoriesForPackage($package)->modelKeys();
+        return array_map('intval', $this->accessibleCategoriesForPackage($package)->modelKeys());
     }
 
     public function canAccessTheme(User $user, JenisThemas $theme): bool
@@ -96,33 +98,71 @@ class PackageThemeAccessService
         return $this->canPackageAccessTheme($this->packageForUser($user), $theme);
     }
 
-    public function canPackageAccessTheme(?PaketUndangan $package, JenisThemas $theme): bool
+    public function canPackageAccessTheme(?PaketUndangan $package, ?JenisThemas $theme): bool
     {
-        if (! $package || ! $theme->is_active || ! $theme->category_id) {
-            return false;
+        $packageId = (int) ($package?->id ?? 0);
+        $themeCategoryId = (int) ($theme?->category_id ?? 0);
+        $pivotExists = false;
+        $reason = null;
+
+        if (! $package || ! $theme) {
+            $reason = 'missing_package_or_theme';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
+        }
+
+        if (! $theme->is_active) {
+            $reason = 'theme_inactive';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
+        }
+
+        if ($themeCategoryId <= 0) {
+            $reason = 'missing_theme_category_id';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
         if ($this->usesLegacyThemeSelection($package)) {
-            return false;
+            $reason = 'legacy_trial_package';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
         if (! $theme->relationLoaded('category')) {
             $theme->load('category');
         }
 
-        if (! $theme->category || ! $theme->category->is_active || $theme->category->type !== 'website') {
-            return false;
+        if (! $theme->category) {
+            $reason = 'missing_theme_category';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
-        if ($this->packageHasCategoryPivot($package)) {
-            return in_array($theme->category_id, $this->accessibleCategoryIdsForPackage($package), true);
+        if (! $theme->category->is_active) {
+            $reason = 'inactive_theme_category';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
-        if ((bool) $package->bebas_pilih_tema) {
-            return true;
+        if ($theme->category->type !== 'website') {
+            $reason = 'non_website_theme_category';
+
+            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
-        return (float) $theme->price <= 0;
+        // Query the pivot table directly so access checks stay correct even if
+        // PDO/Eloquent hydrate ids as strings and strict comparisons would fail.
+        $pivotExists = $this->packageHasThemeCategoryPivot($packageId, $themeCategoryId);
+
+        return $this->logThemeAccessDecision(
+            $package,
+            $theme,
+            $themeCategoryId,
+            $pivotExists,
+            $pivotExists,
+            $pivotExists ? 'pivot_match' : 'pivot_missing'
+        );
     }
 
     private function baseCategoryQueryForPackage(PaketUndangan $package)
@@ -155,7 +195,44 @@ class PackageThemeAccessService
 
     private function packageHasCategoryPivot(PaketUndangan $package): bool
     {
-        return $package->accessibleCategories()->exists();
+        return DB::table('paket_undangan_category_thema')
+            ->where('paket_undangan_id', (int) $package->id)
+            ->exists();
+    }
+
+    private function packageHasThemeCategoryPivot(int $packageId, int $categoryId): bool
+    {
+        if ($packageId <= 0 || $categoryId <= 0) {
+            return false;
+        }
+
+        return DB::table('paket_undangan_category_thema')
+            ->where('paket_undangan_id', $packageId)
+            ->where('category_thema_id', $categoryId)
+            ->exists();
+    }
+
+    private function logThemeAccessDecision(
+        ?PaketUndangan $package,
+        ?JenisThemas $theme,
+        int $themeCategoryId,
+        bool $pivotExists,
+        bool $result,
+        string $reason
+    ): bool {
+        Log::info('Package theme access check', [
+            'package_id' => (int) ($package?->id ?? 0),
+            'package_code' => $package?->code,
+            'theme_id' => (int) ($theme?->id ?? 0),
+            'theme_slug' => $theme?->slug,
+            'theme_category_id' => $themeCategoryId,
+            'theme_category_slug' => $theme?->category?->slug,
+            'pivot_exists' => $pivotExists,
+            'result' => $result,
+            'reason' => $reason,
+        ]);
+
+        return $result;
     }
 
     private function resolvePackageFromInvitation(Invitation $invitation): ?PaketUndangan
