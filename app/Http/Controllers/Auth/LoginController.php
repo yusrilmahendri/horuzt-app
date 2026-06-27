@@ -38,13 +38,30 @@ class LoginController extends Controller
     }
 
     
-        // Log out user
-        public function logout(Request $request)
-        {   
-            $request->user()->currentAccessToken()->delete();
+    // Log out user
+    public function logout(Request $request)
+    {
+        $user = $request->user();
+
+        if (!$user) {
             return response()->json([
-                'message' => 'Successfully logged out',
-                'status' => true,
-            ])->withCookie(cookie()->forget('token'));
+                'message' => 'Unauthenticated.',
+                'status'  => false,
+            ], 401);
         }
+
+        $token = $user->currentAccessToken();
+
+        if ($token) {
+            $token->delete();
+        } else {
+            // Fallback: revoke all tokens for this user
+            $user->tokens()->delete();
+        }
+
+        return response()->json([
+            'message' => 'Successfully logged out',
+            'status'  => true,
+        ])->withCookie(cookie()->forget('token'));
+    }
 }
