@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\CreateSnapTokenRequest;
 use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
 use App\Services\MidtransService;
 use Illuminate\Http\JsonResponse;
@@ -65,9 +66,18 @@ class MidtransController extends Controller
                 ], 422);
             }
 
+            $packageLabel = PaketUndangan::displayLabelFromCode(
+                $invitation->paketUndangan->code ?? null,
+                $invitation->paketUndangan->name_paket ?? null
+            ) ?? 'Wedding Package';
+            $packageCode = PaketUndangan::tierCode(
+                $invitation->paketUndangan->name_paket ?? null,
+                $invitation->paketUndangan->code ?? null
+            ) ?? 'unknown';
+
             $itemDetails = $validated['item_details'] ?? [[
                 'id' => 'paket-' . $invitation->paket_undangan_id,
-                'name' => $invitation->paketUndangan->name_paket ?? 'Wedding Package',
+                'name' => $packageLabel,
                 'price' => $grossAmount,
                 'quantity' => 1,
             ]];
@@ -87,7 +97,7 @@ class MidtransController extends Controller
                 // Keep admin reference data out of customer_details so Midtrans receives a valid schema.
                 'custom_field1' => $orderId,
                 'custom_field2' => $userDomain,
-                'custom_field3' => $invitation->paketUndangan->name_paket ?? 'Unknown Package',
+                'custom_field3' => $packageCode,
             ];
 
             $midtransService = new MidtransService($user->id);

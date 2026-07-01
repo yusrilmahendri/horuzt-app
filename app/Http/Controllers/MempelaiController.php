@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Models\Galery;
 use App\Models\Mempelai;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
@@ -27,6 +28,20 @@ class MempelaiController extends Controller
         $mempelai->cover_photo = $mempelai->cover_photo ? url('storage/' . $mempelai->cover_photo) : null;
 
         return $mempelai;
+    }
+
+    private function syncGalleryPhotoPath(int $userId, string $namaFoto, string $photoPath): void
+    {
+        Galery::updateOrCreate(
+            [
+                'user_id' => $userId,
+                'nama_foto' => $namaFoto,
+            ],
+            [
+                'photo' => $photoPath,
+                'status' => 1,
+            ]
+        );
     }
 
     public function index()
@@ -121,6 +136,18 @@ class MempelaiController extends Controller
 
 
         $mempelai->update($updateData);
+
+        if (isset($updateData['photo_pria'])) {
+            $this->syncGalleryPhotoPath($userId, 'Photo Pria', $updateData['photo_pria']);
+        }
+
+        if (isset($updateData['photo_wanita'])) {
+            $this->syncGalleryPhotoPath($userId, 'Photo Wanita', $updateData['photo_wanita']);
+        }
+
+        if (isset($updateData['cover_photo'])) {
+            $this->syncGalleryPhotoPath($userId, 'Cover Photo', $updateData['cover_photo']);
+        }
 
 
         $mempelai->refresh();

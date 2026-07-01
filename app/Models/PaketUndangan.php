@@ -15,6 +15,28 @@ class PaketUndangan extends Model
     protected $table = 'paket_undangans';
 
     /**
+     * Source-of-truth package map based on stable code values.
+     */
+    public const PACKAGE_MAP = [
+        'trial' => [
+            'name' => 'Trial',
+            'label' => 'Paket Trial',
+        ],
+        'ruby' => [
+            'name' => 'Ruby',
+            'label' => 'Paket Ruby',
+        ],
+        'sapphire' => [
+            'name' => 'Sapphire',
+            'label' => 'Paket Sapphire',
+        ],
+        'diamond' => [
+            'name' => 'Diamond',
+            'label' => 'Paket Diamond',
+        ],
+    ];
+
+    /**
      * Expose the rebranded package name to API responses without
      * touching the stored value (no migration / schema change).
      * These are display-only fields; backward-compatible fields like
@@ -38,8 +60,13 @@ class PaketUndangan extends Model
      *   - Trial                       => Trial
      * Unknown labels are returned as-is to avoid mangling future packages.
      */
-    public static function canonicalName(?string $rawName): ?string
+    public static function canonicalName(?string $rawName, ?string $code = null): ?string
     {
+        $normalizedCode = self::normalizeCode($code);
+        if ($normalizedCode !== null) {
+            return self::PACKAGE_MAP[$normalizedCode]['name'];
+        }
+
         if ($rawName === null || trim($rawName) === '') {
             return $rawName;
         }
@@ -62,8 +89,13 @@ class PaketUndangan extends Model
      * Stable lowercase tier code derived from the package name.
      * Useful for legacy records that have not been backfilled yet.
      */
-    public static function tierCode(?string $rawName): ?string
+    public static function tierCode(?string $rawName, ?string $code = null): ?string
     {
+        $normalizedCode = self::normalizeCode($code);
+        if ($normalizedCode !== null) {
+            return $normalizedCode;
+        }
+
         $canonical = self::canonicalName($rawName);
 
         if ($canonical === null || trim($canonical) === '') {
@@ -77,9 +109,64 @@ class PaketUndangan extends Model
         return strtolower(preg_replace('/\s+/', '-', trim($canonical)));
     }
 
+    public static function displayLabelFromCode(?string $code, ?string $fallbackRaw = null): ?string
+    {
+        $normalizedCode = self::normalizeCode($code);
+        if ($normalizedCode !== null) {
+            return self::PACKAGE_MAP[$normalizedCode]['label'];
+        }
+
+        if ($fallbackRaw === null) {
+            return null;
+        }
+
+        $canonical = self::canonicalName($fallbackRaw);
+        if (in_array($canonical, ['Ruby', 'Sapphire', 'Diamond', 'Trial'], true)) {
+            return 'Paket ' . $canonical;
+        }
+
+        return $fallbackRaw;
+    }
+
+    public static function shortNameFromCode(?string $code, ?string $fallbackRaw = null): ?string
+    {
+        $normalizedCode = self::normalizeCode($code);
+        if ($normalizedCode !== null) {
+            return self::PACKAGE_MAP[$normalizedCode]['name'];
+        }
+
+        return self::canonicalName($fallbackRaw);
+    }
+
+    public static function jenisPaketFromCode(?string $code, ?string $fallbackRaw = null): ?string
+    {
+        return self::displayLabelFromCode($code, $fallbackRaw);
+    }
+
+    private static function normalizeCode(?string $code): ?string
+    {
+        if (! is_string($code) || trim($code) === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim($code));
+
+        return array_key_exists($normalized, self::PACKAGE_MAP) ? $normalized : null;
+    }
+
     public function getNamePaketOriginalAttribute(): ?string
     {
-        return $this->name_paket ?? null;
+        return $this->getRawOriginal('name_paket');
+    }
+
+    public function getJenisPaketAttribute($value): ?string
+    {
+        return self::jenisPaketFromCode($this->code, $value);
+    }
+
+    public function getNamePaketAttribute($value): ?string
+    {
+        return self::displayLabelFromCode($this->code, $value);
     }
 
     public function getNameAttribute(): ?string
@@ -89,24 +176,17 @@ class PaketUndangan extends Model
 
     public function getNamePaketDisplayAttribute(): ?string
     {
-        return self::canonicalName($this->name_paket ?? null);
+        return self::shortNameFromCode($this->code, $this->name_paket ?? null);
     }
 
     public function getPackageTierAttribute(): ?string
     {
-        return $this->code ?: self::tierCode($this->name_paket ?? null);
+        return self::tierCode($this->name_paket ?? null, $this->code);
     }
 
     public function getDisplayLabelAttribute(): ?string
     {
-        $raw = $this->name_paket ?? null;
-        $canonical = self::canonicalName($raw);
-
-        if (in_array($canonical, ['Ruby', 'Sapphire', 'Diamond', 'Trial'], true)) {
-            return 'Paket ' . $canonical;
-        }
-
-        return $raw;
+        return self::displayLabelFromCode($this->code, $this->name_paket ?? null);
     }
 
     public function invitations() {

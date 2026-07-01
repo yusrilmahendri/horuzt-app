@@ -6,6 +6,7 @@ use App\Http\Requests\Profile\ChangePasswordRequest;
 use App\Http\Requests\Profile\UpdateProfileRequest;
 use App\Http\Requests\Profile\UploadPhotoRequest;
 use App\Http\Resources\User\UserResource;
+use App\Models\PaketUndangan;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -248,16 +249,28 @@ class ProfileController extends Controller
         $invitation = $user->invitationOne;
         $package = $invitation->paketUndangan;
 
-        // Use snapshot data if available (for price protection)
-        $packageName = $invitation->package_features_snapshot['name_paket'] ?? $package->name_paket;
+        // Use code as source of truth for package naming.
+        $snapshot = is_array($invitation->package_features_snapshot)
+            ? $invitation->package_features_snapshot
+            : [];
+        $packageCode = $package->code
+            ?? $snapshot['code']
+            ?? PaketUndangan::tierCode($snapshot['name_paket'] ?? $snapshot['jenis_paket'] ?? null);
+        $packageName = PaketUndangan::displayLabelFromCode(
+            $packageCode,
+            $snapshot['name_paket'] ?? $package->name_paket
+        );
         $packagePrice = $invitation->package_price_snapshot ?? $package->price;
 
         return [
             'id' => $package->id,
             'name' => $packageName,
-            'code' => $package->code,
-            'name_display' => $package->name_paket_display,
-            'jenis_paket' => $invitation->package_features_snapshot['jenis_paket'] ?? $package->jenis_paket,
+            'code' => $packageCode,
+            'name_display' => PaketUndangan::displayLabelFromCode($packageCode, $package->name_paket),
+            'jenis_paket' => PaketUndangan::jenisPaketFromCode(
+                $packageCode,
+                $snapshot['jenis_paket'] ?? $package->jenis_paket
+            ),
             'price' => $packagePrice,
             'currency' => 'IDR',
             'payment_status' => $invitation->payment_status,

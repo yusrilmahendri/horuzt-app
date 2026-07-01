@@ -8,6 +8,7 @@ use App\Models\Galery;
 use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\MetodeTransaction;
+use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\Request;
@@ -83,12 +84,19 @@ class InvitationController extends Controller
                 $trialDays = $trialConfig ? $trialConfig->trial_masa_aktif : 3;
 
                 // Get package details
-                $paketUndangan = \App\Models\PaketUndangan::find($validated['paket_undangan_id']);
+                $paketUndangan = PaketUndangan::find($validated['paket_undangan_id']);
                 if (!$paketUndangan) {
                     return response()->json([
                         'message' => 'Paket undangan tidak ditemukan',
                     ], 422);
                 }
+
+                Log::info('One-step invitation package selected', [
+                    'selected_package_id' => $paketUndangan->id,
+                    'selected_package_code' => $paketUndangan->code,
+                    'selected_package_name_paket' => PaketUndangan::displayLabelFromCode($paketUndangan->code, $paketUndangan->name_paket),
+                    'selected_package_jenis_paket' => PaketUndangan::jenisPaketFromCode($paketUndangan->code, $paketUndangan->jenis_paket),
+                ]);
 
                 // Package codes are stable; labels and prices may change over time.
                 $isTrialPackage = $paketUndangan->code === 'trial';
@@ -143,16 +151,7 @@ class InvitationController extends Controller
                             // Capture package snapshot to preserve original terms
                             'package_price_snapshot' => $paketUndangan->price,
                             'package_duration_snapshot' => $paketUndangan->masa_aktif,
-                            'package_features_snapshot' => [
-                                'jenis_paket' => $paketUndangan->jenis_paket,
-                                'name_paket' => $paketUndangan->name_paket,
-                                'halaman_buku' => $paketUndangan->halaman_buku,
-                                'kirim_wa' => $paketUndangan->kirim_wa,
-                                'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
-                                'kirim_hadiah' => $paketUndangan->kirim_hadiah,
-                                'import_data' => $paketUndangan->import_data,
-                                'snapshot_at' => now()->toISOString()
-                            ]
+                            'package_features_snapshot' => $this->buildPackageSnapshot($paketUndangan)
                         ]
                     );
 
@@ -215,16 +214,7 @@ class InvitationController extends Controller
                                 // Capture package snapshot to preserve original terms
                                 'package_price_snapshot' => $paketUndangan->price,
                                 'package_duration_snapshot' => $paketUndangan->masa_aktif,
-                                'package_features_snapshot' => [
-                                    'jenis_paket' => $paketUndangan->jenis_paket,
-                                    'name_paket' => $paketUndangan->name_paket,
-                                    'halaman_buku' => $paketUndangan->halaman_buku,
-                                    'kirim_wa' => $paketUndangan->kirim_wa,
-                                    'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
-                                    'kirim_hadiah' => $paketUndangan->kirim_hadiah,
-                                    'import_data' => $paketUndangan->import_data,
-                                    'snapshot_at' => now()->toISOString()
-                                ]
+                                'package_features_snapshot' => $this->buildPackageSnapshot($paketUndangan)
                             ]
                         );
 
@@ -278,16 +268,7 @@ class InvitationController extends Controller
                         // Capture package snapshot to preserve original terms
                         'package_price_snapshot' => $paketUndangan->price,
                         'package_duration_snapshot' => $paketUndangan->masa_aktif,
-                        'package_features_snapshot' => [
-                            'jenis_paket' => $paketUndangan->jenis_paket,
-                            'name_paket' => $paketUndangan->name_paket,
-                            'halaman_buku' => $paketUndangan->halaman_buku,
-                            'kirim_wa' => $paketUndangan->kirim_wa,
-                            'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
-                            'kirim_hadiah' => $paketUndangan->kirim_hadiah,
-                            'import_data' => $paketUndangan->import_data,
-                            'snapshot_at' => now()->toISOString()
-                        ]
+                        'package_features_snapshot' => $this->buildPackageSnapshot($paketUndangan)
                     ]);
 
                     return response()->json([
@@ -578,6 +559,21 @@ class InvitationController extends Controller
             'data'    => $savedCerita,
             'message' => 'Step 4 berhasil disimpan',
         ]);
+    }
+
+    private function buildPackageSnapshot(PaketUndangan $paketUndangan): array
+    {
+        return [
+            'code' => $paketUndangan->code,
+            'jenis_paket' => PaketUndangan::jenisPaketFromCode($paketUndangan->code, $paketUndangan->jenis_paket),
+            'name_paket' => PaketUndangan::displayLabelFromCode($paketUndangan->code, $paketUndangan->name_paket),
+            'halaman_buku' => $paketUndangan->halaman_buku,
+            'kirim_wa' => $paketUndangan->kirim_wa,
+            'bebas_pilih_tema' => $paketUndangan->bebas_pilih_tema,
+            'kirim_hadiah' => $paketUndangan->kirim_hadiah,
+            'import_data' => $paketUndangan->import_data,
+            'snapshot_at' => now()->toISOString(),
+        ];
     }
 
 }

@@ -139,14 +139,29 @@ class WeddingProfileResource extends JsonResource
         $paketUndangan = $invitation->paketUndangan ? [
             'id' => $invitation->paketUndangan->id,
             'code' => $invitation->paketUndangan->code,
-            'jenis_paket' => $invitation->paketUndangan->jenis_paket,
+            'jenis_paket' => \App\Models\PaketUndangan::jenisPaketFromCode(
+                $invitation->paketUndangan->code,
+                $invitation->paketUndangan->jenis_paket
+            ),
             // Keep original value for backward compatibility, expose rebranded fields alongside.
             'name_paket' => $invitation->paketUndangan->name_paket,
-            'name_paket_original' => $invitation->paketUndangan->name_paket,
-            'name_paket_display' => \App\Models\PaketUndangan::canonicalName($invitation->paketUndangan->name_paket),
-            'name_display' => $invitation->paketUndangan->name_paket_display,
-            'package_tier' => \App\Models\PaketUndangan::tierCode($invitation->paketUndangan->name_paket),
-            'display_label' => $invitation->paketUndangan->display_label,
+            'name_paket_original' => $invitation->paketUndangan->name_paket_original,
+            'name_paket_display' => \App\Models\PaketUndangan::shortNameFromCode(
+                $invitation->paketUndangan->code,
+                $invitation->paketUndangan->name_paket
+            ),
+            'name_display' => \App\Models\PaketUndangan::displayLabelFromCode(
+                $invitation->paketUndangan->code,
+                $invitation->paketUndangan->name_paket
+            ),
+            'package_tier' => \App\Models\PaketUndangan::tierCode(
+                $invitation->paketUndangan->name_paket,
+                $invitation->paketUndangan->code
+            ),
+            'display_label' => \App\Models\PaketUndangan::displayLabelFromCode(
+                $invitation->paketUndangan->code,
+                $invitation->paketUndangan->name_paket
+            ),
             'price' => $invitation->paketUndangan->price,
             'masa_aktif' => $invitation->paketUndangan->masa_aktif,
             'features' => [
@@ -267,7 +282,7 @@ class WeddingProfileResource extends JsonResource
             return [
                 'id' => $gallery->id,
                 'photo' => $gallery->photo,
-                'photo_url' => $gallery->photo ? asset('storage/'.$gallery->photo) : null,
+                'photo_url' => $gallery->photo_url,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,

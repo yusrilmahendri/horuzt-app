@@ -56,8 +56,9 @@ class PackageUpgradeController extends Controller
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
-                    'jenis_paket' => $newPackage->jenis_paket,
-                    'name_paket' => $newPackage->name_paket,
+                    'code' => $newPackage->code,
+                    'jenis_paket' => PaketUndangan::jenisPaketFromCode($newPackage->code, $newPackage->jenis_paket),
+                    'name_paket' => PaketUndangan::displayLabelFromCode($newPackage->code, $newPackage->name_paket),
                     'halaman_buku' => $newPackage->halaman_buku,
                     'kirim_wa' => $newPackage->kirim_wa,
                     'bebas_pilih_tema' => $newPackage->bebas_pilih_tema,
@@ -147,8 +148,14 @@ class PackageUpgradeController extends Controller
             'data' => $packages,
             'current_package_id' => $currentPackageId,
             'current_package_name' => $snapshot['name_paket'] ?? null,
-            'current_package_name_display' => PaketUndangan::canonicalName($snapshot['name_paket'] ?? null),
-            'current_package_tier' => PaketUndangan::tierCode($snapshot['name_paket'] ?? null),
+            'current_package_name_display' => PaketUndangan::displayLabelFromCode(
+                $snapshot['code'] ?? null,
+                $snapshot['name_paket'] ?? null
+            ),
+            'current_package_tier' => PaketUndangan::tierCode(
+                $snapshot['name_paket'] ?? null,
+                $snapshot['code'] ?? null
+            ),
             'invitation_id' => $invitation?->id,
             'payment_status' => $invitation?->payment_status,
             'is_trial' => $isTrial,
@@ -212,8 +219,9 @@ class PackageUpgradeController extends Controller
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
-                    'jenis_paket' => $newPackage->jenis_paket,
-                    'name_paket' => $newPackage->name_paket,
+                    'code' => $newPackage->code,
+                    'jenis_paket' => PaketUndangan::jenisPaketFromCode($newPackage->code, $newPackage->jenis_paket),
+                    'name_paket' => PaketUndangan::displayLabelFromCode($newPackage->code, $newPackage->name_paket),
                     'halaman_buku' => $newPackage->halaman_buku,
                     'kirim_wa' => $newPackage->kirim_wa,
                     'bebas_pilih_tema' => $newPackage->bebas_pilih_tema,

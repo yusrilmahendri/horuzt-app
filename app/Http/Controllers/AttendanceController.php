@@ -2,11 +2,13 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Setting;
 use App\Models\Ucapan;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Validation\ValidationException;
+use Illuminate\Support\Facades\Log;
 
 class AttendanceController extends Controller
 {
@@ -18,13 +20,13 @@ class AttendanceController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id' => 'required|integer|exists:users,id',
+                'domain' => 'required|string|max:255',
+                'user_id' => 'nullable',
                 'nama' => 'required|string|max:255',
                 'kehadiran' => 'required|in:hadir,tidak_hadir,mungkin',
                 'pesan' => 'required|string|max:1000',
             ], [
-                'user_id.required' => 'User ID wajib diisi.',
-                'user_id.exists' => 'User tidak ditemukan.',
+                'domain.required' => 'Domain undangan wajib diisi.',
                 'nama.required' => 'Nama wajib diisi.',
                 'nama.max' => 'Nama tidak boleh lebih dari 255 karakter.',
                 'kehadiran.required' => 'Status kehadiran wajib dipilih.',
@@ -33,7 +35,33 @@ class AttendanceController extends Controller
                 'pesan.max' => 'Ucapan tidak boleh lebih dari 1000 karakter.',
             ]);
 
-            $attendance = Ucapan::create($validated);
+            $domain = trim((string) $validated['domain']);
+            $ownerUserId = $this->resolveOwnerUserIdByDomain($domain);
+            if ($ownerUserId === null) {
+                return response()->json([
+                    'message' => 'Undangan tidak ditemukan.',
+                ], 404);
+            }
+
+            if (! User::query()->whereKey($ownerUserId)->exists()) {
+                return response()->json([
+                    'message' => 'Data pemilik undangan tidak valid.',
+                ], 422);
+            }
+
+            $attendance = Ucapan::create([
+                'user_id' => $ownerUserId,
+                'nama' => $validated['nama'],
+                'kehadiran' => $validated['kehadiran'],
+                'pesan' => $validated['pesan'],
+            ]);
+
+            Log::info('[PublicUcapanOwnerResolved]', [
+                'domain' => $domain,
+                'owner_user_id' => $ownerUserId,
+                'payload_user_id' => $request->input('user_id'),
+                'created_ucapan_id' => $attendance->id ?? null,
+            ]);
 
             return response()->json([
                 'message' => 'Konfirmasi kehadiran berhasil disimpan!',
@@ -58,6 +86,23 @@ class AttendanceController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    private function resolveOwnerUserIdByDomain(string $domain): ?int
+    {
+        if ($domain === '') {
+            return null;
+        }
+
+        $setting = Setting::query()
+            ->whereRaw('LOWER(domain) = ?', [strtolower($domain)])
+            ->first();
+
+        if (! $setting || ! $setting->user_id) {
+            return null;
+        }
+
+        return (int) $setting->user_id;
     }
 
     /**

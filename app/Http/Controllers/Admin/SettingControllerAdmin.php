@@ -183,7 +183,8 @@ class SettingControllerAdmin extends Controller
 
         DB::transaction(function () use ($request, $paket) {
             $paket->update([
-                'name_paket'       => $request->name_paket,
+                'name_paket'       => \App\Models\PaketUndangan::displayLabelFromCode($paket->code, $request->name_paket),
+                'jenis_paket'      => \App\Models\PaketUndangan::jenisPaketFromCode($paket->code, $paket->jenis_paket),
                 'price'            => $request->price,
                 'masa_aktif'       => $request->masa_aktif,
                 'halaman_buku'     => $request->halaman_buku,

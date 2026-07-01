@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
+use Illuminate\Support\Facades\Storage;
 
 class Galery extends Model
 {
@@ -24,6 +25,10 @@ class Galery extends Model
      */
     public function getPhotoUrlAttribute()
     {
-        return $this->photo ? asset('storage/' . $this->photo) : null;
+        if (! $this->photo || ! Storage::disk('public')->exists($this->photo)) {
+            return null;
+        }
+
+        return asset('storage/' . $this->photo);
     }
 }

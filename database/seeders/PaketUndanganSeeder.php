@@ -14,8 +14,8 @@ class PaketUndanganSeeder extends Seeder
     {
         $packages = [
             'trial' => [
-                'jenis_paket' => 'Paket Trial',
-                'name_paket' => 'Paket Trial',
+                'jenis_paket' => PaketUndangan::jenisPaketFromCode('trial'),
+                'name_paket' => PaketUndangan::displayLabelFromCode('trial'),
                 'price' => 0,
                 'masa_aktif' => 3,
                 'halaman_buku' => 0,
@@ -25,8 +25,8 @@ class PaketUndanganSeeder extends Seeder
                 'import_data' => false,
             ],
             'ruby' => [
-                'jenis_paket' => 'Paket Ruby',
-                'name_paket' => 'Paket Ruby',
+                'jenis_paket' => PaketUndangan::jenisPaketFromCode('ruby'),
+                'name_paket' => PaketUndangan::displayLabelFromCode('ruby'),
                 'price' => 99000,
                 'masa_aktif' => 30,
                 'halaman_buku' => 50,
@@ -36,8 +36,8 @@ class PaketUndanganSeeder extends Seeder
                 'import_data' => true,
             ],
             'sapphire' => [
-                'jenis_paket' => 'Paket Sapphire',
-                'name_paket' => 'Paket Sapphire',
+                'jenis_paket' => PaketUndangan::jenisPaketFromCode('sapphire'),
+                'name_paket' => PaketUndangan::displayLabelFromCode('sapphire'),
                 'price' => 199000,
                 'masa_aktif' => 60,
                 'halaman_buku' => 100,
@@ -47,8 +47,8 @@ class PaketUndanganSeeder extends Seeder
                 'import_data' => true,
             ],
             'diamond' => [
-                'jenis_paket' => 'Paket Diamond',
-                'name_paket' => 'Paket Diamond',
+                'jenis_paket' => PaketUndangan::jenisPaketFromCode('diamond'),
+                'name_paket' => PaketUndangan::displayLabelFromCode('diamond'),
                 'price' => 299000,
                 'masa_aktif' => 90,
                 'halaman_buku' => 200,
