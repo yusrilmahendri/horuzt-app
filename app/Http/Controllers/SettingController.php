@@ -7,6 +7,7 @@ use App\Models\Invitation;
 use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\DomainService;
 use App\Services\MusicStreamService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -16,11 +17,13 @@ use Illuminate\Support\Facades\Storage;
 class SettingController extends Controller
 {
     protected MusicStreamService $musicStreamService;
+    protected DomainService $domainService;
 
-    public function __construct(MusicStreamService $musicStreamService)
+    public function __construct(MusicStreamService $musicStreamService, DomainService $domainService)
     {
         $this->middleware('auth:sanctum');
         $this->musicStreamService = $musicStreamService;
+        $this->domainService = $domainService;
     }
 
     public function index()
@@ -61,6 +64,48 @@ class SettingController extends Controller
             'domain' => 'nullable|string|max:255',
             'token'  => 'nullable|string|max:255',
         ]);
+
+        if (array_key_exists('domain', $validatedData) && $validatedData['domain'] !== null) {
+            $normalizedDomain = $this->domainService->normalizeToSlug((string) $validatedData['domain']);
+
+            if ($normalizedDomain === '') {
+                $this->domainService->logValidation(
+                    (int) $user->id,
+                    (string) $request->input('domain'),
+                    '',
+                    false,
+                    false,
+                    'invalid'
+                );
+                return response()->json([
+                    'message' => 'Domain wajib diisi dengan format slug yang valid.',
+                    'errors' => [
+                        'domain' => ['Domain wajib diisi dengan format slug yang valid.'],
+                    ],
+                ], 422);
+            }
+
+            $domainUsage = $this->domainService->checkDomainUsage($normalizedDomain, (int) $user->id);
+            $this->domainService->logValidation(
+                (int) $user->id,
+                (string) $request->input('domain'),
+                $normalizedDomain,
+                $domainUsage['exists_in_settings'],
+                $domainUsage['exists_in_invitations'],
+                $domainUsage['is_used'] ? 'duplicate' : 'available'
+            );
+
+            if ($domainUsage['is_used']) {
+                return response()->json([
+                    'message' => 'Domain undangan sudah digunakan.',
+                    'errors' => [
+                        'domain' => ['Domain undangan sudah digunakan.'],
+                    ],
+                ], 422);
+            }
+
+            $validatedData['domain'] = $normalizedDomain;
+        }
 
         $setting = Setting::updateOrCreate(
             ['user_id' => $user->id],

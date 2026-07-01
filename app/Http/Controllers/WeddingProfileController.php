@@ -3,16 +3,15 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\WeddingProfile\WeddingProfileResource;
-use App\Models\Invitation;
-use App\Models\Setting;
 use App\Models\User;
+use App\Services\DomainService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class WeddingProfileController extends Controller
 {
-    public function __construct()
+    public function __construct(private DomainService $domainService)
     {
         $this->middleware('auth:sanctum')->except(['publicProfile', 'publicProfileByDomain']);
     }
@@ -301,48 +300,11 @@ class WeddingProfileController extends Controller
 
     private function extractDomain(string $domain): string
     {
-        $domain = trim($domain);
-        $parsed = parse_url($domain);
-
-        if (is_array($parsed)) {
-            $path = trim((string) ($parsed['path'] ?? ''), '/');
-
-            if ($path !== '') {
-                $segments = explode('/', $path);
-                $candidate = trim((string) end($segments));
-
-                if ($candidate !== '') {
-                    return strtolower($candidate);
-                }
-            }
-
-            $parsedHost = trim((string) ($parsed['host'] ?? ''));
-            if ($parsedHost !== '') {
-                return strtolower($parsedHost);
-            }
-        }
-
-        return strtolower(trim($domain, '/'));
+        return $this->domainService->normalizeToSlug($domain);
     }
 
     private function resolveOwnerUserIdByDomain(string $domain): ?int
     {
-        if ($domain === '') {
-            return null;
-        }
-
-        $ownerUserId = Setting::query()
-            ->whereRaw('LOWER(domain) = ?', [$domain])
-            ->value('user_id');
-
-        if ($ownerUserId) {
-            return (int) $ownerUserId;
-        }
-
-        return Invitation::query()
-            ->whereHas('user.settingOne', function ($query) use ($domain) {
-                $query->whereRaw('LOWER(domain) = ?', [$domain]);
-            })
-            ->value('user_id');
+        return $this->domainService->resolveOwnerUserIdByDomain($domain);
     }
 }

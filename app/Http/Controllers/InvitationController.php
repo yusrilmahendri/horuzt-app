@@ -11,6 +11,7 @@ use App\Models\MetodeTransaction;
 use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\DomainService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Hash;
@@ -20,6 +21,10 @@ use Illuminate\Validation\ValidationException;
 
 class InvitationController extends Controller
 {
+    public function __construct(private DomainService $domainService)
+    {
+    }
+
     public function masterTagihan()
     {
         $data = MetodeTransaction::get();
@@ -70,6 +75,23 @@ class InvitationController extends Controller
                 'domain'             => 'required|string',
             ]);
 
+            $inputDomain = (string) ($validated['domain'] ?? '');
+            $normalizedDomain = $this->domainService->normalizeToSlug($inputDomain);
+            if ($normalizedDomain === '') {
+                $this->domainService->logValidation(
+                    Auth::guard('sanctum')->id(),
+                    $inputDomain,
+                    '',
+                    false,
+                    false,
+                    'invalid'
+                );
+                throw ValidationException::withMessages([
+                    'domain' => ['Domain wajib diisi dengan format slug yang valid.'],
+                ]);
+            }
+            $validated['domain'] = $normalizedDomain;
+
                 return DB::transaction(function () use ($validated, $request) {
 
                 $user = null;
@@ -117,8 +139,23 @@ class InvitationController extends Controller
                         $errors['email'][] = 'Email sudah digunakan oleh pengguna lain';
                     }
 
-                    if (Setting::where('domain', $validated['domain'])->where('user_id', '!=', $user->id)->exists()) {
-                        $errors['domain'][] = 'Domain sudah digunakan oleh pengguna lain';
+                    $domainUsage = $this->domainService->checkDomainUsage($validated['domain'], $user->id);
+                    $this->domainService->logValidation(
+                        $user->id,
+                        $request->input('domain'),
+                        $validated['domain'],
+                        $domainUsage['exists_in_settings'],
+                        $domainUsage['exists_in_invitations'],
+                        $domainUsage['is_used'] ? 'duplicate' : 'available'
+                    );
+
+                    if ($domainUsage['is_used']) {
+                        return response()->json([
+                            'message' => 'Domain undangan sudah digunakan.',
+                            'errors' => [
+                                'domain' => ['Domain undangan sudah digunakan.'],
+                            ],
+                        ], 422);
                     }
 
                     if (!empty($errors)) {
@@ -176,8 +213,23 @@ class InvitationController extends Controller
                             $errors['email'][] = 'Email sudah digunakan oleh pengguna lain';
                         }
 
-                        if (Setting::where('domain', $validated['domain'])->where('user_id', '!=', $authUser->id)->exists()) {
-                            $errors['domain'][] = 'Domain sudah digunakan oleh pengguna lain';
+                        $domainUsage = $this->domainService->checkDomainUsage($validated['domain'], $authUser->id);
+                        $this->domainService->logValidation(
+                            $authUser->id,
+                            $request->input('domain'),
+                            $validated['domain'],
+                            $domainUsage['exists_in_settings'],
+                            $domainUsage['exists_in_invitations'],
+                            $domainUsage['is_used'] ? 'duplicate' : 'available'
+                        );
+
+                        if ($domainUsage['is_used']) {
+                            return response()->json([
+                                'message' => 'Domain undangan sudah digunakan.',
+                                'errors' => [
+                                    'domain' => ['Domain undangan sudah digunakan.'],
+                                ],
+                            ], 422);
                         }
 
                         if (!empty($errors)) {
@@ -235,8 +287,26 @@ class InvitationController extends Controller
                     // New user - validate uniqueness
                     $request->validate([
                         'email'  => 'unique:users,email',
-                        'domain' => 'unique:settings,domain',
                     ]);
+
+                    $domainUsage = $this->domainService->checkDomainUsage($validated['domain'], null);
+                    $this->domainService->logValidation(
+                        null,
+                        $request->input('domain'),
+                        $validated['domain'],
+                        $domainUsage['exists_in_settings'],
+                        $domainUsage['exists_in_invitations'],
+                        $domainUsage['is_used'] ? 'duplicate' : 'available'
+                    );
+
+                    if ($domainUsage['is_used']) {
+                        return response()->json([
+                            'message' => 'Domain undangan sudah digunakan.',
+                            'errors' => [
+                                'domain' => ['Domain undangan sudah digunakan.'],
+                            ],
+                        ], 422);
+                    }
 
                     $user = User::create([
                         'email'          => $validated['email'],
