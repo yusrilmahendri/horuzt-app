@@ -11,7 +11,7 @@ class PackageThemeAccessSeeder extends Seeder
     public function run(): void
     {
         $access = [
-            'trial' => ['minimalis'],
+            'trial' => [],
             'ruby' => ['minimalis', 'floral'],
             'sapphire' => ['minimalis', 'floral', 'modern', 'elegant'],
             'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],

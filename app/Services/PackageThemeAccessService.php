@@ -13,6 +13,17 @@ use Illuminate\Support\Facades\Log;
 
 class PackageThemeAccessService
 {
+    /**
+     * Cumulative website category access by package tier.
+     * Higher tiers inherit all categories from lower tiers.
+     */
+    private const CUMULATIVE_CATEGORY_ACCESS = [
+        'trial' => [],
+        'ruby' => ['minimalis', 'floral'],
+        'sapphire' => ['minimalis', 'floral', 'modern', 'elegant'],
+        'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],
+    ];
+
     public function packageForUser(User $user): ?PaketUndangan
     {
         $invitations = Invitation::with('paketUndangan')
@@ -154,15 +165,84 @@ class PackageThemeAccessService
         // Query the pivot table directly so access checks stay correct even if
         // PDO/Eloquent hydrate ids as strings and strict comparisons would fail.
         $pivotExists = $this->packageHasThemeCategoryPivot($packageId, $themeCategoryId);
+        $resolvedTier = $this->resolvePackageTier($package);
+        $categorySlug = (string) ($theme->category->slug ?? '');
+        $cumulativeAllowed = $this->categoryAllowedByCumulativeMapping($package, $categorySlug);
+        $allowed = $pivotExists || $cumulativeAllowed;
+
+        $this->logCumulativeThemeAccess(
+            $package,
+            $resolvedTier,
+            $theme,
+            $categorySlug,
+            $allowed
+        );
 
         return $this->logThemeAccessDecision(
             $package,
             $theme,
             $themeCategoryId,
             $pivotExists,
-            $pivotExists,
-            $pivotExists ? 'pivot_match' : 'pivot_missing'
+            $allowed,
+            $allowed
+                ? ($pivotExists ? 'pivot_match' : 'cumulative_match')
+                : 'access_denied'
         );
+    }
+
+    public function resolvePackageTier(?PaketUndangan $package): ?string
+    {
+        if (! $package) {
+            return null;
+        }
+
+        $candidates = [
+            $package->code ?? null,
+            $package->package_tier ?? null,
+            PaketUndangan::tierCode($package->jenis_paket ?? null, $package->code ?? null),
+            PaketUndangan::tierCode($package->name_paket ?? null, $package->code ?? null),
+        ];
+
+        foreach ($candidates as $candidate) {
+            $tier = PaketUndangan::tierCode(is_string($candidate) ? $candidate : null);
+
+            if (in_array($tier, ['trial', 'ruby', 'sapphire', 'diamond'], true)) {
+                return $tier;
+            }
+        }
+
+        return null;
+    }
+
+    public function cumulativeCategorySlugsForPackage(?PaketUndangan $package): array
+    {
+        $tier = $this->resolvePackageTier($package);
+
+        if ($tier === null) {
+            return [];
+        }
+
+        return self::CUMULATIVE_CATEGORY_ACCESS[$tier] ?? [];
+    }
+
+    public function categoryAllowedByCumulativeMapping(?PaketUndangan $package, ?string $categorySlug): bool
+    {
+        $normalizedSlug = strtolower(trim((string) $categorySlug));
+
+        if ($normalizedSlug === '') {
+            return false;
+        }
+
+        return in_array($normalizedSlug, $this->cumulativeCategorySlugsForPackage($package), true);
+    }
+
+    public function packageUsesTierThemeCatalog(?PaketUndangan $package): bool
+    {
+        if (! $package || $this->usesLegacyThemeSelection($package)) {
+            return false;
+        }
+
+        return in_array($this->resolvePackageTier($package), ['ruby', 'sapphire', 'diamond'], true);
     }
 
     private function baseCategoryQueryForPackage(PaketUndangan $package)
@@ -170,6 +250,16 @@ class PackageThemeAccessService
         if ($this->usesLegacyThemeSelection($package)) {
             return CategoryThemas::query()
                 ->whereRaw('1 = 0');
+        }
+
+        $cumulativeSlugs = $this->cumulativeCategorySlugsForPackage($package);
+
+        if ($cumulativeSlugs !== []) {
+            return CategoryThemas::query()
+                ->active()
+                ->website()
+                ->ordered()
+                ->whereIn('slug', $cumulativeSlugs);
         }
 
         if ($this->packageHasCategoryPivot($package)) {
@@ -246,6 +336,23 @@ class PackageThemeAccessService
         ]);
 
         return $result;
+    }
+
+    private function logCumulativeThemeAccess(
+        ?PaketUndangan $package,
+        ?string $resolvedTier,
+        ?JenisThemas $theme,
+        string $categorySlug,
+        bool $allowed
+    ): void {
+        Log::info('[PackageThemeAccessCumulative]', [
+            'package_id' => (int) ($package?->id ?? 0),
+            'package_code' => $package?->code,
+            'resolved_tier' => $resolvedTier,
+            'theme_slug' => $theme?->slug,
+            'category_slug' => $categorySlug,
+            'allowed' => $allowed,
+        ]);
     }
 
     private function resolvePackageFromInvitation(Invitation $invitation): ?PaketUndangan

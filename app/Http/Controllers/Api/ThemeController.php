@@ -863,7 +863,11 @@ class ThemeController extends Controller
 
     private function applyThemeVisibilityFilter($query, PaketUndangan $package)
     {
-        if ($this->packageHasPivotAccess($package) || $this->packageAllowsAllThemesFallback($package)) {
+        if (
+            $this->themeAccess->packageUsesTierThemeCatalog($package)
+            || $this->packageHasPivotAccess($package)
+            || $this->packageAllowsAllThemesFallback($package)
+        ) {
             return $query;
         }
 
