@@ -24,14 +24,14 @@ class DatabaseSeeder extends Seeder
         $this->call(PaketNikahSeeder::class);
         $this->call(BankSeeder::class);
         // $this->call(OrderSeeder::class);
-        $this->call(PembayaranSeeder::class);
+        // $this->call(PembayaranSeeder::class);
         // $this->call(MempelaiSeeder::class);
         // $this->call(AcaraSeeder::class);
         // $this->call(PengunjungSeeder::class);
         // $this->call(QouteSeeder::class);
         // $this->call(PernikahanSeeder::class);
         // $this->call(ResultPernikahanSeeder::class);
-        $this->call(TestimoniSeeder::class);
+        // $this->call(TestimoniSeeder::class);
         // $this->call(BukuTamuSeeder::class);
         // $this->call(UcapanSeeder::class);
         $this->call(MetodeTransactionSeeder::class);
