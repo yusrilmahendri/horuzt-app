@@ -14,10 +14,10 @@ class AdminTableSeeder extends Seeder
     public function run()
     {
         $user = User::updateOrCreate(
-            ['email' => 'admin@gmail.com'],
+            ['email' => 'Zayyin.alfar1@gmail.com'],
             [
-                'name' => 'admin',
-                'password' => bcrypt('12345678'),
+                'name' => 'Admin',
+                'password' => bcrypt('zayyincs12'),
                 'email_verified_at' => now(),
             ]
         );
