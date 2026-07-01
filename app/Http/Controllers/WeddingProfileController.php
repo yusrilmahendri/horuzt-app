@@ -3,6 +3,8 @@
 namespace App\Http\Controllers;
 
 use App\Http\Resources\WeddingProfile\WeddingProfileResource;
+use App\Models\Invitation;
+use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -52,7 +54,7 @@ class WeddingProfileController extends Controller
             ])->findOrFail($userId);
 
             return response()->json([
-                'data' => new WeddingProfileResource($user),
+                'data' => new WeddingProfileResource($user, false, null, (int) $userId),
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -139,36 +141,19 @@ class WeddingProfileController extends Controller
     public function publicProfile(Request $request): JsonResponse
     {
         try {
-            $userId = null;
+            $domain = $this->extractDomain((string) $request->query('domain', ''));
 
-            // Check if accessing by user_id, domain, or couple nicknames
-            if ($request->has('user_id')) {
-                $userId = $request->get('user_id');
-            } elseif ($request->has('domain')) {
-                $domain = $request->get('domain');
-                $setting = \App\Models\Setting::where('domain', $domain)->first();
-                $userId = $setting?->user_id;
-            } elseif ($request->has('couple')) {
-                // Handle couple nicknames format: "anton-keok"
-                $coupleNames = $request->get('couple');
-                $names = explode('-', $coupleNames);
-
-                if (count($names) === 2) {
-                    $namaPria = trim($names[0]);
-                    $namaWanita = trim($names[1]);
-
-                    // Find user by matching both bride and groom nicknames
-                    $mempelai = \App\Models\Mempelai::where('name_panggilan_pria', $namaPria)
-                        ->where('name_panggilan_wanita', $namaWanita)
-                        ->first();
-
-                    $userId = $mempelai?->user_id;
-                }
+            if ($domain === '') {
+                return response()->json([
+                    'message' => 'Parameter domain wajib diisi.',
+                ], 422);
             }
 
-            if (! $userId) {
+            $ownerUserId = $this->resolveOwnerUserIdByDomain($domain);
+
+            if (! $ownerUserId) {
                 return response()->json([
-                    'message' => 'Wedding profile not found. Please check the URL parameters.',
+                    'message' => 'Wedding profile not found for this domain.',
                 ], 404);
             }
 
@@ -192,7 +177,7 @@ class WeddingProfileController extends Controller
                 'ucapan' => function ($query) {
                     $query->whereNotNull('user_id'); // Only user's own ucapan
                 },
-            ])->findOrFail($userId);
+            ])->findOrFail($ownerUserId);
 
             // Check if invitation is completed
             if ($user->invitationOne?->status !== 'step3') {
@@ -202,7 +187,7 @@ class WeddingProfileController extends Controller
             }
 
             return response()->json([
-                'data' => new WeddingProfileResource($user, true), // Pass true for public view
+                'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId), // Pass true for public view
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -226,17 +211,17 @@ class WeddingProfileController extends Controller
     {
         try {
             // Validate domain parameter
-            if (empty(trim($domain))) {
+            $domain = $this->extractDomain($domain);
+
+            if ($domain === '') {
                 return response()->json([
                     'message' => 'Domain parameter is required.',
                 ], 400);
             }
 
-            // Find setting by domain (case-insensitive)
-            $setting = \App\Models\Setting::whereRaw('LOWER(domain) = ?', [strtolower(trim($domain))])
-                ->first();
+            $ownerUserId = $this->resolveOwnerUserIdByDomain($domain);
 
-            if (! $setting || ! $setting->user_id) {
+            if (! $ownerUserId) {
                 return response()->json([
                     'message' => 'Wedding profile not found for this domain.',
                 ], 404);
@@ -262,7 +247,7 @@ class WeddingProfileController extends Controller
                 'ucapan' => function ($query) {
                     $query->whereNotNull('user_id'); // Only user's own ucapan
                 },
-            ])->findOrFail($setting->user_id);
+            ])->findOrFail($ownerUserId);
 
             // Check if invitation is completed
             if ($user->invitationOne?->status !== 'step3') {
@@ -281,7 +266,7 @@ class WeddingProfileController extends Controller
             if ($paymentStatus === 'MK') {
                 if ($invitation && $invitation->isDomainActive()) {
                     return response()->json([
-                        'data' => new WeddingProfileResource($user, true),
+                        'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId),
                     ], 200);
                 }
 
@@ -293,7 +278,7 @@ class WeddingProfileController extends Controller
             // SB (Sudah Bayar) = payment confirmed by admin, full access.
             if ($paymentStatus === 'SB') {
                 return response()->json([
-                    'data' => new WeddingProfileResource($user, true),
+                    'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId),
                 ], 200);
             }
 
@@ -312,5 +297,52 @@ class WeddingProfileController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    private function extractDomain(string $domain): string
+    {
+        $domain = trim($domain);
+        $parsed = parse_url($domain);
+
+        if (is_array($parsed)) {
+            $path = trim((string) ($parsed['path'] ?? ''), '/');
+
+            if ($path !== '') {
+                $segments = explode('/', $path);
+                $candidate = trim((string) end($segments));
+
+                if ($candidate !== '') {
+                    return strtolower($candidate);
+                }
+            }
+
+            $parsedHost = trim((string) ($parsed['host'] ?? ''));
+            if ($parsedHost !== '') {
+                return strtolower($parsedHost);
+            }
+        }
+
+        return strtolower(trim($domain, '/'));
+    }
+
+    private function resolveOwnerUserIdByDomain(string $domain): ?int
+    {
+        if ($domain === '') {
+            return null;
+        }
+
+        $ownerUserId = Setting::query()
+            ->whereRaw('LOWER(domain) = ?', [$domain])
+            ->value('user_id');
+
+        if ($ownerUserId) {
+            return (int) $ownerUserId;
+        }
+
+        return Invitation::query()
+            ->whereHas('user.settingOne', function ($query) use ($domain) {
+                $query->whereRaw('LOWER(domain) = ?', [$domain]);
+            })
+            ->value('user_id');
     }
 }

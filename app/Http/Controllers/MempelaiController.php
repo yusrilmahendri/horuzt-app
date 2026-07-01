@@ -23,9 +23,16 @@ class MempelaiController extends Controller
 
     private function transformPhotoUrls($mempelai)
     {
-        $mempelai->photo_pria = $mempelai->photo_pria ? url('storage/' . $mempelai->photo_pria) : null;
-        $mempelai->photo_wanita = $mempelai->photo_wanita ? url('storage/' . $mempelai->photo_wanita) : null;
-        $mempelai->cover_photo = $mempelai->cover_photo ? url('storage/' . $mempelai->cover_photo) : null;
+        $photoPriaUrl = $this->publicStorageUrl($mempelai->photo_pria);
+        $photoWanitaUrl = $this->publicStorageUrl($mempelai->photo_wanita);
+        $coverPhotoUrl = $this->publicStorageUrl($mempelai->cover_photo);
+
+        $mempelai->photo_pria = $photoPriaUrl;
+        $mempelai->photo_wanita = $photoWanitaUrl;
+        $mempelai->cover_photo = $coverPhotoUrl;
+        $mempelai->photo_pria_url = $photoPriaUrl;
+        $mempelai->photo_wanita_url = $photoWanitaUrl;
+        $mempelai->cover_photo_url = $coverPhotoUrl;
 
         return $mempelai;
     }
@@ -265,6 +272,42 @@ class MempelaiController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function normalizeStoragePath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        $path = preg_replace('#^https?://[^/]+/storage/#', '', $path);
+        $path = preg_replace('#^/storage/#', '', $path);
+        $path = preg_replace('#^storage/#', '', $path);
+        $path = ltrim($path, '/');
+
+        return $path ?: null;
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        $cleanPath = $this->normalizeStoragePath($path);
+
+        if (! $cleanPath) {
+            return null;
+        }
+
+        if (! Storage::disk('public')->exists($cleanPath)) {
+            Log::warning('[MissingImageFile]', [
+                'original_path' => $path,
+                'clean_path' => $cleanPath,
+            ]);
+
+            return null;
+        }
+
+        return Storage::disk('public')->url($cleanPath);
     }
 
 

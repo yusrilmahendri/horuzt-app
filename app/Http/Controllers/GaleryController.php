@@ -4,7 +4,9 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Galery;
-use Illuminate\Support\Facades\Auth;
+use App\Models\Invitation;
+use App\Models\Setting;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class GaleryController extends Controller
@@ -31,7 +33,8 @@ class GaleryController extends Controller
             ], 422);
         }
 
-        $userId = Auth::id();
+        $user = $request->user();
+        $userId = $user?->id;
         $photoPath = null;
 
         // Proses upload photo jika ada
@@ -53,7 +56,9 @@ class GaleryController extends Controller
                     'id' => $galery->id,
                     'user_id' => $galery->user_id,
                     'photo' => $galery->photo,
-                    'photo_url' => $galery->photo_url,
+                    'photo_url' => $this->publicStorageUrl($galery->photo),
+                    'image_url' => $this->publicStorageUrl($galery->photo),
+                    'preview_url' => $this->publicStorageUrl($galery->photo),
                     'url_video' => $galery->url_video,
                     'nama_foto' => $galery->nama_foto,
                     'status' => $galery->status,
@@ -73,8 +78,8 @@ class GaleryController extends Controller
      */
     public function index(Request $request)
     {
-        $userId = Auth::id();
-        $query = Galery::where('user_id', $userId);
+        $user = $request->user();
+        $query = Galery::where('user_id', $user->id);
 
         // Filter by status if provided
         if ($request->has('status')) {
@@ -87,11 +92,29 @@ class GaleryController extends Controller
 
         // Transform data to ensure photo_url is included
         $galleries->getCollection()->transform(function ($gallery) {
+            $rawPath = $gallery->photo;
+            $cleanPath = $this->normalizeStoragePath($rawPath);
+            $imageUrl = $this->publicStorageUrl($rawPath);
+            $exists = $cleanPath ? Storage::disk('public')->exists($cleanPath) : false;
+
+            Log::info('[GalleryImageScopeDebug]', [
+                'context' => 'dashboard',
+                'auth_user_id' => request()->user()->id ?? null,
+                'domain' => null,
+                'owner_user_id' => request()->user()->id ?? null,
+                'raw_path' => $rawPath,
+                'clean_path' => $cleanPath,
+                'image_url' => $imageUrl,
+                'exists' => $exists,
+            ]);
+
             return [
                 'id' => $gallery->id,
                 'user_id' => $gallery->user_id,
                 'photo' => $gallery->photo,
-                'photo_url' => $gallery->photo_url,
+                'photo_url' => $imageUrl,
+                'image_url' => $imageUrl,
+                'preview_url' => $imageUrl,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,
@@ -115,19 +138,27 @@ class GaleryController extends Controller
     }
 
     /**
-     * Public endpoint - List galery by user_id for wedding invitation display
-     * Query params: user_id (required), status (optional), per_page (optional)
+     * Public endpoint - List gallery by domain for wedding invitation display
+     * Query params: domain (required), status (optional), per_page (optional)
      */
     public function publicIndex(Request $request)
     {
         $validated = $request->validate([
-            'user_id' => 'required|integer|exists:users,id',
+            'domain' => 'required|string|max:255',
             'status' => 'nullable|in:0,1',
             'per_page' => 'nullable|integer|min:1|max:100',
         ]);
 
-        $userId = $validated['user_id'];
-        $query = Galery::where('user_id', $userId);
+        $domain = $this->extractDomain($validated['domain']);
+        $ownerUserId = $this->resolveOwnerUserIdByDomain($domain);
+
+        if (! $ownerUserId) {
+            return response()->json([
+                'message' => 'Wedding profile not found for this domain.',
+            ], 404);
+        }
+
+        $query = Galery::where('user_id', $ownerUserId);
 
         // Filter by status. For the public wedding view, default to active (status = 1)
         // when the caller does not explicitly request a status.
@@ -143,11 +174,29 @@ class GaleryController extends Controller
 
         // Transform data to ensure photo_url is included
         $galleries->getCollection()->transform(function ($gallery) {
+            $rawPath = $gallery->photo;
+            $cleanPath = $this->normalizeStoragePath($rawPath);
+            $imageUrl = $this->publicStorageUrl($rawPath);
+            $exists = $cleanPath ? Storage::disk('public')->exists($cleanPath) : false;
+
+            Log::info('[GalleryImageScopeDebug]', [
+                'context' => 'public',
+                'auth_user_id' => request()->user()->id ?? null,
+                'domain' => request()->query('domain'),
+                'owner_user_id' => $gallery->user_id,
+                'raw_path' => $rawPath,
+                'clean_path' => $cleanPath,
+                'image_url' => $imageUrl,
+                'exists' => $exists,
+            ]);
+
             return [
                 'id' => $gallery->id,
                 'user_id' => $gallery->user_id,
                 'photo' => $gallery->photo,
-                'photo_url' => $gallery->photo_url,
+                'photo_url' => $imageUrl,
+                'image_url' => $imageUrl,
+                'preview_url' => $imageUrl,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,
@@ -183,18 +232,29 @@ class GaleryController extends Controller
         }
 
         // Ownership check: only allow deleting the authenticated user's own gallery item.
-        $galery = Galery::where('id', $id)
-            ->where('user_id', Auth::id())
-            ->first();
-        if (!$galery) {
+        $galery = Galery::where('id', $id)->first();
+
+        if (! $galery) {
             return response()->json([
                 'message' => 'Galery tidak ditemukan.'
             ], 404);
         }
 
+        if ((int) $galery->user_id !== (int) $request->user()->id) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses untuk menghapus galery ini.'
+            ], 403);
+        }
+
+        $galery = Galery::where('id', $id)
+            ->where('user_id', $request->user()->id)
+            ->firstOrFail();
+
         // Hapus file foto dari storage jika ada
-        if ($galery->photo && Storage::disk('public')->exists($galery->photo)) {
-            Storage::disk('public')->delete($galery->photo);
+        $cleanPath = $this->normalizeStoragePath($galery->photo);
+
+        if ($cleanPath && Storage::disk('public')->exists($cleanPath)) {
+            Storage::disk('public')->delete($cleanPath);
         }
 
         $galery->delete();
@@ -202,5 +262,88 @@ class GaleryController extends Controller
         return response()->json([
             'message' => 'Galery berhasil dihapus.'
         ]);
+    }
+
+    private function extractDomain(string $domain): string
+    {
+        $domain = trim($domain);
+        $parsed = parse_url($domain);
+
+        if (is_array($parsed)) {
+            $path = trim((string) ($parsed['path'] ?? ''), '/');
+
+            if ($path !== '') {
+                $segments = explode('/', $path);
+                $candidate = trim((string) end($segments));
+
+                if ($candidate !== '') {
+                    return strtolower($candidate);
+                }
+            }
+
+            $parsedHost = trim((string) ($parsed['host'] ?? ''));
+            if ($parsedHost !== '') {
+                return strtolower($parsedHost);
+            }
+        }
+
+        return strtolower(trim($domain, '/'));
+    }
+
+    private function resolveOwnerUserIdByDomain(string $domain): ?int
+    {
+        if ($domain === '') {
+            return null;
+        }
+
+        $ownerUserId = Setting::query()
+            ->whereRaw('LOWER(domain) = ?', [$domain])
+            ->value('user_id');
+
+        if ($ownerUserId) {
+            return (int) $ownerUserId;
+        }
+
+        return Invitation::query()
+            ->whereHas('user.settingOne', function ($query) use ($domain) {
+                $query->whereRaw('LOWER(domain) = ?', [$domain]);
+            })
+            ->value('user_id');
+    }
+
+    private function normalizeStoragePath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        $path = preg_replace('#^https?://[^/]+/storage/#', '', $path);
+        $path = preg_replace('#^/storage/#', '', $path);
+        $path = preg_replace('#^storage/#', '', $path);
+        $path = ltrim($path, '/');
+
+        return $path ?: null;
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        $cleanPath = $this->normalizeStoragePath($path);
+
+        if (! $cleanPath) {
+            return null;
+        }
+
+        if (! Storage::disk('public')->exists($cleanPath)) {
+            Log::warning('[MissingImageFile]', [
+                'original_path' => $path,
+                'clean_path' => $cleanPath,
+            ]);
+
+            return null;
+        }
+
+        return Storage::disk('public')->url($cleanPath);
     }
 }

@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use App\Models\User;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class Galery extends Model
@@ -25,10 +26,37 @@ class Galery extends Model
      */
     public function getPhotoUrlAttribute()
     {
-        if (! $this->photo || ! Storage::disk('public')->exists($this->photo)) {
+        $cleanPath = $this->normalizeStoragePath($this->photo);
+
+        if (! $cleanPath) {
             return null;
         }
 
-        return asset('storage/' . $this->photo);
+        if (! Storage::disk('public')->exists($cleanPath)) {
+            Log::warning('[MissingImageFile]', [
+                'original_path' => $this->photo,
+                'clean_path' => $cleanPath,
+            ]);
+
+            return null;
+        }
+
+        return Storage::disk('public')->url($cleanPath);
+    }
+
+    private function normalizeStoragePath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        $path = preg_replace('#^https?://[^/]+/storage/#', '', $path);
+        $path = preg_replace('#^/storage/#', '', $path);
+        $path = preg_replace('#^storage/#', '', $path);
+        $path = ltrim($path, '/');
+
+        return $path ?: null;
     }
 }

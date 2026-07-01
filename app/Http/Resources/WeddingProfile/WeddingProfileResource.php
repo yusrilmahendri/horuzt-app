@@ -4,15 +4,21 @@ namespace App\Http\Resources\WeddingProfile;
 
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class WeddingProfileResource extends JsonResource
 {
     protected $isPublicView;
+    protected ?string $domainContext;
+    protected ?int $ownerUserIdContext;
 
-    public function __construct($resource, $isPublicView = false)
+    public function __construct($resource, $isPublicView = false, ?string $domainContext = null, ?int $ownerUserIdContext = null)
     {
         parent::__construct($resource);
         $this->isPublicView = $isPublicView;
+        $this->domainContext = $domainContext;
+        $this->ownerUserIdContext = $ownerUserIdContext;
     }
 
     /**
@@ -87,19 +93,28 @@ class WeddingProfileResource extends JsonResource
             return null;
         }
 
+        $coverPhotoUrl = $this->publicStorageUrl($this->mempelaiOne->cover_photo);
+        $photoPriaUrl = $this->publicStorageUrl($this->mempelaiOne->photo_pria);
+        $photoWanitaUrl = $this->publicStorageUrl($this->mempelaiOne->photo_wanita);
+
         return [
             'id' => $this->mempelaiOne->id,
-            'cover_photo' => $this->mempelaiOne->cover_photo ? asset('storage/'.$this->mempelaiOne->cover_photo) : null,
+            'cover_photo' => $coverPhotoUrl,
+            'cover_photo_url' => $coverPhotoUrl,
+            'photo_pria_url' => $photoPriaUrl,
+            'photo_wanita_url' => $photoWanitaUrl,
             'urutan_mempelai' => $this->mempelaiOne->urutan_mempelai,
             'pria' => [
-                'photo' => $this->mempelaiOne->photo_pria ? asset('storage/'.$this->mempelaiOne->photo_pria) : null,
+                'photo' => $photoPriaUrl,
+                'photo_url' => $photoPriaUrl,
                 'nama_lengkap' => $this->mempelaiOne->name_lengkap_pria,
                 'nama_panggilan' => $this->mempelaiOne->name_panggilan_pria,
                 'ayah' => $this->mempelaiOne->ayah_pria,
                 'ibu' => $this->mempelaiOne->ibu_pria,
             ],
             'wanita' => [
-                'photo' => $this->mempelaiOne->photo_wanita ? asset('storage/'.$this->mempelaiOne->photo_wanita) : null,
+                'photo' => $photoWanitaUrl,
+                'photo_url' => $photoWanitaUrl,
                 'nama_lengkap' => $this->mempelaiOne->name_lengkap_wanita,
                 'nama_panggilan' => $this->mempelaiOne->name_panggilan_wanita,
                 'ayah' => $this->mempelaiOne->ayah_wanita,
@@ -279,10 +294,27 @@ class WeddingProfileResource extends JsonResource
         }
 
         return $this->gallery->map(function ($gallery) {
+            $rawPath = $gallery->photo;
+            $cleanPath = $this->normalizeStoragePath($rawPath);
+            $imageUrl = $this->publicStorageUrl($rawPath);
+
+            Log::info('[GalleryImageScopeDebug]', [
+                'context' => $this->isPublicView ? 'public' : 'dashboard',
+                'auth_user_id' => request()->user()->id ?? null,
+                'domain' => $this->domainContext,
+                'owner_user_id' => $this->ownerUserIdContext ?? $this->id,
+                'raw_path' => $rawPath,
+                'clean_path' => $cleanPath,
+                'image_url' => $imageUrl,
+                'exists' => $cleanPath ? Storage::disk('public')->exists($cleanPath) : false,
+            ]);
+
             return [
                 'id' => $gallery->id,
                 'photo' => $gallery->photo,
-                'photo_url' => $gallery->photo_url,
+                'photo_url' => $imageUrl,
+                'image_url' => $imageUrl,
+                'preview_url' => $imageUrl,
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,
@@ -512,5 +544,41 @@ class WeddingProfileResource extends JsonResource
                 : 0,
             'is_public_view' => $this->isPublicView,
         ];
+    }
+
+    private function normalizeStoragePath(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        $path = trim($path);
+
+        $path = preg_replace('#^https?://[^/]+/storage/#', '', $path);
+        $path = preg_replace('#^/storage/#', '', $path);
+        $path = preg_replace('#^storage/#', '', $path);
+        $path = ltrim($path, '/');
+
+        return $path ?: null;
+    }
+
+    private function publicStorageUrl(?string $path): ?string
+    {
+        $cleanPath = $this->normalizeStoragePath($path);
+
+        if (! $cleanPath) {
+            return null;
+        }
+
+        if (! Storage::disk('public')->exists($cleanPath)) {
+            Log::warning('[MissingImageFile]', [
+                'original_path' => $path,
+                'clean_path' => $cleanPath,
+            ]);
+
+            return null;
+        }
+
+        return Storage::disk('public')->url($cleanPath);
     }
 }
