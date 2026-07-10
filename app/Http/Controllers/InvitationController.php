@@ -399,12 +399,15 @@ class InvitationController extends Controller
                     $photoPath = $request->file('photo_pria')->store('photos', 'public');
 
                     // Store in Gallery with status 1 (active)
-                    $galleryPhoto = Galery::create([
-                        'user_id' => $user->id,
+                    $galleryPhoto = new Galery([
                         'photo' => $photoPath,
+                        'file_path' => $photoPath,
+                        'photo_type' => 'gallery',
                         'nama_foto' => 'Photo Pria',
                         'status' => 1 // Active status for frontend filtering
                     ]);
+                    $galleryPhoto->user_id = $user->id;
+                    $galleryPhoto->save();
 
                     $galleryPhotos['photo_pria'] = $galleryPhoto;
                     $mempelaiPhotos['photo_pria'] = $photoPath;
@@ -414,12 +417,15 @@ class InvitationController extends Controller
                     $photoPath = $request->file('photo_wanita')->store('photos', 'public');
 
                     // Store in Gallery with status 1 (active)
-                    $galleryPhoto = Galery::create([
-                        'user_id' => $user->id,
+                    $galleryPhoto = new Galery([
                         'photo' => $photoPath,
+                        'file_path' => $photoPath,
+                        'photo_type' => 'gallery',
                         'nama_foto' => 'Photo Wanita',
                         'status' => 1 // Active status for frontend filtering
                     ]);
+                    $galleryPhoto->user_id = $user->id;
+                    $galleryPhoto->save();
 
                     $galleryPhotos['photo_wanita'] = $galleryPhoto;
                     $mempelaiPhotos['photo_wanita'] = $photoPath;
@@ -429,12 +435,15 @@ class InvitationController extends Controller
                     $photoPath = $request->file('cover_photo')->store('photos', 'public');
 
                     // Store in Gallery with status 1 (active)
-                    $galleryPhoto = Galery::create([
-                        'user_id' => $user->id,
+                    $galleryPhoto = new Galery([
                         'photo' => $photoPath,
+                        'file_path' => $photoPath,
+                        'photo_type' => 'gallery',
                         'nama_foto' => 'Cover Photo',
                         'status' => 1 // Active status for frontend filtering
                     ]);
+                    $galleryPhoto->user_id = $user->id;
+                    $galleryPhoto->save();
 
                     $galleryPhotos['cover_photo'] = $galleryPhoto;
                     $mempelaiPhotos['cover_photo'] = $photoPath;
@@ -513,12 +522,15 @@ class InvitationController extends Controller
                 $galeryPhoto = $request->file('photo')->store('photos', 'public');
 
                 // Create new gallery entry (not update) to allow multiple photos
-                $galery = Galery::create([
-                    'user_id' => $user->id,
+                $galery = new Galery([
                     'photo'   => $galeryPhoto,
+                    'file_path' => $galeryPhoto,
+                    'photo_type' => 'gallery',
                     'nama_foto' => 'Gallery Upload Step 3',
                     'status'  => $validated['status'] ?? 1,
                 ]);
+                $galery->user_id = $user->id;
+                $galery->save();
             }
 
             // Update invitation status

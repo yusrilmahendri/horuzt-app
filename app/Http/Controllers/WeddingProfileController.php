@@ -41,7 +41,19 @@ class WeddingProfileController extends Controller
                 'countdownAcara',
                 'cerita',
                 'qoute',
-                'gallery',
+                'gallery' => function ($query) {
+                    $query->where(function ($query) {
+                            $query->whereNull('photo_type')
+                                ->orWhere('photo_type', 'gallery');
+                        })
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order');
+                },
+                'collage' => function ($query) {
+                    $query->where('photo_type', 'collage')
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order');
+                },
                 'rekening.bank',
                 'testimoni',
                 'bukuTamu',
@@ -166,7 +178,19 @@ class WeddingProfileController extends Controller
                 'cerita',
                 'qoute',
                 'gallery' => function ($query) {
-                    $query->where('status', true); // Only show active gallery items
+                    $query->where('status', true)
+                        ->where(function ($query) {
+                            $query->whereNull('photo_type')
+                                ->orWhere('photo_type', 'gallery');
+                        })
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order'); // Only show active gallery items
+                },
+                'collage' => function ($query) {
+                    $query->where('status', true)
+                        ->where('photo_type', 'collage')
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order');
                 },
                 'rekening.bank',
                 'testimoni', // Added missing testimoni relationship
@@ -236,7 +260,19 @@ class WeddingProfileController extends Controller
                 'cerita',
                 'qoute',
                 'gallery' => function ($query) {
-                    $query->where('status', true); // Only show active gallery items
+                    $query->where('status', true)
+                        ->where(function ($query) {
+                            $query->whereNull('photo_type')
+                                ->orWhere('photo_type', 'gallery');
+                        })
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order'); // Only show active gallery items
+                },
+                'collage' => function ($query) {
+                    $query->where('status', true)
+                        ->where('photo_type', 'collage')
+                        ->orderByDesc('is_featured')
+                        ->orderBy('sort_order');
                 },
                 'rekening.bank',
                 'testimoni',

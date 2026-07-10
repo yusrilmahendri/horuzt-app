@@ -3,15 +3,20 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+use App\Http\Resources\Photo\PhotoResource;
 use App\Models\Galery;
 use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use App\Models\Setting;
+use App\Services\PhotoImageService;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Facades\Validator;
 
 class GaleryController extends Controller
 {
-    public function __construct(){
+    public function __construct(private PhotoImageService $photoImageService){
         $this->middleware('auth:sanctum')->except(['publicIndex']);
     }
 
@@ -44,6 +49,8 @@ class GaleryController extends Controller
 
         $galery = new Galery();
         $galery->photo = $photoPath;
+        $galery->file_path = $photoPath;
+        $galery->photo_type = 'gallery';
         $galery->url_video = $validateData['url_video'] ?? null;
         $galery->nama_foto = $validateData['nama_foto'] ?? null;
         $galery->user_id = $userId;
@@ -79,7 +86,11 @@ class GaleryController extends Controller
     public function index(Request $request)
     {
         $user = $request->user();
-        $query = Galery::where('user_id', $user->id);
+        $query = Galery::where('user_id', $user->id)
+            ->where(function ($query) {
+                $query->whereNull('photo_type')
+                    ->orWhere('photo_type', 'gallery');
+            });
 
         // Filter by status if provided
         if ($request->has('status')) {
@@ -92,7 +103,7 @@ class GaleryController extends Controller
 
         // Transform data to ensure photo_url is included
         $galleries->getCollection()->transform(function ($gallery) {
-            $rawPath = $gallery->photo;
+            $rawPath = $gallery->file_path ?: $gallery->photo;
             $cleanPath = $this->normalizeStoragePath($rawPath);
             $imageUrl = $this->publicStorageUrl($rawPath);
             $exists = $cleanPath ? Storage::disk('public')->exists($cleanPath) : false;
@@ -158,7 +169,11 @@ class GaleryController extends Controller
             ], 404);
         }
 
-        $query = Galery::where('user_id', $ownerUserId);
+        $query = Galery::where('user_id', $ownerUserId)
+            ->where(function ($query) {
+                $query->whereNull('photo_type')
+                    ->orWhere('photo_type', 'gallery');
+            });
 
         // Filter by status. For the public wedding view, default to active (status = 1)
         // when the caller does not explicitly request a status.
@@ -174,7 +189,7 @@ class GaleryController extends Controller
 
         // Transform data to ensure photo_url is included
         $galleries->getCollection()->transform(function ($gallery) {
-            $rawPath = $gallery->photo;
+            $rawPath = $gallery->file_path ?: $gallery->photo;
             $cleanPath = $this->normalizeStoragePath($rawPath);
             $imageUrl = $this->publicStorageUrl($rawPath);
             $exists = $cleanPath ? Storage::disk('public')->exists($cleanPath) : false;
@@ -232,23 +247,15 @@ class GaleryController extends Controller
         }
 
         // Ownership check: only allow deleting the authenticated user's own gallery item.
-        $galery = Galery::where('id', $id)->first();
+        $galery = Galery::where('id', $id)
+            ->where('user_id', $request->user()->id)
+            ->first();
 
         if (! $galery) {
             return response()->json([
                 'message' => 'Galery tidak ditemukan.'
             ], 404);
         }
-
-        if ((int) $galery->user_id !== (int) $request->user()->id) {
-            return response()->json([
-                'message' => 'Anda tidak memiliki akses untuk menghapus galery ini.'
-            ], 403);
-        }
-
-        $galery = Galery::where('id', $id)
-            ->where('user_id', $request->user()->id)
-            ->firstOrFail();
 
         // Hapus file foto dari storage jika ada
         $cleanPath = $this->normalizeStoragePath($galery->photo);
@@ -262,6 +269,329 @@ class GaleryController extends Controller
         return response()->json([
             'message' => 'Galery berhasil dihapus.'
         ]);
+    }
+
+    public function photosIndex(Request $request)
+    {
+        $validated = $request->validate([
+            'type' => 'nullable|in:gallery,collage',
+        ]);
+
+        $query = Galery::ownedBy((int) $request->user()->id)
+            ->when(isset($validated['type']), fn ($query) => $query->where('photo_type', $validated['type']))
+            ->orderByDesc('is_featured')
+            ->orderBy('sort_order')
+            ->orderByDesc('id');
+
+        $photos = $query->get();
+
+        if (isset($validated['type'])) {
+            return response()->json([
+                'message' => 'Data foto berhasil diambil.',
+                'data' => PhotoResource::collection($photos),
+            ]);
+        }
+
+        $grouped = $photos->groupBy(fn ($photo) => $photo->photo_type ?: 'gallery');
+
+        return response()->json([
+            'message' => 'Data foto berhasil diambil.',
+            'data' => [
+                'gallery' => PhotoResource::collection($grouped->get('gallery', collect()))->resolve(),
+                'collage' => PhotoResource::collection($grouped->get('collage', collect()))->resolve(),
+            ],
+        ]);
+    }
+
+    public function storePhoto(Request $request)
+    {
+        $validated = $this->validatePhotoRequest($request, true);
+        $userId = (int) $request->user()->id;
+        $stored = null;
+
+        try {
+            $stored = $this->photoImageService->compressAndStore($request->file('image'), $userId, $validated['photo_type']);
+
+            $photo = DB::transaction(function () use ($validated, $stored, $userId) {
+                $photoType = $validated['photo_type'];
+                $isFeatured = (bool) ($validated['is_featured'] ?? false);
+                $sortOrder = array_key_exists('sort_order', $validated)
+                    ? (int) $validated['sort_order']
+                    : $this->nextSortOrder($userId, $photoType);
+
+                if ($isFeatured) {
+                    $this->clearFeaturedPhotos($userId, $photoType);
+                }
+
+                $photo = new Galery([
+                    'photo' => $stored['path'],
+                    'file_path' => $stored['path'],
+                    'photo_type' => $photoType,
+                    'description' => $validated['description'] ?? null,
+                    'position' => $validated['position'] ?? 'center',
+                    'display_mode' => $validated['display_mode'] ?? 'cover',
+                    'focal_point_x' => $validated['focal_point_x'] ?? null,
+                    'focal_point_y' => $validated['focal_point_y'] ?? null,
+                    'is_featured' => $isFeatured,
+                    'sort_order' => $sortOrder,
+                    'original_name' => $stored['original_name'],
+                    'original_size' => $stored['original_size'],
+                    'compressed_size' => $stored['compressed_size'],
+                    'mime_type' => $stored['mime_type'],
+                    'quality' => $stored['quality'],
+                    'nama_foto' => $stored['original_name'],
+                    'status' => 1,
+                ]);
+                $photo->user_id = $userId;
+                $photo->save();
+
+                return $photo;
+            });
+
+            return (new PhotoResource($photo))->response()->setStatusCode(201);
+        } catch (\Throwable $e) {
+            if (isset($stored['path'])) {
+                Storage::disk('public')->delete($stored['path']);
+            }
+
+            Log::error('Photo upload failed', [
+                'user_id' => $userId,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal memproses foto.',
+            ], 500);
+        }
+    }
+
+    public function updatePhoto(Request $request, int $id)
+    {
+        $validated = $this->validatePhotoRequest($request, false);
+        $userId = (int) $request->user()->id;
+        $photo = Galery::ownedBy($userId)->where('id', $id)->firstOrFail();
+        $stored = null;
+        $oldPath = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
+
+        try {
+            if ($request->hasFile('image')) {
+                $stored = $this->photoImageService->compressAndStore(
+                    $request->file('image'),
+                    $userId,
+                    $photo->photo_type ?: 'gallery'
+                );
+            }
+
+            DB::transaction(function () use ($photo, $validated, $stored, $userId) {
+                $updates = [];
+
+                foreach ([
+                    'description',
+                    'position',
+                    'display_mode',
+                    'focal_point_x',
+                    'focal_point_y',
+                    'is_featured',
+                    'sort_order',
+                ] as $field) {
+                    if (array_key_exists($field, $validated)) {
+                        $updates[$field] = match ($field) {
+                            'sort_order' => (int) $validated[$field],
+                            'is_featured' => (bool) $validated[$field],
+                            default => $validated[$field],
+                        };
+                    }
+                }
+
+                if (($updates['is_featured'] ?? false) === true) {
+                    $this->clearFeaturedPhotos($userId, $photo->photo_type ?: 'gallery', (int) $photo->id);
+                }
+
+                if ($stored !== null) {
+                    $updates = array_merge($updates, [
+                        'photo' => $stored['path'],
+                        'file_path' => $stored['path'],
+                        'original_name' => $stored['original_name'],
+                        'original_size' => $stored['original_size'],
+                        'compressed_size' => $stored['compressed_size'],
+                        'mime_type' => $stored['mime_type'],
+                        'quality' => $stored['quality'],
+                        'nama_foto' => $stored['original_name'],
+                    ]);
+                }
+
+                $photo->fill($updates);
+                $photo->save();
+            });
+
+            if ($stored !== null && $oldPath && $oldPath !== $stored['path']) {
+                Storage::disk('public')->delete($oldPath);
+            }
+
+            return new PhotoResource($photo->refresh());
+        } catch (\Throwable $e) {
+            if (isset($stored['path'])) {
+                Storage::disk('public')->delete($stored['path']);
+            }
+
+            Log::error('Photo update failed', [
+                'user_id' => $userId,
+                'photo_id' => $id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal memperbarui foto.',
+            ], 500);
+        }
+    }
+
+    public function destroyPhoto(Request $request, int $id)
+    {
+        $userId = (int) $request->user()->id;
+        $photo = Galery::ownedBy($userId)->where('id', $id)->firstOrFail();
+        $path = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
+
+        try {
+            DB::transaction(fn () => $photo->delete());
+
+            if ($path) {
+                Storage::disk('public')->delete($path);
+            }
+
+            return response()->json([
+                'message' => 'Foto berhasil dihapus.',
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Photo delete failed', [
+                'user_id' => $userId,
+                'photo_id' => $id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal menghapus foto.',
+            ], 500);
+        }
+    }
+
+    public function sortPhotos(Request $request)
+    {
+        $validated = $request->validate([
+            'items' => 'required|array|min:1',
+            'items.*.id' => 'required|integer|distinct',
+            'items.*.sort_order' => 'required|integer|min:0',
+        ]);
+
+        $userId = (int) $request->user()->id;
+        $ids = collect($validated['items'])->pluck('id')->map(fn ($id) => (int) $id)->all();
+        $ownedCount = Galery::ownedBy($userId)->whereIn('id', $ids)->count();
+
+        if ($ownedCount !== count($ids)) {
+            return response()->json([
+                'message' => 'Satu atau lebih foto tidak ditemukan.',
+            ], 404);
+        }
+
+        DB::transaction(function () use ($validated, $userId) {
+            $ids = collect($validated['items'])->pluck('id')->map(fn ($id) => (int) $id)->all();
+            $photosById = Galery::ownedBy($userId)
+                ->whereIn('id', $ids)
+                ->get()
+                ->keyBy('id');
+
+            foreach ($validated['items'] as $item) {
+                $photo = $photosById->get((int) $item['id']);
+
+                if (! $photo) {
+                    continue;
+                }
+
+                Galery::ownedBy($userId)
+                    ->where('id', (int) $item['id'])
+                    ->where('photo_type', $photo->photo_type ?: 'gallery')
+                    ->update(['sort_order' => (int) $item['sort_order']]);
+            }
+        });
+
+        return response()->json([
+            'message' => 'Urutan foto berhasil diperbarui.',
+        ]);
+    }
+
+    private function validatePhotoRequest(Request $request, bool $isCreate): array
+    {
+        $maxSizeKb = $this->maxPhotoSizeKb($request);
+        $rules = [
+            'image' => [
+                $isCreate ? 'required' : 'nullable',
+                'file',
+                'image',
+                'mimes:jpg,jpeg,png,webp',
+                'max:' . $maxSizeKb,
+            ],
+            'description' => ['nullable', 'string', 'max:1000'],
+            'position' => ['nullable', 'in:center,top,bottom,left,right,top-left,top-right,bottom-left,bottom-right'],
+            'display_mode' => ['nullable', 'in:cover,contain'],
+            'focal_point_x' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_with:focal_point_y'],
+            'focal_point_y' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_with:focal_point_x'],
+            'is_featured' => ['nullable', 'boolean'],
+            'sort_order' => ['nullable', 'integer', 'min:0'],
+        ];
+
+        if ($isCreate) {
+            $rules['photo_type'] = ['required', 'in:gallery,collage'];
+        }
+
+        return Validator::make($request->all(), $rules)->validate();
+    }
+
+    private function nextSortOrder(int $userId, string $photoType): int
+    {
+        return ((int) Galery::ownedBy($userId)
+            ->where('photo_type', $photoType)
+            ->max('sort_order')) + 1;
+    }
+
+    private function clearFeaturedPhotos(int $userId, string $photoType, ?int $exceptId = null): void
+    {
+        Galery::ownedBy($userId)
+            ->where('photo_type', $photoType)
+            ->when($exceptId !== null, fn ($query) => $query->whereKeyNot($exceptId))
+            ->update(['is_featured' => false]);
+    }
+
+    private function maxPhotoSizeKb(Request $request): int
+    {
+        return $this->userHasPlatinumPackage($request->user()) ? 8192 : 5120;
+    }
+
+    private function userHasPlatinumPackage($user): bool
+    {
+        $user->loadMissing('invitationOne.paketUndangan');
+        $invitation = $user->invitationOne;
+        $package = $invitation?->paketUndangan;
+
+        $tier = $package ? PaketUndangan::tierCode($package->name_paket ?? null, $package->code ?? null) : null;
+        if ($tier === 'diamond') {
+            return true;
+        }
+
+        $labels = collect([
+            $package?->code,
+            $package?->name_paket,
+            $package?->jenis_paket,
+            $package?->name_paket_display,
+            $package?->display_label,
+        ])->merge($invitation?->packageNameHints() ?? []);
+
+        return $labels
+            ->filter()
+            ->contains(function ($label) {
+                $label = strtolower((string) $label);
+
+                return str_contains($label, 'platinum') || str_contains($label, 'diamond');
+            });
     }
 
     private function extractDomain(string $domain): string

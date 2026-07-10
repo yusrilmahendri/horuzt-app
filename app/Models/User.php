@@ -107,6 +107,17 @@ class User extends Authenticatable
         return $this->hasMany(Galery::class);
     }
 
+    public function collage()
+    {
+        return $this->hasMany(Galery::class)
+            ->where('photo_type', 'collage');
+    }
+
+    public function photos()
+    {
+        return $this->hasMany(Galery::class);
+    }
+
     public function acara()
     {
         return $this->hasMany(Acara::class);

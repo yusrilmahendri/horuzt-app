@@ -37,6 +37,7 @@ class WeddingProfileResource extends JsonResource
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
             'gallery' => $this->getGalleryInfo(),
+            'collage' => $this->getCollageInfo(),
             'bank_accounts' => $this->getBankAccountsInfo(),
             'settings' => $this->getSettingsInfo(),
             'filter_undangan' => $this->getFilterUndanganInfo(),
@@ -294,7 +295,7 @@ class WeddingProfileResource extends JsonResource
         }
 
         return $this->gallery->map(function ($gallery) {
-            $rawPath = $gallery->photo;
+            $rawPath = $gallery->file_path ?: $gallery->photo;
             $cleanPath = $this->normalizeStoragePath($rawPath);
             $imageUrl = $this->publicStorageUrl($rawPath);
 
@@ -318,7 +319,45 @@ class WeddingProfileResource extends JsonResource
                 'url_video' => $gallery->url_video,
                 'nama_foto' => $gallery->nama_foto,
                 'status' => $gallery->status,
+                'position' => $gallery->position ?: 'center',
+                'display_mode' => $gallery->display_mode ?: 'cover',
+                'focal_point_x' => $gallery->focal_point_x,
+                'focal_point_y' => $gallery->focal_point_y,
+                'object_position' => $gallery->object_position,
+                'is_featured' => (bool) ($gallery->is_featured ?? false),
+                'sort_order' => (int) ($gallery->sort_order ?? 0),
                 'created_at' => $gallery->created_at?->format('Y-m-d H:i:s'),
+            ];
+        })->toArray();
+    }
+
+    private function getCollageInfo(): array
+    {
+        if (! $this->relationLoaded('collage') || ! $this->collage) {
+            return [];
+        }
+
+        return $this->collage->map(function ($collage) {
+            $rawPath = $collage->file_path ?: $collage->photo;
+            $imageUrl = $this->publicStorageUrl($rawPath);
+
+            return [
+                'id' => $collage->id,
+                'photo' => $collage->photo,
+                'photo_url' => $imageUrl,
+                'image_url' => $imageUrl,
+                'preview_url' => $imageUrl,
+                'url_video' => $collage->url_video,
+                'nama_foto' => $collage->nama_foto,
+                'status' => $collage->status,
+                'position' => $collage->position ?: 'center',
+                'display_mode' => $collage->display_mode ?: 'cover',
+                'focal_point_x' => $collage->focal_point_x,
+                'focal_point_y' => $collage->focal_point_y,
+                'object_position' => $collage->object_position,
+                'is_featured' => (bool) ($collage->is_featured ?? false),
+                'sort_order' => (int) ($collage->sort_order ?? 0),
+                'created_at' => $collage->created_at?->format('Y-m-d H:i:s'),
             ];
         })->toArray();
     }

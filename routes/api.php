@@ -458,6 +458,13 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::post('/v1/user/testimoni', 'store')->name('testimoni.store');
     });
     Route::controller(GaleryController::class)->group(function () {
+        Route::get('/v1/user/photos', 'photosIndex');
+        Route::post('/v1/user/photos', 'storePhoto')->middleware(['large.files', 'bypass.post.size']);
+        Route::put('/v1/user/photos/sort', 'sortPhotos');
+        Route::match(['put', 'post'], '/v1/user/photos/{id}', 'updatePhoto')
+            ->where('id', '[0-9]+')
+            ->middleware(['large.files', 'bypass.post.size']);
+        Route::delete('/v1/user/photos/{id}', 'destroyPhoto')->where('id', '[0-9]+');
         Route::post('/v1/user/submission-galery', 'store')->middleware(['large.files', 'bypass.post.size']);
         Route::get('/v1/user/list-galery', 'index');
         Route::delete('/v1/user/delete-galery', 'destroy');
