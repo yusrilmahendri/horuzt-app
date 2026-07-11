@@ -209,6 +209,15 @@ class MusicStreamService
                 return true; // Already no music file
             }
 
+            if (! Storage::exists($setting->musik)) {
+                Log::warning('Music file already missing during deletion', [
+                    'setting_id' => $setting->id,
+                    'file_path' => $setting->musik
+                ]);
+
+                return true;
+            }
+
             // Delete from storage
             $deleted = Storage::delete($setting->musik);
             
@@ -291,7 +300,7 @@ class MusicStreamService
             'audio/x-m4a',
             'audio/m4a',
         ];
-        $maxSize = 10 * 1024 * 1024; // 10MB
+        $maxSize = config('upload.music_max_file_size', 10240) * 1024;
 
         return in_array($file->getMimeType(), $allowedMimeTypes) && 
                $file->getSize() <= $maxSize;

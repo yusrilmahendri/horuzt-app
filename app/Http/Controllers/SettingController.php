@@ -3,11 +3,10 @@ namespace App\Http\Controllers;
 
 use App\Http\Requests\StoreMusicRequest;
 use App\Models\FilterUndangan;
-use App\Models\Invitation;
-use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\User;
 use App\Services\DomainService;
+use App\Services\MusicResolverService;
 use App\Services\MusicStreamService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -17,12 +16,18 @@ use Illuminate\Support\Facades\Storage;
 class SettingController extends Controller
 {
     protected MusicStreamService $musicStreamService;
+    protected MusicResolverService $musicResolverService;
     protected DomainService $domainService;
 
-    public function __construct(MusicStreamService $musicStreamService, DomainService $domainService)
+    public function __construct(
+        MusicStreamService $musicStreamService,
+        MusicResolverService $musicResolverService,
+        DomainService $domainService
+    )
     {
         $this->middleware('auth:sanctum');
         $this->musicStreamService = $musicStreamService;
+        $this->musicResolverService = $musicResolverService;
         $this->domainService = $domainService;
     }
 
@@ -134,7 +139,10 @@ class SettingController extends Controller
             // so it cannot be used to bypass the package lock.
             if (!$this->userCanUploadCustomMusic($user)) {
                 return response()->json([
-                    'message' => 'Custom music upload is only available for Diamond package.'
+                    'message' => 'Upload musik pribadi hanya tersedia untuk paket Diamond/Platinum.',
+                    'errors' => [
+                        'musik' => ['Upload musik pribadi hanya tersedia untuk paket Diamond/Platinum.'],
+                    ],
                 ], 403);
             }
 
@@ -143,7 +151,10 @@ class SettingController extends Controller
             // Additional validation using service
             if (!$this->musicStreamService->validateAudioFile($musicFile)) {
                 return response()->json([
-                    'message' => 'Invalid audio file format or size.'
+                    'message' => 'Format file musik tidak didukung.',
+                    'errors' => [
+                        'musik' => ['Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.'],
+                    ],
                 ], 422);
             }
 
@@ -154,7 +165,7 @@ class SettingController extends Controller
             }
 
             // Store new file
-            $fileName = time() . '_' . $musicFile->getClientOriginalName();
+            $fileName = (string) \Illuminate\Support\Str::uuid() . '.' . $musicFile->getClientOriginalExtension();
             $filePath = $musicFile->storeAs('public/music', $fileName);
 
             // Update or create setting
@@ -163,13 +174,21 @@ class SettingController extends Controller
                 ['musik' => $filePath]
             );
 
-            // Get file info
+            $setting = $setting->fresh(['musicTrack']);
             $musicInfo = $this->musicStreamService->getMusicInfo($setting);
+            $state = $this->musicResolverService->selectionState($setting, $user);
 
             return response()->json([
-                'message' => 'Music file uploaded successfully.',
+                'message' => 'Musik pribadi berhasil diunggah.',
                 'setting' => $setting,
-                'music_info' => $musicInfo
+                'music_info' => $musicInfo,
+                'data' => $state,
+                'active_music' => $state['active_music'],
+                'music_source_type' => $state['music_source_type'],
+                'selected_catalog_id' => $state['selected_catalog_id'],
+                'custom_music' => $state['custom_music'],
+                'resolved_music_url' => $state['resolved_music_url'],
+                'can_upload_custom_music' => $state['can_upload_custom_music'],
             ], 200);
 
         } catch (\Exception $e) {
@@ -177,7 +196,12 @@ class SettingController extends Controller
                 'user_id' => Auth::id(),
                 'error' => $e->getMessage()
             ]);
-            return response()->json(['message' => 'Failed to upload music file.'], 500);
+            return response()->json([
+                'message' => 'Gagal mengunggah file musik.',
+                'errors' => [
+                    'musik' => ['Gagal mengunggah file musik.'],
+                ],
+            ], 500);
         }
     }
 
@@ -406,38 +430,7 @@ class SettingController extends Controller
      */
     private function userCanUploadCustomMusic($user): bool
     {
-        if (!$user) {
-            return false;
-        }
-
-        // Pick the relevant invitation: prefer a paid one, then the latest.
-        $invitation = Invitation::with('paketUndangan')
-            ->where('user_id', $user->id)
-            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
-            ->orderBy('id', 'desc')
-            ->first();
-
-        if (!$invitation) {
-            return false;
-        }
-
-        $rawName = null;
-        if ($invitation->paketUndangan) {
-            $rawName = $invitation->paketUndangan->name_paket;
-        } elseif (is_array($invitation->package_features_snapshot)) {
-            $rawName = $invitation->package_features_snapshot['name_paket'] ?? null;
-        }
-
-        if ($rawName === null || trim($rawName) === '') {
-            return false;
-        }
-
-        // Use the brand-aware tier helper (Platinum/Diamond => "diamond").
-        $tier = method_exists(PaketUndangan::class, 'tierCode')
-            ? PaketUndangan::tierCode($rawName)
-            : strtolower(trim($rawName));
-
-        return $tier === 'diamond';
+        return $this->musicResolverService->canUploadCustomMusicForUser($user);
     }
 
 }

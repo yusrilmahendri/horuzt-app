@@ -20,7 +20,7 @@ class BypassPostSizeLimit
         $settings = config('upload.php_settings', []);
 
         ini_set('post_max_size', '0'); // No limit for POST size
-        ini_set('upload_max_filesize', $settings['upload_max_filesize'] ?? '6M');
+        ini_set('upload_max_filesize', $settings['upload_max_filesize'] ?? '12M');
         ini_set('max_file_uploads', $settings['max_file_uploads'] ?? 20);
 
         return $next($request);

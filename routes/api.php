@@ -508,6 +508,18 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::post('/clear-selection', 'clearSelection');
     });
 
+    // Legacy music catalog endpoints used by the Angular dashboard.
+    Route::controller(\App\Http\Controllers\MusicTrackController::class)->group(function () {
+        Route::get('/v1/user/music-options', 'options');
+        Route::get('/v1/user/music-selection', 'selection');
+        Route::put('/v1/user/music-selection', 'updateSelection');
+    });
+
+    Route::controller(MusicController::class)->group(function () {
+        Route::post('/v1/user/custom-music', 'store')->middleware(['large.files', 'bypass.post.size']);
+        Route::delete('/v1/user/custom-music', 'destroy');
+    });
+
     Route::controller(SettingController::class)->group(function () {
         Route::post('/v1/user/settings/domain', 'storeDomainToken');
         Route::post('/v1/user/settings/music', 'storeMusic'); // Kept for backward compatibility

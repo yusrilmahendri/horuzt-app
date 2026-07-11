@@ -2,12 +2,15 @@
 
 namespace App\Services;
 
+use App\Models\Invitation;
 use App\Models\MusicTrack;
+use App\Models\PaketUndangan;
 use App\Models\Setting;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Resolves the effective music for a given Setting using a fixed priority:
- *   1. settings.musik          => custom upload (Diamond users)
+ *   1. settings.musik          => custom upload (Diamond/Platinum users)
  *   2. settings.music_track_id => catalog track selected by the user
  *   3. music_tracks.is_default => system default track
  *   4. none                    => null
@@ -26,7 +29,7 @@ class MusicResolverService
     public function resolve(?Setting $setting): ?array
     {
         // Priority 1: custom upload.
-        if ($setting && ! empty($setting->musik)) {
+        if ($setting && ! empty($setting->musik) && $this->settingCanUseCustomMusic($setting)) {
             $info = $this->buildFromPath('custom', $setting->musik, null);
             if ($info) {
                 return $info;
@@ -34,7 +37,7 @@ class MusicResolverService
         }
 
         // Priority 2: selected catalog track (must still be active).
-        if ($setting && ! empty($setting->music_track_id)) {
+        if ($this->catalogSchemaReady() && $setting && ! empty($setting->music_track_id)) {
             $track = MusicTrack::where('id', $setting->music_track_id)
                 ->where('is_active', true)
                 ->first();
@@ -45,6 +48,10 @@ class MusicResolverService
                     return $info;
                 }
             }
+        }
+
+        if (! $this->catalogSchemaReady()) {
+            return null;
         }
 
         // Priority 3: active default track.
@@ -83,6 +90,7 @@ class MusicResolverService
         return [
             'has_music' => true,
             'source' => $resolved['source'],
+            'music_source_type' => $this->normalizeSourceType($resolved['source']),
             'track_id' => $resolved['track_id'],
             'title' => $resolved['title'],
             'artist' => $resolved['artist'],
@@ -93,6 +101,143 @@ class MusicResolverService
             'supports_range_requests' => true,
             'format_support' => ['mp3', 'wav', 'ogg', 'm4a'],
         ];
+    }
+
+    public function defaultTrack(): ?MusicTrack
+    {
+        if (! $this->catalogSchemaReady()) {
+            return null;
+        }
+
+        return MusicTrack::where('is_default', true)
+            ->where('is_active', true)
+            ->orderBy('sort_order')
+            ->orderBy('id')
+            ->first()
+            ?: MusicTrack::where('is_active', true)
+                ->orderBy('sort_order')
+                ->orderBy('id')
+                ->first();
+    }
+
+    /**
+     * Build dashboard-friendly state while keeping old fields additive.
+     *
+     * @param  mixed  $user
+     * @return array<string,mixed>
+     */
+    public function selectionState(?Setting $setting, $user = null): array
+    {
+        $resolved = $this->resolveInfo($setting);
+        $selected = null;
+
+        if ($this->catalogSchemaReady() && $setting?->music_track_id) {
+            $selected = MusicTrack::where('id', $setting->music_track_id)
+                ->where('is_active', true)
+                ->first();
+        }
+
+        $default = $this->defaultTrack();
+        $custom = $this->customMusicInfo($setting);
+
+        return [
+            'selected_music_id' => $this->catalogSchemaReady() ? $setting?->music_track_id : null,
+            'selected_catalog_id' => $this->catalogSchemaReady() ? $setting?->music_track_id : null,
+            'selected_music' => $selected ? $this->trackPayload($selected) : null,
+            'default_music' => $default ? $this->trackPayload($default) : null,
+            'custom_music' => $custom,
+            'custom_music_url' => $custom['url'] ?? null,
+            'resolved_music_url' => $resolved['url'] ?? null,
+            'can_upload_custom_music' => $this->canUploadCustomMusicForUser($user),
+            'music_source_type' => $this->normalizeSourceType($resolved['source'] ?? null),
+            'active_music' => $resolved,
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>|null
+     */
+    public function customMusicInfo(?Setting $setting): ?array
+    {
+        if (! $setting || empty($setting->musik) || ! $this->settingCanUseCustomMusic($setting)) {
+            return null;
+        }
+
+        $info = $this->buildFromPath('custom', $setting->musik, null);
+        if (! $info) {
+            return null;
+        }
+
+        return [
+            'file_name' => basename($info['storage_path']),
+            'file_size' => $info['file_size'],
+            'mime_type' => $info['mime_type'],
+            'url' => $info['url'],
+            'storage_path' => $info['storage_path'],
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function trackPayload(MusicTrack $track): array
+    {
+        return [
+            'id' => $track->id,
+            'title' => $track->title,
+            'artist' => $track->artist,
+            'subtitle' => $track->artist,
+            'audio_url' => $track->url,
+            'stream_url' => $track->url,
+            'thumbnail_url' => null,
+            'source' => $track->source,
+            'duration_seconds' => $track->duration_seconds,
+            'is_active' => $track->is_active,
+            'is_default' => $track->is_default,
+            'sort_order' => $track->sort_order,
+        ];
+    }
+
+    public function canUploadCustomMusicForUser($user): bool
+    {
+        if (! $user) {
+            return false;
+        }
+
+        $invitation = Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderBy('id', 'desc')
+            ->first();
+
+        if (! $invitation) {
+            return false;
+        }
+
+        $package = $invitation->paketUndangan;
+        $snapshot = is_array($invitation->package_features_snapshot)
+            ? $invitation->package_features_snapshot
+            : [];
+
+        $code = $package?->code
+            ?? $snapshot['code']
+            ?? $snapshot['package_code']
+            ?? null;
+        $rawName = $package?->getRawOriginal('name_paket')
+            ?? $package?->name_paket
+            ?? $snapshot['name_paket']
+            ?? $snapshot['jenis_paket']
+            ?? $snapshot['package_name']
+            ?? null;
+
+        $normalizedCode = is_string($code) ? strtolower(trim($code)) : null;
+        if (in_array($normalizedCode, ['diamond', 'platinum'], true)) {
+            return true;
+        }
+
+        $tier = PaketUndangan::tierCode($rawName, $code);
+
+        return in_array($tier, ['diamond', 'platinum'], true);
     }
 
     /**
@@ -107,6 +252,29 @@ class MusicResolverService
         }
 
         return $this->buildFromPath($source, $track->file_path, $track);
+    }
+
+    private function settingCanUseCustomMusic(Setting $setting): bool
+    {
+        $user = $setting->relationLoaded('user') ? $setting->user : $setting->user()->first();
+
+        return $this->canUploadCustomMusicForUser($user);
+    }
+
+    private function normalizeSourceType(?string $source): string
+    {
+        return match ($source) {
+            'custom' => 'custom',
+            'catalog' => 'catalog',
+            default => 'default',
+        };
+    }
+
+    private function catalogSchemaReady(): bool
+    {
+        return Schema::hasTable('music_tracks')
+            && Schema::hasTable('settings')
+            && Schema::hasColumn('settings', 'music_track_id');
     }
 
     /**

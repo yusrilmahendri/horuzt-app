@@ -34,11 +34,13 @@ class AdminMusicTrackController extends Controller
 
         $tracks = $query->orderBy('sort_order', 'asc')
             ->orderBy('title', 'asc')
-            ->get();
+            ->get()
+            ->map(fn (MusicTrack $track) => $this->trackPayload($track));
 
         return response()->json([
             'message' => 'Music tracks retrieved successfully.',
             'data' => $tracks,
+            'catalog' => $tracks,
         ], 200);
     }
 
@@ -48,8 +50,10 @@ class AdminMusicTrackController extends Controller
      */
     public function store(Request $request)
     {
+        $maxMusicSize = config('upload.music_max_file_size', 10240);
+
         $validated = $request->validate([
-            'musik' => ['required', 'file', 'mimes:mp3,wav,ogg,m4a', 'max:10240'],
+            'musik' => ['required', 'file', 'mimes:mp3,wav,ogg,m4a', "max:{$maxMusicSize}"],
             'title' => ['required', 'string', 'max:255'],
             'artist' => ['nullable', 'string', 'max:255'],
             'is_default' => ['nullable', 'boolean'],
@@ -70,7 +74,7 @@ class AdminMusicTrackController extends Controller
 
         try {
             return DB::transaction(function () use ($request, $validated, $file) {
-                $fileName = time() . '_' . $file->getClientOriginalName();
+                $fileName = (string) Str::uuid() . '.' . $file->getClientOriginalExtension();
                 $filePath = $file->storeAs('public/music/catalog', $fileName);
 
                 $makeDefault = $request->boolean('is_default');
@@ -96,7 +100,7 @@ class AdminMusicTrackController extends Controller
 
                 return response()->json([
                     'message' => 'Music track created successfully.',
-                    'data' => $track->fresh(),
+                    'data' => $this->trackPayload($track->fresh()),
                 ], 201);
             });
         } catch (\Exception $e) {
@@ -287,6 +291,26 @@ class AdminMusicTrackController extends Controller
         MusicTrack::where('id', '!=', $track->id)
             ->where('is_default', true)
             ->update(['is_default' => false]);
+    }
+
+    private function trackPayload(MusicTrack $track): array
+    {
+        return [
+            'id' => $track->id,
+            'title' => $track->title,
+            'artist' => $track->artist,
+            'subtitle' => $track->artist,
+            'audio_url' => $track->url,
+            'stream_url' => $track->url,
+            'file_path' => $track->file_path,
+            'duration_seconds' => $track->duration_seconds,
+            'mime_type' => $track->mime_type,
+            'file_size' => $track->file_size,
+            'source' => $track->source,
+            'is_active' => $track->is_active,
+            'is_default' => $track->is_default,
+            'sort_order' => $track->sort_order,
+        ];
     }
 
     /**

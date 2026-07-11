@@ -16,6 +16,12 @@ return [
     // Maximum file size in MB for display purposes
     'max_file_size_mb' => env('MAX_FILE_SIZE_MB', '5.1'),
 
+    // Maximum custom/catalog music upload size in KB (10 MB)
+    'music_max_file_size' => env('MAX_MUSIC_SIZE', 10240),
+
+    // Maximum music upload size in MB for validation messages
+    'music_max_file_size_mb' => env('MAX_MUSIC_SIZE_MB', '10'),
+
     // Allowed image MIME types
     'allowed_image_types' => [
         'jpeg',
@@ -32,10 +38,11 @@ return [
         'max_height' => 2000,
     ],
 
-    // PHP upload settings (will be set by middleware)
+    // PHP upload settings (will be set by middleware). Keep this above the
+    // custom music validator limit (10 MB) so Laravel can return clear errors.
     'php_settings' => [
-        'upload_max_filesize' => '6M',
-        'post_max_size' => '6M',
+        'upload_max_filesize' => '12M',
+        'post_max_size' => '16M',
         'max_execution_time' => 300,
         'memory_limit' => '256M',
         'max_file_uploads' => 20,

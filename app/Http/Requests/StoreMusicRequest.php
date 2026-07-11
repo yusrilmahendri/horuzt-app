@@ -21,12 +21,14 @@ class StoreMusicRequest extends FormRequest
      */
     public function rules(): array
     {
+        $maxSize = config('upload.music_max_file_size', 10240);
+
         return [
             'musik' => [
                 'required',
                 'file',
                 'mimes:mp3,wav,ogg,m4a',
-                'max:10240' // 10MB
+                "max:{$maxSize}"
             ]
         ];
     }
@@ -38,11 +40,14 @@ class StoreMusicRequest extends FormRequest
      */
     public function messages(): array
     {
+        $maxSizeMb = config('upload.music_max_file_size_mb', '10');
+
         return [
-            'musik.required' => 'Music file is required.',
-            'musik.file' => 'The uploaded file must be a valid file.',
-            'musik.mimes' => 'Music file must be in MP3, WAV, OGG, or M4A format.',
-            'musik.max' => 'Music file must not exceed 10MB.'
+            'musik.required' => 'File musik wajib diunggah.',
+            'musik.file' => 'File musik tidak valid.',
+            'musik.uploaded' => 'Gagal mengunggah file musik.',
+            'musik.mimes' => 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.',
+            'musik.max' => "Ukuran file musik melebihi batas maksimum {$maxSizeMb} MB."
         ];
     }
 
@@ -54,7 +59,7 @@ class StoreMusicRequest extends FormRequest
     public function attributes(): array
     {
         return [
-            'musik' => 'music file'
+            'musik' => 'file musik'
         ];
     }
 }
