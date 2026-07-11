@@ -6,6 +6,7 @@ use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
 use App\Http\Controllers\Admin\AdminInvoiceController;
+use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AttendanceScanController;
@@ -270,8 +271,11 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::delete('/v1/admin/buku-tamu/{id}', 'destroy')->where('id', '[0-9]+');
     });
 
-    Route::controller(UserController::class)->group(function () {
+    Route::controller(AdminUserManagementController::class)->group(function () {
+        Route::get('/v1/admin/users', 'index');
         Route::get('/v1/admin/get-users', 'index');
+        Route::delete('/v1/admin/users/{userId}/soft-data', 'softDelete')->where('userId', '[0-9]+');
+        Route::delete('/v1/admin/users/{userId}', 'hardDelete')->where('userId', '[0-9]+');
     });
 
     // Admin Music Catalog Management (Sena Digital songs)
@@ -279,8 +283,11 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         ->prefix('v1/admin/music-tracks')->group(function () {
             Route::get('/', 'index');
             Route::post('/', 'store');
+            Route::patch('/reorder', 'reorder');
+            Route::post('/sync-global', 'syncGlobalCatalog');
             Route::put('/{id}', 'update')->where('id', '[0-9]+');
             Route::patch('/{id}', 'update')->where('id', '[0-9]+');
+            Route::patch('/{id}/status', 'setStatus')->where('id', '[0-9]+');
             Route::patch('/{id}/set-default', 'setDefault')->where('id', '[0-9]+');
             Route::patch('/{id}/toggle-active', 'toggleActive')->where('id', '[0-9]+');
             Route::delete('/{id}', 'destroy')->where('id', '[0-9]+');

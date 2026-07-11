@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\Setting;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
 use Illuminate\Support\Facades\Log;
@@ -290,19 +291,124 @@ class MusicStreamService
      */
     public function validateAudioFile($file): bool
     {
-        $allowedMimeTypes = [
-            'audio/mpeg',
-            'audio/mp3',
-            'audio/wav',
-            'audio/x-wav',
-            'audio/ogg',
-            'audio/mp4',
-            'audio/x-m4a',
-            'audio/m4a',
-        ];
-        $maxSize = config('upload.music_max_file_size', 10240) * 1024;
+        return $this->inspectAudioFile($file)['is_valid'];
+    }
 
-        return in_array($file->getMimeType(), $allowedMimeTypes) && 
-               $file->getSize() <= $maxSize;
+    /**
+     * Validate and classify uploaded audio diagnostics for logging and UX.
+     *
+     * @param \Illuminate\Http\UploadedFile|null $file
+     * @return array<string,mixed>
+     */
+    public function inspectAudioFile($file): array
+    {
+        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a'];
+        $maxSizeBytes = config('upload.music_max_file_size', 10240) * 1024;
+
+        $meta = $this->safeUploadMeta($file);
+
+        if (!$meta['is_uploaded_file_object']) {
+            return [
+                'is_valid' => false,
+                'reason' => 'invalid_file_object',
+                'max_size_bytes' => $maxSizeBytes,
+                'size' => $meta['size'],
+                'extension' => $meta['extension'],
+                'client_mime_type' => $meta['client_mime_type'],
+                'detected_mime_type' => $meta['detected_mime_type'],
+            ];
+        }
+
+        $extension = $meta['extension'];
+        $clientMimeType = $meta['client_mime_type'];
+        $detectedMimeType = $meta['detected_mime_type'];
+        $size = $meta['size'];
+
+        if (!$meta['is_valid_upload']) {
+            return [
+                'is_valid' => false,
+                'reason' => 'invalid_upload',
+                'max_size_bytes' => $maxSizeBytes,
+                'size' => $size,
+                'extension' => $extension,
+                'client_mime_type' => $clientMimeType,
+                'detected_mime_type' => $detectedMimeType,
+            ];
+        }
+
+        if ($size !== null && $size > $maxSizeBytes) {
+            return [
+                'is_valid' => false,
+                'reason' => 'size_exceeded',
+                'max_size_bytes' => $maxSizeBytes,
+                'size' => $size,
+                'extension' => $extension,
+                'client_mime_type' => $clientMimeType,
+                'detected_mime_type' => $detectedMimeType,
+            ];
+        }
+
+        if (!in_array($extension, $allowedExtensions, true)) {
+            return [
+                'is_valid' => false,
+                'reason' => 'unsupported_extension',
+                'max_size_bytes' => $maxSizeBytes,
+                'size' => $size,
+                'extension' => $extension,
+                'client_mime_type' => $clientMimeType,
+                'detected_mime_type' => $detectedMimeType,
+            ];
+        }
+
+        return [
+            'is_valid' => true,
+            'reason' => 'ok',
+            'max_size_bytes' => $maxSizeBytes,
+            'size' => $size,
+            'extension' => $extension,
+            'client_mime_type' => $clientMimeType,
+            'detected_mime_type' => $detectedMimeType,
+        ];
+    }
+
+    /**
+     * Read upload metadata safely without throwing MIME path exceptions.
+     *
+     * @param mixed $file
+     * @return array<string,mixed>
+     */
+    public function safeUploadMeta($file): array
+    {
+        $meta = [
+            'is_uploaded_file_object' => $file instanceof UploadedFile,
+            'is_valid_upload' => false,
+            'original_filename' => null,
+            'extension' => null,
+            'client_mime_type' => null,
+            'detected_mime_type' => null,
+            'size' => null,
+            'upload_error_code' => null,
+            'upload_error_message' => null,
+            'mime_detection_error' => null,
+        ];
+
+        if (!$meta['is_uploaded_file_object']) {
+            return $meta;
+        }
+
+        try {
+            $meta['original_filename'] = $file->getClientOriginalName();
+            $meta['extension'] = strtolower((string) $file->getClientOriginalExtension());
+            $meta['client_mime_type'] = strtolower((string) $file->getClientMimeType());
+            $meta['size'] = $file->getSize();
+            $meta['upload_error_code'] = $file->getError();
+            $meta['upload_error_message'] = $file->getErrorMessage();
+            $meta['is_valid_upload'] = $file->isValid();
+        } catch (\Throwable $e) {
+            $meta['mime_detection_error'] = $e->getMessage();
+            return $meta;
+        }
+
+        return $meta;
     }
 }

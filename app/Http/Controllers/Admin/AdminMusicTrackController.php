@@ -4,6 +4,7 @@ namespace App\Http\Controllers\Admin;
 
 use App\Http\Controllers\Controller;
 use App\Models\MusicTrack;
+use App\Services\GlobalMusicCatalogSyncService;
 use App\Services\MusicStreamService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,10 +16,12 @@ use Illuminate\Support\Str;
 class AdminMusicTrackController extends Controller
 {
     protected MusicStreamService $musicStreamService;
+    protected GlobalMusicCatalogSyncService $globalCatalogSyncService;
 
-    public function __construct(MusicStreamService $musicStreamService)
+    public function __construct(MusicStreamService $musicStreamService, GlobalMusicCatalogSyncService $globalCatalogSyncService)
     {
         $this->musicStreamService = $musicStreamService;
+        $this->globalCatalogSyncService = $globalCatalogSyncService;
     }
 
     /**
@@ -38,7 +41,7 @@ class AdminMusicTrackController extends Controller
             ->map(fn (MusicTrack $track) => $this->trackPayload($track));
 
         return response()->json([
-            'message' => 'Music tracks retrieved successfully.',
+            'message' => 'Daftar musik katalog berhasil diambil.',
             'data' => $tracks,
             'catalog' => $tracks,
         ], 200);
@@ -51,9 +54,30 @@ class AdminMusicTrackController extends Controller
     public function store(Request $request)
     {
         $maxMusicSize = config('upload.music_max_file_size', 10240);
+        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a'];
 
         $validated = $request->validate([
-            'musik' => ['required', 'file', 'mimes:mp3,wav,ogg,m4a', "max:{$maxMusicSize}"],
+            'musik' => [
+                'required',
+                'file',
+                "max:{$maxMusicSize}",
+                function (string $attribute, mixed $value, \Closure $fail) use ($allowedExtensions): void {
+                    if (! $value instanceof \Illuminate\Http\UploadedFile) {
+                        $fail('File musik wajib dipilih.');
+                        return;
+                    }
+
+                    if (! $value->isValid()) {
+                        $fail('File musik tidak valid atau tidak dapat diproses.');
+                        return;
+                    }
+
+                    $extension = strtolower((string) $value->getClientOriginalExtension());
+                    if ($extension === '' || ! in_array($extension, $allowedExtensions, true)) {
+                        $fail('Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
+                    }
+                },
+            ],
             'title' => ['required', 'string', 'max:255'],
             'artist' => ['nullable', 'string', 'max:255'],
             'is_default' => ['nullable', 'boolean'],
@@ -61,21 +85,55 @@ class AdminMusicTrackController extends Controller
             'sort_order' => ['nullable', 'integer'],
             'source' => ['nullable', 'string', 'max:50'],
             'external_id' => ['nullable', 'string', 'max:100'],
+        ], [
+            'musik.required' => 'File musik wajib dipilih.',
+            'musik.file' => 'File musik tidak valid atau tidak dapat diproses.',
+            'musik.max' => 'Ukuran file musik melebihi batas maksimum 10 MB.',
+            'title.required' => 'Judul musik katalog wajib diisi.',
         ]);
 
         $file = $request->file('musik');
+        $uploadMeta = $this->musicStreamService->safeUploadMeta($file);
+        $originalFilename = $uploadMeta['original_filename'];
+        $extension = $uploadMeta['extension'];
+        $size = $uploadMeta['size'];
+        $oldFilePath = null;
+        $newFilePath = null;
+        $storeNewResult = false;
+        $deleteOldResult = null;
 
-        // Defense-in-depth: also run the service-level audio validation.
-        if (!$this->musicStreamService->validateAudioFile($file)) {
-            return response()->json([
-                'message' => 'Invalid audio file format or size.',
-            ], 422);
-        }
+        Log::info('Admin music catalog upload started', [
+            'admin_id' => Auth::id(),
+            'original_filename' => $originalFilename,
+            'extension' => $extension,
+            'size' => $size,
+            'old_file_path' => $oldFilePath,
+        ]);
 
         try {
-            return DB::transaction(function () use ($request, $validated, $file) {
-                $fileName = (string) Str::uuid() . '.' . $file->getClientOriginalExtension();
+            return DB::transaction(function () use ($request, $validated, $file, $originalFilename, $extension, $size, &$newFilePath, &$storeNewResult, $oldFilePath, $deleteOldResult) {
+                $safeExtension = $extension ?: 'mp3';
+                $fileName = (string) Str::uuid() . '.' . $safeExtension;
                 $filePath = $file->storeAs('public/music/catalog', $fileName);
+                $storeNewResult = (bool) $filePath;
+                $newFilePath = $filePath;
+
+                if (!$storeNewResult || !$filePath) {
+                    Log::error('Admin music catalog upload failed: storage write failed', [
+                        'admin_id' => Auth::id(),
+                        'original_filename' => $originalFilename,
+                        'extension' => $extension,
+                        'size' => $size,
+                        'old_file_path' => $oldFilePath,
+                        'new_file_path' => $newFilePath,
+                        'store_new_file_result' => $storeNewResult,
+                        'delete_old_file_result' => $deleteOldResult,
+                    ]);
+
+                    return response()->json([
+                        'message' => 'Gagal menyimpan file musik.',
+                    ], 500);
+                }
 
                 $makeDefault = $request->boolean('is_default');
 
@@ -84,8 +142,8 @@ class AdminMusicTrackController extends Controller
                     'artist' => $validated['artist'] ?? null,
                     'slug' => $this->makeSlug($validated['title']),
                     'file_path' => $filePath,
-                    'mime_type' => $file->getMimeType(),
-                    'file_size' => $file->getSize(),
+                    'mime_type' => $file->getClientMimeType(),
+                    'file_size' => $size,
                     'is_active' => $request->has('is_active') ? $request->boolean('is_active') : true,
                     'is_default' => $makeDefault,
                     'sort_order' => $validated['sort_order'] ?? 0,
@@ -98,19 +156,37 @@ class AdminMusicTrackController extends Controller
                     $this->promoteDefault($track);
                 }
 
+                Log::info('Admin music catalog upload completed', [
+                    'admin_id' => Auth::id(),
+                    'original_filename' => $originalFilename,
+                    'extension' => $extension,
+                    'size' => $size,
+                    'old_file_path' => $oldFilePath,
+                    'new_file_path' => $newFilePath,
+                    'store_new_file_result' => $storeNewResult,
+                    'delete_old_file_result' => $deleteOldResult,
+                ]);
+
                 return response()->json([
-                    'message' => 'Music track created successfully.',
+                    'message' => 'Musik katalog berhasil diunggah.',
                     'data' => $this->trackPayload($track->fresh()),
                 ], 201);
             });
         } catch (\Exception $e) {
             Log::error('Admin music track create failed', [
                 'admin_id' => Auth::id(),
+                'original_filename' => $originalFilename,
+                'extension' => $extension,
+                'size' => $size,
+                'old_file_path' => $oldFilePath,
+                'new_file_path' => $newFilePath,
+                'store_new_file_result' => $storeNewResult,
+                'delete_old_file_result' => $deleteOldResult,
                 'error' => $e->getMessage(),
             ]);
 
             return response()->json([
-                'message' => 'Failed to create music track.',
+                'message' => 'Gagal menyimpan file musik.',
             ], 500);
         }
     }
@@ -124,7 +200,7 @@ class AdminMusicTrackController extends Controller
         $track = MusicTrack::find($id);
 
         if (!$track) {
-            return response()->json(['message' => 'Music track not found.'], 404);
+            return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
         }
 
         $validated = $request->validate([
@@ -135,6 +211,8 @@ class AdminMusicTrackController extends Controller
             'sort_order' => ['nullable', 'integer'],
             'source' => ['nullable', 'string', 'max:50'],
             'external_id' => ['nullable', 'string', 'max:100'],
+        ], [
+            'title.required' => 'Judul musik katalog wajib diisi.',
         ]);
 
         try {
@@ -168,8 +246,8 @@ class AdminMusicTrackController extends Controller
                 }
 
                 return response()->json([
-                    'message' => 'Music track updated successfully.',
-                    'data' => $track->fresh(),
+                    'message' => 'Metadata musik katalog berhasil diperbarui.',
+                    'data' => $this->trackPayload($track->fresh()),
                 ], 200);
             });
         } catch (\Exception $e) {
@@ -180,7 +258,7 @@ class AdminMusicTrackController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Failed to update music track.',
+                'message' => 'Gagal memperbarui metadata musik katalog.',
             ], 500);
         }
     }
@@ -193,7 +271,7 @@ class AdminMusicTrackController extends Controller
         $track = MusicTrack::find($id);
 
         if (!$track) {
-            return response()->json(['message' => 'Music track not found.'], 404);
+            return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
         }
 
         try {
@@ -203,8 +281,8 @@ class AdminMusicTrackController extends Controller
                 $this->promoteDefault($track->fresh());
 
                 return response()->json([
-                    'message' => 'Default music track updated successfully.',
-                    'data' => $track->fresh(),
+                    'message' => 'Musik default berhasil diperbarui.',
+                    'data' => $this->trackPayload($track->fresh()),
                 ], 200);
             });
         } catch (\Exception $e) {
@@ -215,7 +293,7 @@ class AdminMusicTrackController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Failed to set default music track.',
+                'message' => 'Gagal memperbarui musik default.',
             ], 500);
         }
     }
@@ -228,7 +306,7 @@ class AdminMusicTrackController extends Controller
         $track = MusicTrack::find($id);
 
         if (!$track) {
-            return response()->json(['message' => 'Music track not found.'], 404);
+            return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
         }
 
         // Guard: never let the active default track be deactivated, otherwise
@@ -236,16 +314,92 @@ class AdminMusicTrackController extends Controller
         // resolver ignores). Admin must set another default first.
         if ($track->is_default && $track->is_active) {
             return response()->json([
-                'message' => 'Default music track cannot be deactivated. Please set another default track first.'
+                'message' => 'Musik default tidak bisa dinonaktifkan. Tetapkan musik default lain terlebih dahulu.'
             ], 422);
         }
 
         $track->update(['is_active' => !$track->is_active]);
 
         return response()->json([
-            'message' => 'Music track status updated successfully.',
-            'data' => $track->fresh(),
+            'message' => 'Status musik katalog berhasil diperbarui.',
+            'data' => $this->trackPayload($track->fresh()),
         ], 200);
+    }
+
+    /**
+     * PATCH /api/v1/admin/music-tracks/{id}/status
+     * body: { is_active: true|false }
+     */
+    public function setStatus(Request $request, $id)
+    {
+        $track = MusicTrack::find($id);
+        if (!$track) {
+            return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
+        }
+
+        $validated = $request->validate([
+            'is_active' => ['required', 'boolean'],
+        ]);
+
+        if ($track->is_default && $track->is_active && $validated['is_active'] === false) {
+            return response()->json([
+                'message' => 'Musik default tidak bisa dinonaktifkan. Tetapkan musik default lain terlebih dahulu.'
+            ], 422);
+        }
+
+        $track->update(['is_active' => (bool) $validated['is_active']]);
+
+        return response()->json([
+            'message' => 'Status musik katalog berhasil diperbarui.',
+            'data' => $this->trackPayload($track->fresh()),
+        ], 200);
+    }
+
+    /**
+     * PATCH /api/v1/admin/music-tracks/reorder
+     * body: { track_ids: [3,1,2] }
+     */
+    public function reorder(Request $request)
+    {
+        $validated = $request->validate([
+            'track_ids' => ['required', 'array', 'min:1'],
+            'track_ids.*' => ['integer', 'exists:music_tracks,id'],
+        ], [
+            'track_ids.required' => 'Urutan musik katalog wajib dikirim.',
+            'track_ids.array' => 'Format urutan musik katalog tidak valid.',
+        ]);
+
+        $trackIds = array_values(array_unique($validated['track_ids']));
+
+        try {
+            DB::transaction(function () use ($trackIds) {
+                foreach ($trackIds as $index => $trackId) {
+                    MusicTrack::where('id', $trackId)->update(['sort_order' => $index + 1]);
+                }
+            });
+
+            $tracks = MusicTrack::orderBy('sort_order', 'asc')
+                ->orderBy('title', 'asc')
+                ->get()
+                ->map(fn (MusicTrack $track) => $this->trackPayload($track))
+                ->values();
+
+            return response()->json([
+                'message' => 'Urutan musik katalog berhasil diperbarui.',
+                'data' => $tracks,
+                'catalog' => $tracks,
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Admin music track reorder failed', [
+                'admin_id' => Auth::id(),
+                'track_ids' => $trackIds,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Gagal memperbarui urutan musik katalog.',
+            ], 500);
+        }
     }
 
     /**
@@ -257,7 +411,7 @@ class AdminMusicTrackController extends Controller
         $track = MusicTrack::find($id);
 
         if (!$track) {
-            return response()->json(['message' => 'Music track not found.'], 404);
+            return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
         }
 
         try {
@@ -268,7 +422,7 @@ class AdminMusicTrackController extends Controller
             $track->delete();
 
             return response()->json([
-                'message' => 'Music track deleted successfully.',
+                'message' => 'Musik katalog berhasil dihapus.',
             ], 200);
         } catch (\Exception $e) {
             Log::error('Admin music track delete failed', [
@@ -278,7 +432,34 @@ class AdminMusicTrackController extends Controller
             ]);
 
             return response()->json([
-                'message' => 'Failed to delete music track.',
+                'message' => 'Gagal menghapus musik katalog.',
+            ], 500);
+        }
+    }
+
+    /**
+     * POST /api/v1/admin/music-tracks/sync-global
+     * Sync cached global catalog metadata into local DB.
+     */
+    public function syncGlobalCatalog()
+    {
+        try {
+            $result = request()->boolean('seed_mock')
+                ? $this->globalCatalogSyncService->seedMock()
+                : $this->globalCatalogSyncService->sync();
+
+            return response()->json([
+                'message' => 'Global catalog sync completed.',
+                'data' => $result,
+            ], 200);
+        } catch (\Exception $e) {
+            Log::error('Global catalog sync failed', [
+                'admin_id' => Auth::id(),
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Failed to sync global catalog.',
             ], 500);
         }
     }

@@ -15,6 +15,8 @@ class Setting extends Model
         'token',
         'musik',
         'music_track_id',
+        'music_source_type',
+        'external_music_track_id',
         'salam_pembuka',
         'salam_atas',
         'salam_bawah',
@@ -29,5 +31,10 @@ class Setting extends Model
     public function musicTrack()
     {
         return $this->belongsTo(MusicTrack::class, 'music_track_id');
+    }
+
+    public function externalMusicTrack()
+    {
+        return $this->belongsTo(ExternalMusicTrack::class, 'external_music_track_id');
     }
 }

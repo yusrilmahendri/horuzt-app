@@ -8,9 +8,11 @@ use App\Models\User;
 use App\Services\DomainService;
 use App\Services\MusicResolverService;
 use App\Services\MusicStreamService;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 
 class SettingController extends Controller
@@ -131,6 +133,12 @@ class SettingController extends Controller
 
     public function storeMusic(StoreMusicRequest $request)
     {
+        $deleteOldResult = null;
+        $storeNewResult = false;
+        $updateDbResult = false;
+        $oldFilePath = null;
+        $newFilePath = null;
+
         try {
             $user = Auth::user();
 
@@ -147,36 +155,198 @@ class SettingController extends Controller
             }
 
             $musicFile = $request->file('musik');
+            $uploadMeta = $this->musicStreamService->safeUploadMeta($musicFile);
+            $clientMimeType = $uploadMeta['client_mime_type'];
+            $detectedMimeType = $uploadMeta['detected_mime_type'];
+            $originalFilename = $uploadMeta['original_filename'];
+            $extension = $uploadMeta['extension'];
+            $size = $uploadMeta['size'];
 
-            // Additional validation using service
-            if (!$this->musicStreamService->validateAudioFile($musicFile)) {
+            Log::info('Legacy custom music upload started', [
+                'user_id' => $user?->id,
+                'original_filename' => $originalFilename,
+                'extension' => $extension,
+                'client_mime_type' => $clientMimeType,
+                'detected_mime_type' => $detectedMimeType,
+                'size' => $size,
+            ]);
+
+            if (!($musicFile instanceof UploadedFile) || !$uploadMeta['is_valid_upload']) {
+                Log::warning('Legacy custom music upload rejected: invalid upload object', [
+                    'user_id' => $user?->id,
+                    'original_filename' => $originalFilename,
+                    'extension' => $extension,
+                    'client_mime_type' => $clientMimeType,
+                    'detected_mime_type' => $detectedMimeType,
+                    'size' => $size,
+                    'upload_error_code' => $uploadMeta['upload_error_code'],
+                    'upload_error_message' => $uploadMeta['upload_error_message'],
+                    'mime_detection_error' => $uploadMeta['mime_detection_error'],
+                ]);
+
                 return response()->json([
-                    'message' => 'Format file musik tidak didukung.',
+                    'message' => 'File musik tidak valid atau tidak dapat diproses.',
                     'errors' => [
-                        'musik' => ['Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.'],
+                        'musik' => ['File musik tidak valid atau tidak dapat diproses.'],
                     ],
                 ], 422);
             }
 
-            // Delete existing music file if exists
-            $existingSetting = Setting::where('user_id', $user->id)->first();
-            if ($existingSetting && $existingSetting->musik) {
-                $this->musicStreamService->deleteMusic($existingSetting);
+            $audioInspection = $this->musicStreamService->inspectAudioFile($musicFile);
+            if (!$audioInspection['is_valid']) {
+                $formatErrorMessage = 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.';
+                $sizeErrorMessage = 'Ukuran file musik melebihi batas maksimum 10 MB.';
+                $uploadErrorMessage = 'File musik tidak valid atau tidak dapat diproses.';
+
+                $reason = $audioInspection['reason'] ?? 'unsupported_mime';
+                $message = match ($reason) {
+                    'size_exceeded' => $sizeErrorMessage,
+                    'invalid_upload', 'missing_file' => $uploadErrorMessage,
+                    default => $formatErrorMessage,
+                };
+
+                Log::warning('Legacy custom music upload rejected by service validation', [
+                    'user_id' => $user?->id,
+                    'original_filename' => $originalFilename,
+                    'extension' => $audioInspection['extension'],
+                    'client_mime_type' => $audioInspection['client_mime_type'],
+                    'detected_mime_type' => $audioInspection['detected_mime_type'],
+                    'size' => $audioInspection['size'],
+                    'validation_reason' => $reason,
+                ]);
+
+                return response()->json([
+                    'message' => $message,
+                    'errors' => [
+                        'musik' => [$message],
+                    ],
+                ], 422);
             }
 
-            // Store new file
-            $fileName = (string) \Illuminate\Support\Str::uuid() . '.' . $musicFile->getClientOriginalExtension();
+            $existingSetting = Setting::where('user_id', $user->id)->first();
+            $fileExtension = $audioInspection['extension'] ?: 'mp3';
+            $fileName = (string) \Illuminate\Support\Str::uuid() . '.' . $fileExtension;
+            $newFilePath = 'public/music/' . $fileName;
+            $oldFilePath = $existingSetting?->musik;
+
+            // Store new file first so old file remains safe if storage write fails.
             $filePath = $musicFile->storeAs('public/music', $fileName);
+            $storeNewResult = (bool) $filePath;
+
+            if (!$storeNewResult || !$filePath) {
+                Log::error('Legacy custom music upload failed: cannot store new file', [
+                    'user_id' => $user?->id,
+                    'original_filename' => $originalFilename,
+                    'extension' => $extension,
+                    'client_mime_type' => $clientMimeType,
+                    'detected_mime_type' => $detectedMimeType,
+                    'size' => $size,
+                    'old_file_path' => $oldFilePath,
+                    'new_file_path' => $newFilePath,
+                    'delete_old_file_result' => $deleteOldResult,
+                    'store_new_file_result' => $storeNewResult,
+                    'update_db_result' => $updateDbResult,
+                ]);
+
+                return response()->json([
+                    'message' => 'Gagal menyimpan file musik.',
+                    'errors' => [
+                        'musik' => ['Gagal menyimpan file musik.'],
+                    ],
+                ], 500);
+            }
 
             // Update or create setting
+            $settingPayload = ['musik' => $filePath];
+            if (Schema::hasColumn('settings', 'music_source_type')) {
+                $settingPayload['music_source_type'] = 'user_upload';
+            }
+            if (Schema::hasColumn('settings', 'external_music_track_id')) {
+                $settingPayload['external_music_track_id'] = null;
+            }
+
             $setting = Setting::updateOrCreate(
                 ['user_id' => $user->id],
-                ['musik' => $filePath]
+                $settingPayload
             );
+            $updateDbResult = (bool) $setting;
+
+            if (!$updateDbResult) {
+                Storage::delete($filePath);
+
+                Log::error('Legacy custom music upload failed: cannot update DB', [
+                    'user_id' => $user?->id,
+                    'original_filename' => $originalFilename,
+                    'extension' => $extension,
+                    'client_mime_type' => $clientMimeType,
+                    'detected_mime_type' => $detectedMimeType,
+                    'size' => $size,
+                    'old_file_path' => $oldFilePath,
+                    'new_file_path' => $newFilePath,
+                    'delete_old_file_result' => $deleteOldResult,
+                    'store_new_file_result' => $storeNewResult,
+                    'update_db_result' => $updateDbResult,
+                ]);
+
+                return response()->json([
+                    'message' => 'Gagal memperbarui pengaturan musik.',
+                    'errors' => [
+                        'musik' => ['Gagal memperbarui pengaturan musik.'],
+                    ],
+                ], 500);
+            }
+
+            if ($oldFilePath) {
+                if (!Storage::exists($oldFilePath)) {
+                    $deleteOldResult = true;
+                } else {
+                    $deleteOldResult = Storage::delete($oldFilePath);
+                }
+
+                if (!$deleteOldResult) {
+                    $setting->update(['musik' => $oldFilePath]);
+                    Storage::delete($filePath);
+
+                    Log::error('Legacy custom music upload failed: cannot replace old file', [
+                        'user_id' => $user?->id,
+                        'original_filename' => $originalFilename,
+                        'extension' => $extension,
+                        'client_mime_type' => $clientMimeType,
+                        'detected_mime_type' => $detectedMimeType,
+                        'size' => $size,
+                        'old_file_path' => $oldFilePath,
+                        'new_file_path' => $newFilePath,
+                        'delete_old_file_result' => $deleteOldResult,
+                        'store_new_file_result' => $storeNewResult,
+                        'update_db_result' => $updateDbResult,
+                    ]);
+
+                    return response()->json([
+                        'message' => 'Gagal mengganti file musik lama.',
+                        'errors' => [
+                            'musik' => ['Gagal mengganti file musik lama.'],
+                        ],
+                    ], 500);
+                }
+            }
 
             $setting = $setting->fresh(['musicTrack']);
             $musicInfo = $this->musicStreamService->getMusicInfo($setting);
             $state = $this->musicResolverService->selectionState($setting, $user);
+
+            Log::info('Legacy custom music upload completed', [
+                'user_id' => $user?->id,
+                'original_filename' => $originalFilename,
+                'extension' => $extension,
+                'client_mime_type' => $clientMimeType,
+                'detected_mime_type' => $detectedMimeType,
+                'size' => $size,
+                'old_file_path' => $oldFilePath,
+                'new_file_path' => $newFilePath,
+                'delete_old_file_result' => $deleteOldResult,
+                'store_new_file_result' => $storeNewResult,
+                'update_db_result' => $updateDbResult,
+            ]);
 
             return response()->json([
                 'message' => 'Musik pribadi berhasil diunggah.',
@@ -192,14 +362,32 @@ class SettingController extends Controller
             ], 200);
 
         } catch (\Exception $e) {
-            Log::error('Music upload failed', [
+            Log::error('Music upload failed with exception', [
                 'user_id' => Auth::id(),
-                'error' => $e->getMessage()
+                ...$this->musicStreamService->safeUploadMeta($request->file('musik')),
+                'old_file_path' => $oldFilePath,
+                'new_file_path' => $newFilePath,
+                'delete_old_file_result' => $deleteOldResult,
+                'store_new_file_result' => $storeNewResult,
+                'update_db_result' => $updateDbResult,
+                'exception_message' => $e->getMessage(),
             ]);
+
+            $message = 'Gagal mengunggah file musik.';
+            if (!$storeNewResult) {
+                $message = 'Gagal menyimpan file musik.';
+            } elseif ($storeNewResult && !$updateDbResult) {
+                $message = 'Gagal memperbarui pengaturan musik.';
+            } elseif ($storeNewResult && $updateDbResult && $deleteOldResult === false) {
+                $message = 'Gagal mengganti file musik lama.';
+            } elseif ($storeNewResult && $updateDbResult) {
+                $message = 'File musik berhasil disimpan, tetapi proses finalisasi data gagal.';
+            }
+
             return response()->json([
-                'message' => 'Gagal mengunggah file musik.',
+                'message' => $message,
                 'errors' => [
-                    'musik' => ['Gagal mengunggah file musik.'],
+                    'musik' => [$message],
                 ],
             ], 500);
         }

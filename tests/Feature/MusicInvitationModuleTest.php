@@ -35,6 +35,7 @@ class MusicInvitationModuleTest extends TestCase
         $this->createMinimalSchema();
         app(PermissionRegistrar::class)->forgetCachedPermissions();
         Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
     }
 
     protected function tearDown(): void
@@ -65,7 +66,7 @@ class MusicInvitationModuleTest extends TestCase
             ->assertOk()
             ->assertJsonPath('selected_music_id', $selected->id)
             ->assertJsonPath('selected_music.id', $selected->id)
-            ->assertJsonPath('music_source_type', 'catalog')
+            ->assertJsonPath('music_source_type', 'admin_catalog')
             ->assertJsonPath('resolved_music_url', $selected->url);
     }
 
@@ -83,7 +84,7 @@ class MusicInvitationModuleTest extends TestCase
                 ->assertOk()
                 ->assertJsonPath('message', 'Musik pribadi berhasil diunggah.')
                 ->assertJsonPath('can_upload_custom_music', true)
-                ->assertJsonPath('music_source_type', 'custom')
+                ->assertJsonPath('music_source_type', 'user_upload')
                 ->assertJsonPath('custom_music.url', fn ($url) => is_string($url) && str_contains($url, '/storage/music/'));
         }
     }
@@ -98,7 +99,51 @@ class MusicInvitationModuleTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('message', 'Musik pribadi berhasil diunggah.')
-            ->assertJsonPath('music_source_type', 'custom');
+            ->assertJsonPath('music_source_type', 'user_upload');
+    }
+
+    public function test_custom_music_upload_accepts_allowed_extension_even_with_non_audio_mime(): void
+    {
+        $user = $this->userWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/user/custom-music', [
+            'musik' => UploadedFile::fake()->create('downloaded.mp3', 256, 'application/octet-stream'),
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Musik pribadi berhasil diunggah.')
+            ->assertJsonPath('music_source_type', 'user_upload');
+    }
+
+    public function test_custom_music_upload_accepts_wav_ogg_and_m4a_extensions(): void
+    {
+        $user = $this->userWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        foreach (['wav', 'ogg', 'm4a'] as $extension) {
+            $this->postJson('/api/v1/user/custom-music', [
+                'musik' => UploadedFile::fake()->create("track.{$extension}", 128, 'application/octet-stream'),
+            ])
+                ->assertOk()
+                ->assertJsonPath('message', 'Musik pribadi berhasil diunggah.')
+                ->assertJsonPath('music_source_type', 'user_upload');
+        }
+    }
+
+    public function test_user_can_select_global_catalog_track_via_backend_catalog_provider(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $global = $this->externalTrack('Global Song');
+        Sanctum::actingAs($user);
+
+        $this->putJson('/api/v1/user/music-selection', [
+            'source_type' => 'global_catalog',
+            'global_music_id' => $global->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('music_source_type', 'global_catalog')
+            ->assertJsonPath('selected_global_music_id', $global->id)
+            ->assertJsonPath('resolved_music_url', $global->stream_url);
     }
 
     public function test_non_diamond_or_platinum_user_cannot_upload_custom_music(): void
@@ -149,7 +194,7 @@ class MusicInvitationModuleTest extends TestCase
             'musik' => UploadedFile::fake()->create('second.mp3', 64, 'audio/mpeg'),
         ])
             ->assertOk()
-            ->assertJsonPath('music_source_type', 'custom');
+            ->assertJsonPath('music_source_type', 'user_upload');
 
         $setting = Setting::where('user_id', $user->id)->firstOrFail();
         $this->assertNotSame($firstPath, $setting->musik);
@@ -159,6 +204,39 @@ class MusicInvitationModuleTest extends TestCase
             ->assertJsonPath('setting.musik', null)
             ->assertJsonPath('music_source_type', 'default')
             ->assertJsonPath('resolved_music_url', $default->url);
+    }
+
+    public function test_admin_can_upload_catalog_music_with_allowed_extension_even_if_mime_is_generic(): void
+    {
+        $admin = $this->adminUser();
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/admin/music-tracks', [
+            'title' => 'Admin Uploaded Song',
+            'musik' => UploadedFile::fake()->create('catalog-download.mp3', 256, 'application/octet-stream'),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('message', 'Musik katalog berhasil diunggah.');
+    }
+
+    public function test_admin_catalog_upload_still_rejects_invalid_extension_and_oversized_file(): void
+    {
+        $admin = $this->adminUser();
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/v1/admin/music-tracks', [
+            'title' => 'Invalid Extension Song',
+            'musik' => UploadedFile::fake()->create('catalog.txt', 256, 'text/plain'),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
+
+        $this->postJson('/api/v1/admin/music-tracks', [
+            'title' => 'Too Big Song',
+            'musik' => UploadedFile::fake()->create('catalog.mp3', 12000, 'application/octet-stream'),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Ukuran file musik melebihi batas maksimum 10 MB.');
     }
 
     private function userWithPackage(string $code): User
@@ -192,6 +270,18 @@ class MusicInvitationModuleTest extends TestCase
         return $user;
     }
 
+    private function adminUser(): User
+    {
+        $user = User::create([
+            'name' => 'Admin Music',
+            'email' => 'admin-music-' . str()->random(8) . '@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+        $user->assignRole('admin');
+
+        return $user;
+    }
+
     private function track(string $title, bool $isDefault = false, int $sortOrder = 0): MusicTrack
     {
         $slug = str($title)->slug() . '-' . str()->random(6);
@@ -209,6 +299,22 @@ class MusicInvitationModuleTest extends TestCase
             'is_default' => $isDefault,
             'sort_order' => $sortOrder,
             'source' => 'sena_digital',
+        ]);
+    }
+
+    private function externalTrack(string $title, int $sortOrder = 0)
+    {
+        return \App\Models\ExternalMusicTrack::create([
+            'title' => $title,
+            'artist' => 'Global Artist',
+            'provider' => 'global',
+            'provider_track_id' => str()->random(12),
+            'stream_url' => 'https://global.example.test/' . str($title)->slug() . '.mp3',
+            'mime_type' => 'audio/mpeg',
+            'is_active' => true,
+            'sort_order' => $sortOrder,
+            'payload' => ['title' => $title],
+            'last_synced_at' => now(),
         ]);
     }
 
@@ -249,10 +355,30 @@ class MusicInvitationModuleTest extends TestCase
             $table->string('token')->nullable();
             $table->string('musik')->nullable();
             $table->foreignId('music_track_id')->nullable();
+            $table->string('music_source_type')->nullable();
+            $table->foreignId('external_music_track_id')->nullable();
             $table->string('salam_pembuka')->nullable();
             $table->string('salam_atas')->nullable();
             $table->string('salam_bawah')->nullable();
             $table->integer('trial_masa_aktif')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('external_music_tracks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->string('artist')->nullable();
+            $table->string('provider')->default('global');
+            $table->string('provider_track_id');
+            $table->text('stream_url');
+            $table->text('preview_url')->nullable();
+            $table->unsignedInteger('duration_seconds')->nullable();
+            $table->string('mime_type')->nullable();
+            $table->unsignedBigInteger('file_size')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->integer('sort_order')->default(0);
+            $table->json('payload')->nullable();
+            $table->timestamp('last_synced_at')->nullable();
             $table->timestamps();
         });
 

@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ExternalMusicTrack;
 use App\Models\Invitation;
 use App\Models\MusicTrack;
 use App\Models\PaketUndangan;
@@ -12,8 +13,9 @@ use Illuminate\Support\Facades\Schema;
  * Resolves the effective music for a given Setting using a fixed priority:
  *   1. settings.musik          => custom upload (Diamond/Platinum users)
  *   2. settings.music_track_id => catalog track selected by the user
- *   3. music_tracks.is_default => system default track
- *   4. none                    => null
+ *   3. settings.external_music_track_id => global catalog selected by user
+ *   4. music_tracks.is_default => system default admin track
+ *   5. none                    => null
  *
  * This is the single source of truth for "which music plays" so controllers,
  * the stream service and the wedding profile resource never duplicate the logic.
@@ -36,7 +38,7 @@ class MusicResolverService
             }
         }
 
-        // Priority 2: selected catalog track (must still be active).
+        // Priority 2: selected admin catalog track (must still be active).
         if ($this->catalogSchemaReady() && $setting && ! empty($setting->music_track_id)) {
             $track = MusicTrack::where('id', $setting->music_track_id)
                 ->where('is_active', true)
@@ -50,11 +52,25 @@ class MusicResolverService
             }
         }
 
+        // Priority 3: selected global catalog track (cached locally).
+        if ($this->externalCatalogSchemaReady() && $setting && ! empty($setting->external_music_track_id)) {
+            $track = ExternalMusicTrack::where('id', $setting->external_music_track_id)
+                ->where('is_active', true)
+                ->first();
+
+            if ($track) {
+                $info = $this->buildFromExternalTrack('global_catalog', $track);
+                if ($info) {
+                    return $info;
+                }
+            }
+        }
+
         if (! $this->catalogSchemaReady()) {
             return null;
         }
 
-        // Priority 3: active default track.
+        // Priority 4: active default admin track.
         $default = MusicTrack::where('is_default', true)
             ->where('is_active', true)
             ->orderBy('sort_order')
@@ -68,7 +84,7 @@ class MusicResolverService
             }
         }
 
-        // Priority 4: nothing available.
+        // Priority 5: nothing available.
         return null;
     }
 
@@ -129,21 +145,44 @@ class MusicResolverService
     public function selectionState(?Setting $setting, $user = null): array
     {
         $resolved = $this->resolveInfo($setting);
-        $selected = null;
+        $selectedAdmin = null;
+        $selectedGlobal = null;
 
         if ($this->catalogSchemaReady() && $setting?->music_track_id) {
-            $selected = MusicTrack::where('id', $setting->music_track_id)
+            $selectedAdmin = MusicTrack::where('id', $setting->music_track_id)
+                ->where('is_active', true)
+                ->first();
+        }
+
+        if ($this->externalCatalogSchemaReady() && $setting?->external_music_track_id) {
+            $selectedGlobal = ExternalMusicTrack::where('id', $setting->external_music_track_id)
                 ->where('is_active', true)
                 ->first();
         }
 
         $default = $this->defaultTrack();
         $custom = $this->customMusicInfo($setting);
+        $selectedMusic = $this->selectedMusicPayload(
+            $resolved['source'] ?? null,
+            $selectedAdmin,
+            $selectedGlobal,
+            $default,
+            $custom
+        );
 
         return [
+            'catalog_sections' => [
+                'user_uploads' => $custom ? [$custom] : [],
+                'admin_catalog' => [],
+                'global_catalog' => [],
+            ],
             'selected_music_id' => $this->catalogSchemaReady() ? $setting?->music_track_id : null,
             'selected_catalog_id' => $this->catalogSchemaReady() ? $setting?->music_track_id : null,
-            'selected_music' => $selected ? $this->trackPayload($selected) : null,
+            'selected_admin_music_id' => $this->catalogSchemaReady() ? $setting?->music_track_id : null,
+            'selected_global_music_id' => $this->externalCatalogSchemaReady() ? $setting?->external_music_track_id : null,
+            'selected_music' => $selectedMusic,
+            'selected_admin_music' => $selectedAdmin ? $this->trackPayload($selectedAdmin) : null,
+            'selected_global_music' => $selectedGlobal ? $this->externalTrackPayload($selectedGlobal) : null,
             'default_music' => $default ? $this->trackPayload($default) : null,
             'custom_music' => $custom,
             'custom_music_url' => $custom['url'] ?? null,
@@ -264,8 +303,9 @@ class MusicResolverService
     private function normalizeSourceType(?string $source): string
     {
         return match ($source) {
-            'custom' => 'custom',
-            'catalog' => 'catalog',
+            'custom' => 'user_upload',
+            'catalog' => 'admin_catalog',
+            'global_catalog' => 'global_catalog',
             default => 'default',
         };
     }
@@ -275,6 +315,13 @@ class MusicResolverService
         return Schema::hasTable('music_tracks')
             && Schema::hasTable('settings')
             && Schema::hasColumn('settings', 'music_track_id');
+    }
+
+    private function externalCatalogSchemaReady(): bool
+    {
+        return Schema::hasTable('external_music_tracks')
+            && Schema::hasTable('settings')
+            && Schema::hasColumn('settings', 'external_music_track_id');
     }
 
     /**
@@ -313,5 +360,99 @@ class MusicResolverService
             'file_size' => $fileSize,
             'url' => asset('storage/' . $publicPath),
         ];
+    }
+
+    /**
+     * Build descriptor from an external/global cached track.
+     *
+     * @return array<string,mixed>|null
+     */
+    private function buildFromExternalTrack(string $source, ExternalMusicTrack $track): ?array
+    {
+        if (empty($track->stream_url)) {
+            return null;
+        }
+
+        return [
+            'source' => $source,
+            'track_id' => $track->id,
+            'title' => $track->title,
+            'artist' => $track->artist,
+            'album' => $track->album,
+            'storage_path' => null,
+            'absolute_path' => null,
+            'mime_type' => $track->mime_type ?? 'audio/mpeg',
+            'file_size' => $track->file_size,
+            'url' => $track->stream_url,
+            'provider' => $track->provider,
+            'external_id' => $track->external_id ?: $track->provider_track_id,
+            'provider_track_id' => $track->provider_track_id,
+            'preview_url' => $track->preview_url,
+            'thumbnail_url' => $track->thumbnail_url,
+            'license_name' => $track->license_name,
+            'license_url' => $track->license_url,
+            'duration' => $track->duration_seconds,
+            'fetched_at' => optional($track->fetched_at)->toIso8601String(),
+        ];
+    }
+
+    /**
+     * @return array<string,mixed>
+     */
+    public function externalTrackPayload(ExternalMusicTrack $track): array
+    {
+        return [
+            'id' => $track->id,
+            'provider' => $track->provider,
+            'external_id' => $track->external_id ?: $track->provider_track_id,
+            'provider_track_id' => $track->provider_track_id,
+            'title' => $track->title,
+            'artist' => $track->artist,
+            'album' => $track->album,
+            'subtitle' => $track->artist,
+            'audio_url' => $track->stream_url,
+            'stream_url' => $track->stream_url,
+            'preview_url' => $track->preview_url,
+            'thumbnail_url' => $track->thumbnail_url,
+            'license_name' => $track->license_name,
+            'license_url' => $track->license_url,
+            'duration' => $track->duration_seconds,
+            'duration_seconds' => $track->duration_seconds,
+            'fetched_at' => optional($track->fetched_at)->toIso8601String(),
+            'mime_type' => $track->mime_type,
+            'file_size' => $track->file_size,
+            'source' => 'global_catalog',
+            'is_active' => $track->is_active,
+            'is_default' => false,
+            'sort_order' => $track->sort_order,
+        ];
+    }
+
+    private function selectedMusicPayload(
+        ?string $resolvedSource,
+        ?MusicTrack $selectedAdmin,
+        ?ExternalMusicTrack $selectedGlobal,
+        ?MusicTrack $default,
+        ?array $custom
+    ): ?array {
+        return match ($resolvedSource) {
+            'custom' => $custom ? [
+                'id' => null,
+                'title' => $custom['file_name'] ?? 'Custom Upload',
+                'artist' => null,
+                'subtitle' => null,
+                'audio_url' => $custom['url'] ?? null,
+                'stream_url' => $custom['url'] ?? null,
+                'mime_type' => $custom['mime_type'] ?? null,
+                'file_size' => $custom['file_size'] ?? null,
+                'source' => 'user_upload',
+                'is_active' => true,
+                'is_default' => false,
+                'sort_order' => 0,
+            ] : null,
+            'catalog' => $selectedAdmin ? $this->trackPayload($selectedAdmin) : null,
+            'global_catalog' => $selectedGlobal ? $this->externalTrackPayload($selectedGlobal) : null,
+            default => $default ? $this->trackPayload($default) : null,
+        };
     }
 }
