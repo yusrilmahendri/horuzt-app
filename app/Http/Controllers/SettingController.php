@@ -185,9 +185,9 @@ class SettingController extends Controller
                 ]);
 
                 return response()->json([
-                    'message' => 'File musik tidak valid atau tidak dapat diproses.',
+                    'message' => 'Gagal menyimpan file musik.',
                     'errors' => [
-                        'musik' => ['File musik tidak valid atau tidak dapat diproses.'],
+                        'musik' => ['Gagal menyimpan file musik.'],
                     ],
                 ], 422);
             }
@@ -196,9 +196,9 @@ class SettingController extends Controller
             if (!$audioInspection['is_valid']) {
                 $formatErrorMessage = 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.';
                 $sizeErrorMessage = 'Ukuran file musik melebihi batas maksimum 10 MB.';
-                $uploadErrorMessage = 'File musik tidak valid atau tidak dapat diproses.';
+                $uploadErrorMessage = 'Gagal menyimpan file musik.';
 
-                $reason = $audioInspection['reason'] ?? 'unsupported_mime';
+                $reason = $audioInspection['reason'] ?? 'unsupported_extension';
                 $message = match ($reason) {
                     'size_exceeded' => $sizeErrorMessage,
                     'invalid_upload', 'missing_file' => $uploadErrorMessage,
@@ -373,7 +373,7 @@ class SettingController extends Controller
                 'exception_message' => $e->getMessage(),
             ]);
 
-            $message = 'Gagal mengunggah file musik.';
+            $message = 'Gagal menyimpan file musik.';
             if (!$storeNewResult) {
                 $message = 'Gagal menyimpan file musik.';
             } elseif ($storeNewResult && !$updateDbResult) {

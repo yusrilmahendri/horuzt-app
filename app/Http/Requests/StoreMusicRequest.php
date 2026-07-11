@@ -40,7 +40,7 @@ class StoreMusicRequest extends FormRequest
                     }
 
                     if (!$value->isValid()) {
-                        $fail('File musik tidak valid atau tidak dapat diproses.');
+                        $fail('Gagal menyimpan file musik.');
                         return;
                     }
 
@@ -64,8 +64,8 @@ class StoreMusicRequest extends FormRequest
 
         return [
             'musik.required' => 'File musik wajib dipilih.',
-            'musik.file' => 'File musik tidak valid atau tidak dapat diproses.',
-            'musik.uploaded' => 'File musik tidak valid atau tidak dapat diproses.',
+            'musik.file' => 'Gagal menyimpan file musik.',
+            'musik.uploaded' => 'Gagal menyimpan file musik.',
             'musik.max' => "Ukuran file musik melebihi batas maksimum {$maxSizeMb} MB."
         ];
     }
@@ -91,12 +91,14 @@ class StoreMusicRequest extends FormRequest
         $hasFormatError = $musicMessages->contains(fn ($message) => str_contains($message, 'Format file musik tidak didukung'));
         $hasMaxSizeError = $musicMessages->contains(fn ($message) => str_contains($message, 'Ukuran file musik melebihi batas maksimum'));
         $hasRequiredError = $musicMessages->contains(fn ($message) => str_contains($message, 'File musik wajib dipilih'));
+        $hasStoreError = $musicMessages->contains(fn ($message) => str_contains($message, 'Gagal menyimpan file musik'));
 
         $topLevelMessage = match (true) {
             $hasRequiredError => 'File musik wajib dipilih.',
             $hasFormatError => 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.',
             $hasMaxSizeError => "Ukuran file musik melebihi batas maksimum {$maxSizeMb} MB.",
-            default => 'File musik tidak valid atau tidak dapat diproses.',
+            $hasStoreError => 'Gagal menyimpan file musik.',
+            default => 'Gagal menyimpan file musik.',
         };
 
         Log::warning('Custom music request validation failed', [

@@ -68,7 +68,7 @@ class AdminMusicTrackController extends Controller
                     }
 
                     if (! $value->isValid()) {
-                        $fail('File musik tidak valid atau tidak dapat diproses.');
+                        $fail('Gagal menyimpan file musik.');
                         return;
                     }
 
@@ -87,7 +87,8 @@ class AdminMusicTrackController extends Controller
             'external_id' => ['nullable', 'string', 'max:100'],
         ], [
             'musik.required' => 'File musik wajib dipilih.',
-            'musik.file' => 'File musik tidak valid atau tidak dapat diproses.',
+            'musik.file' => 'Gagal menyimpan file musik.',
+            'musik.uploaded' => 'Gagal menyimpan file musik.',
             'musik.max' => 'Ukuran file musik melebihi batas maksimum 10 MB.',
             'title.required' => 'Judul musik katalog wajib diisi.',
         ]);

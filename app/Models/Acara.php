@@ -20,11 +20,19 @@ class Acara extends Model
         'start_acara',
         'end_acara',
         'alamat',
-        'link_maps'
+        'link_maps',
+        'address',
+        'location_name',
+        'latitude',
+        'longitude',
+        'google_maps_url',
+        'place_id'
     ];
 
     protected $casts = [
-        'tanggal_acara' => 'date'
+        'tanggal_acara' => 'date',
+        'latitude' => 'decimal:7',
+        'longitude' => 'decimal:7',
     ];
 
     // Event types enum values

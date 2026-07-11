@@ -2,6 +2,7 @@
 
 namespace App\Http\Resources\WeddingProfile;
 
+use App\Services\LocationResolverService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Log;
@@ -238,6 +239,8 @@ class WeddingProfileResource extends JsonResource
         }
 
         return $this->acara->map(function ($acara) {
+            $location = app(LocationResolverService::class)->resolveAcara($acara);
+
             return [
                 'id' => $acara->id,
                 'jenis_acara' => $acara->jenis_acara ?? null,
@@ -245,8 +248,14 @@ class WeddingProfileResource extends JsonResource
                 'tanggal_acara' => $acara->tanggal_acara,
                 'start_acara' => $acara->start_acara,
                 'end_acara' => $acara->end_acara,
-                'alamat' => $acara->alamat,
-                'link_maps' => $acara->link_maps,
+                'alamat' => $location['alamat'],
+                'link_maps' => $location['link_maps'],
+                'address' => $location['address'],
+                'location_name' => $location['location_name'],
+                'latitude' => $location['latitude'],
+                'longitude' => $location['longitude'],
+                'google_maps_url' => $location['google_maps_url'],
+                'place_id' => $location['place_id'],
                 'countdown' => $acara->countdownAcara ? [
                     'id' => $acara->countdownAcara->id,
                     'name_countdown' => $acara->countdownAcara->name_countdown,
