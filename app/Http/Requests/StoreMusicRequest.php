@@ -5,7 +5,6 @@ namespace App\Http\Requests;
 use Illuminate\Foundation\Http\FormRequest;
 use Illuminate\Contracts\Validation\Validator;
 use Illuminate\Http\Exceptions\HttpResponseException;
-use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Log;
 
 class StoreMusicRequest extends FormRequest
@@ -25,31 +24,8 @@ class StoreMusicRequest extends FormRequest
      */
     public function rules(): array
     {
-        $maxSize = config('upload.music_max_file_size', 10240);
-        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a'];
-
         return [
-            'musik' => [
-                'required',
-                'file',
-                "max:{$maxSize}",
-                function (string $attribute, mixed $value, \Closure $fail) use ($allowedExtensions): void {
-                    if (!$value instanceof UploadedFile) {
-                        $fail('File musik wajib dipilih.');
-                        return;
-                    }
-
-                    if (!$value->isValid()) {
-                        $fail('Gagal menyimpan file musik.');
-                        return;
-                    }
-
-                    $extension = strtolower((string) $value->getClientOriginalExtension());
-                    if ($extension === '' || !in_array($extension, $allowedExtensions, true)) {
-                        $fail('Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
-                    }
-                },
-            ]
+            'musik' => 'required|file|max:20480|extensions:mp3,wav,m4a,aac,ogg',
         ];
     }
 
@@ -60,13 +36,12 @@ class StoreMusicRequest extends FormRequest
      */
     public function messages(): array
     {
-        $maxSizeMb = config('upload.music_max_file_size_mb', '10');
-
         return [
             'musik.required' => 'File musik wajib dipilih.',
             'musik.file' => 'Gagal menyimpan file musik.',
             'musik.uploaded' => 'Gagal menyimpan file musik.',
-            'musik.max' => "Ukuran file musik melebihi batas maksimum {$maxSizeMb} MB."
+            'musik.max' => 'Ukuran file musik maksimal 20 MB.',
+            'musik.extensions' => 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.',
         ];
     }
 
@@ -86,17 +61,16 @@ class StoreMusicRequest extends FormRequest
     {
         $file = $this->file('musik');
         $errors = $validator->errors()->toArray();
-        $maxSizeMb = config('upload.music_max_file_size_mb', '10');
         $musicMessages = isset($errors['musik']) ? collect($errors['musik']) : collect();
-        $hasFormatError = $musicMessages->contains(fn ($message) => str_contains($message, 'Format file musik tidak didukung'));
-        $hasMaxSizeError = $musicMessages->contains(fn ($message) => str_contains($message, 'Ukuran file musik melebihi batas maksimum'));
+        $hasFormatError = $musicMessages->contains(fn ($message) => str_contains($message, 'Format musik harus'));
+        $hasMaxSizeError = $musicMessages->contains(fn ($message) => str_contains($message, 'Ukuran file musik maksimal'));
         $hasRequiredError = $musicMessages->contains(fn ($message) => str_contains($message, 'File musik wajib dipilih'));
         $hasStoreError = $musicMessages->contains(fn ($message) => str_contains($message, 'Gagal menyimpan file musik'));
 
         $topLevelMessage = match (true) {
             $hasRequiredError => 'File musik wajib dipilih.',
-            $hasFormatError => 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.',
-            $hasMaxSizeError => "Ukuran file musik melebihi batas maksimum {$maxSizeMb} MB.",
+            $hasFormatError => 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.',
+            $hasMaxSizeError => 'Ukuran file musik maksimal 20 MB.',
             $hasStoreError => 'Gagal menyimpan file musik.',
             default => 'Gagal menyimpan file musik.',
         };
@@ -134,7 +108,7 @@ class StoreMusicRequest extends FormRequest
             'mime_detection_error' => null,
         ];
 
-        if (!$file instanceof UploadedFile) {
+        if (!$file instanceof \Illuminate\Http\UploadedFile) {
             return $meta;
         }
 

@@ -148,8 +148,8 @@ class MusicController extends Controller
 
             $audioInspection = $this->musicStreamService->inspectAudioFile($musicFile);
             if (!$audioInspection['is_valid']) {
-                $formatErrorMessage = 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.';
-                $sizeErrorMessage = 'Ukuran file musik melebihi batas maksimum 10 MB.';
+                $formatErrorMessage = 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.';
+                $sizeErrorMessage = 'Ukuran file musik maksimal 20 MB.';
                 $uploadErrorMessage = 'Gagal menyimpan file musik.';
 
                 $reason = $audioInspection['reason'] ?? 'unsupported_extension';

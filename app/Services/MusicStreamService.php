@@ -302,8 +302,8 @@ class MusicStreamService
      */
     public function inspectAudioFile($file): array
     {
-        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a'];
-        $maxSizeBytes = config('upload.music_max_file_size', 10240) * 1024;
+        $allowedExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg'];
+        $maxSizeBytes = config('upload.music_max_file_size', 20480) * 1024;
 
         $meta = $this->safeUploadMeta($file);
 

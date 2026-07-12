@@ -19,8 +19,8 @@ class LargeFileHandler
         // Set PHP configuration for large file uploads with fallback values
         $settings = config('upload.php_settings', []);
 
-        ini_set('upload_max_filesize', $settings['upload_max_filesize'] ?? '12M');
-        ini_set('post_max_size', $settings['post_max_size'] ?? '16M');
+        ini_set('upload_max_filesize', $settings['upload_max_filesize'] ?? '25M');
+        ini_set('post_max_size', $settings['post_max_size'] ?? '30M');
         ini_set('max_execution_time', $settings['max_execution_time'] ?? 300);
         ini_set('memory_limit', $settings['memory_limit'] ?? '256M');
 

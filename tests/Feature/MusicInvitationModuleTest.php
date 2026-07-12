@@ -89,13 +89,13 @@ class MusicInvitationModuleTest extends TestCase
         }
     }
 
-    public function test_diamond_user_can_upload_music_up_to_ten_mb(): void
+    public function test_diamond_user_can_upload_music_up_to_twenty_mb(): void
     {
         $user = $this->userWithPackage('diamond');
         Sanctum::actingAs($user);
 
         $this->postJson('/api/v1/user/custom-music', [
-            'musik' => UploadedFile::fake()->create('ten-mb.mp3', 10240, 'audio/mpeg'),
+            'musik' => UploadedFile::fake()->create('twenty-mb.mp3', 20480, 'audio/mpeg'),
         ])
             ->assertOk()
             ->assertJsonPath('message', 'Musik pribadi berhasil diunggah.')
@@ -115,12 +115,12 @@ class MusicInvitationModuleTest extends TestCase
             ->assertJsonPath('music_source_type', 'user_upload');
     }
 
-    public function test_custom_music_upload_accepts_wav_ogg_and_m4a_extensions(): void
+    public function test_custom_music_upload_accepts_wav_ogg_m4a_and_aac_extensions(): void
     {
         $user = $this->userWithPackage('diamond');
         Sanctum::actingAs($user);
 
-        foreach (['wav', 'ogg', 'm4a'] as $extension) {
+        foreach (['wav', 'ogg', 'm4a', 'aac'] as $extension) {
             $this->postJson('/api/v1/user/custom-music', [
                 'musik' => UploadedFile::fake()->create("track.{$extension}", 128, 'application/octet-stream'),
             ])
@@ -201,15 +201,15 @@ class MusicInvitationModuleTest extends TestCase
             'musik' => UploadedFile::fake()->create('song.txt', 64, 'text/plain'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.')
-            ->assertJsonPath('errors.musik.0', 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
+            ->assertJsonPath('message', 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.')
+            ->assertJsonPath('errors.musik.0', 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.');
 
         $this->postJson('/api/v1/user/custom-music', [
-            'musik' => UploadedFile::fake()->create('big-song.mp3', 11000, 'audio/mpeg'),
+            'musik' => UploadedFile::fake()->create('big-song.mp3', 21000, 'audio/mpeg'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Ukuran file musik melebihi batas maksimum 10 MB.')
-            ->assertJsonPath('errors.musik.0', 'Ukuran file musik melebihi batas maksimum 10 MB.');
+            ->assertJsonPath('message', 'Ukuran file musik maksimal 20 MB.')
+            ->assertJsonPath('errors.musik.0', 'Ukuran file musik maksimal 20 MB.');
     }
 
     public function test_upload_replaces_single_active_custom_music_and_delete_falls_back(): void
@@ -266,7 +266,7 @@ class MusicInvitationModuleTest extends TestCase
 
         $this->postJson('/api/v1/admin/music-tracks', [
             'title' => 'Too Big Song',
-            'musik' => UploadedFile::fake()->create('catalog.mp3', 12000, 'application/octet-stream'),
+            'musik' => UploadedFile::fake()->create('catalog.mp3', 21000, 'application/octet-stream'),
         ])
             ->assertUnprocessable()
             ->assertJsonPath('message', 'Ukuran file musik melebihi batas maksimum 10 MB.');
