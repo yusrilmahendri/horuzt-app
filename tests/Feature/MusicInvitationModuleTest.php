@@ -146,6 +146,39 @@ class MusicInvitationModuleTest extends TestCase
             ->assertJsonPath('resolved_music_url', $global->stream_url);
     }
 
+    public function test_default_mode_uses_first_active_catalog_track_when_no_explicit_default_exists(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $fallback = $this->track('Fallback Active Song', false, 1);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/user/music-selection')
+            ->assertOk()
+            ->assertJsonPath('music_source_type', 'default')
+            ->assertJsonPath('default_music.id', $fallback->id)
+            ->assertJsonPath('selected_music.id', $fallback->id)
+            ->assertJsonPath('resolved_music_url', $fallback->url)
+            ->assertJsonPath('music_info.has_music', true)
+            ->assertJsonPath('music_info.music_source_type', 'default')
+            ->assertJsonPath('music_resolution_status', 'resolved');
+    }
+
+    public function test_default_mode_returns_clear_status_when_catalog_has_no_active_track(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/user/music-selection')
+            ->assertOk()
+            ->assertJsonPath('music_source_type', 'default')
+            ->assertJsonPath('default_music', null)
+            ->assertJsonPath('selected_music', null)
+            ->assertJsonPath('resolved_music_url', null)
+            ->assertJsonPath('music_info', null)
+            ->assertJsonPath('music_resolution_status', 'no_default_track')
+            ->assertJsonPath('music_resolution_message', 'Belum ada musik default aktif di katalog.');
+    }
+
     public function test_non_diamond_or_platinum_user_cannot_upload_custom_music(): void
     {
         $user = $this->userWithPackage('ruby');

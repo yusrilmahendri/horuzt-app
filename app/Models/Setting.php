@@ -20,6 +20,15 @@ class Setting extends Model
         'salam_pembuka',
         'salam_atas',
         'salam_bawah',
+        'religion_code',
+        'religion_opening_greeting',
+        'religion_closing_greeting',
+        'religion_invitation_intro',
+        'religion_whatsapp_message',
+        'religion_quote_text',
+        'religion_quote_source',
+        'religion_prayer_text',
+        'religion_blessing_text',
         'trial_masa_aktif',
     ];
     

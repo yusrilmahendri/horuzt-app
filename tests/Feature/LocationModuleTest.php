@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Facades\Storage;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -29,6 +30,13 @@ class LocationModuleTest extends TestCase
         DB::connection('sqlite')->getPdo();
 
         $this->createMinimalSchema();
+    }
+
+    protected function tearDown(): void
+    {
+        Storage::deleteDirectory('public/music/location-test');
+
+        parent::tearDown();
     }
 
     public function test_user_can_store_manual_address_without_coordinates(): void
@@ -169,6 +177,20 @@ class LocationModuleTest extends TestCase
             ->assertJsonPath('data.events.0.place_id', 'public-place');
     }
 
+    public function test_public_wedding_profile_returns_default_music_from_same_resolver(): void
+    {
+        $this->createDefaultMusicTrack();
+        $this->userWithCountdownAndPublicDomain('musik-public');
+
+        $this->getJson('/api/v1/wedding-profile/public?domain=musik-public')
+            ->assertOk()
+            ->assertJsonPath('data.settings.music_info.has_music', true)
+            ->assertJsonPath('data.settings.music_info.music_source_type', 'default')
+            ->assertJsonPath('data.settings.music_info.title', 'Public Default Song')
+            ->assertJsonPath('data.settings.music_info.url', fn ($url) => is_string($url) && str_contains($url, '/storage/music/location-test/default.mp3'))
+            ->assertJsonPath('data.settings.music_stream_url', fn ($url) => is_string($url) && str_contains($url, '/api/v1/music/stream/public?id='));
+    }
+
     private function userWithCountdownAndPublicDomain(string $domain = 'lokasi-test'): User
     {
         $user = User::create([
@@ -189,6 +211,7 @@ class LocationModuleTest extends TestCase
             'user_id' => $user->id,
             'domain' => $domain,
             'token' => str()->random(16),
+            'music_track_id' => null,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -202,6 +225,26 @@ class LocationModuleTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    private function createDefaultMusicTrack(): void
+    {
+        Storage::put('public/music/location-test/default.mp3', 'ID3 public default audio');
+
+        DB::table('music_tracks')->insert([
+            'title' => 'Public Default Song',
+            'artist' => 'Sena',
+            'slug' => 'public-default-song',
+            'file_path' => 'public/music/location-test/default.mp3',
+            'mime_type' => 'audio/mpeg',
+            'file_size' => 24,
+            'is_active' => true,
+            'is_default' => true,
+            'sort_order' => 1,
+            'source' => 'sena_digital',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
     }
 
     private function assignUserRole(User $user): void
@@ -266,6 +309,25 @@ class LocationModuleTest extends TestCase
             $table->string('domain')->nullable();
             $table->string('token')->nullable();
             $table->string('musik')->nullable();
+            $table->foreignId('music_track_id')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('music_tracks', function (Blueprint $table) {
+            $table->id();
+            $table->string('title');
+            $table->string('artist')->nullable();
+            $table->string('slug')->nullable();
+            $table->string('file_path');
+            $table->unsignedInteger('duration_seconds')->nullable();
+            $table->string('mime_type')->nullable();
+            $table->unsignedBigInteger('file_size')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->boolean('is_default')->default(false);
+            $table->integer('sort_order')->default(0);
+            $table->string('source')->default('sena_digital');
+            $table->string('external_id')->nullable();
+            $table->unsignedBigInteger('uploaded_by')->nullable();
             $table->timestamps();
         });
 
@@ -313,6 +375,7 @@ class LocationModuleTest extends TestCase
         });
 
         Schema::create('filter_undangans', fn (Blueprint $table) => $this->emptyRelatedTable($table));
+        Schema::create('pernikahans', fn (Blueprint $table) => $this->emptyRelatedTable($table));
         Schema::create('ceritas', fn (Blueprint $table) => $this->emptyRelatedTable($table));
         Schema::create('qoutes', fn (Blueprint $table) => $this->emptyRelatedTable($table));
         Schema::create('testimonis', fn (Blueprint $table) => $this->emptyRelatedTable($table));

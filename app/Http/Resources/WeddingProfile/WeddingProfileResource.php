@@ -3,6 +3,7 @@
 namespace App\Http\Resources\WeddingProfile;
 
 use App\Services\LocationResolverService;
+use App\Services\ReligionContentResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Log;
@@ -13,6 +14,7 @@ class WeddingProfileResource extends JsonResource
     protected $isPublicView;
     protected ?string $domainContext;
     protected ?int $ownerUserIdContext;
+    protected ?array $resolvedReligionContentCache = null;
 
     public function __construct($resource, $isPublicView = false, ?string $domainContext = null, ?int $ownerUserIdContext = null)
     {
@@ -37,6 +39,12 @@ class WeddingProfileResource extends JsonResource
             'events' => $this->getEventsInfo(),
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
+            'religion' => $this->getReligionInfo(),
+            'religion_content' => $this->getReligionContentInfo(),
+            'quote' => $this->getReligionAlias('quote'),
+            'message' => $this->getReligionAlias('message'),
+            'whatsapp_text' => $this->getReligionAlias('whatsapp_text'),
+            'salam' => $this->getReligionAlias('salam'),
             'gallery' => $this->getGalleryInfo(),
             'collage' => $this->getCollageInfo(),
             'bank_accounts' => $this->getBankAccountsInfo(),
@@ -420,21 +428,87 @@ class WeddingProfileResource extends JsonResource
         // Resolve effective music (custom upload > selected catalog > default).
         // The public stream endpoint resolves the same priority server-side,
         // so a single URL works for all three sources.
-        $effective = app(\App\Services\MusicResolverService::class)
-            ->resolveInfo($this->settingOne);
+        $musicResolver = app(\App\Services\MusicResolverService::class);
+        $effective = $musicResolver->resolveInfo($this->settingOne);
 
         if ($effective) {
             $settings['music_stream_url'] = url('/api/v1/music/stream/public?id='.$this->settingOne->id);
             $settings['music_info'] = $effective;
         } else {
+            $musicState = $musicResolver->selectionState($this->settingOne, null);
+
             $settings['music_stream_url'] = null;
             $settings['music_info'] = [
                 'has_music' => false,
+                'music_source_type' => 'default',
+                'resolution_status' => $musicState['music_resolution_status'] ?? 'no_resolved_music',
+                'resolution_message' => $musicState['music_resolution_message'] ?? 'Belum ada musik aktif yang dapat diputar.',
                 'supports_streaming' => false,
             ];
         }
 
         return $settings;
+    }
+
+    private function getReligionInfo(): array
+    {
+        $content = $this->resolvedReligionContent();
+
+        return [
+            'code' => $content['religion_code'],
+            'label' => $content['religion_label'],
+        ];
+    }
+
+    private function getReligionContentInfo(): array
+    {
+        return $this->resolvedReligionContent()['resolved'];
+    }
+
+    private function getReligionAlias(string $alias): mixed
+    {
+        $content = $this->resolvedReligionContent()['resolved'];
+
+        return match ($alias) {
+            'quote' => [
+                'text' => $content['quote_text'] ?? null,
+                'source' => $content['quote_source'] ?? null,
+            ],
+            'message' => $content['invitation_intro'] ?? null,
+            'whatsapp_text' => $content['whatsapp_text'] ?? $content['whatsapp_message'] ?? null,
+            'salam' => [
+                'pembuka' => $content['opening_greeting'] ?? null,
+                'penutup' => $content['closing_greeting'] ?? null,
+            ],
+            default => null,
+        };
+    }
+
+    private function resolvedReligionContent(): array
+    {
+        if ($this->resolvedReligionContentCache !== null) {
+            return $this->resolvedReligionContentCache;
+        }
+
+        $mempelai = $this->mempelaiOne;
+        $firstEvent = ($this->relationLoaded('acara') && $this->acara)
+            ? $this->acara->sortBy('tanggal_acara')->first()
+            : null;
+
+        $context = [
+            'guest_name' => request()->query('guest_name', 'Tamu Undangan'),
+            'bride_name' => $mempelai?->name_panggilan_wanita ?? $mempelai?->name_lengkap_wanita ?? '',
+            'groom_name' => $mempelai?->name_panggilan_pria ?? $mempelai?->name_lengkap_pria ?? '',
+            'invitation_url' => $this->domainContext ? url('/'.$this->domainContext) : '',
+            'event_date' => $firstEvent?->tanggal_acara
+                ? (method_exists($firstEvent->tanggal_acara, 'format') ? $firstEvent->tanggal_acara->format('Y-m-d') : (string) $firstEvent->tanggal_acara)
+                : '',
+            'event_location' => $firstEvent?->alamat ?? '',
+        ];
+
+        $this->resolvedReligionContentCache = app(ReligionContentResolver::class)->resolveForUser($this->resource, $context);
+
+        return $this->resolvedReligionContentCache;
     }
 
     private function getFilterUndanganInfo(): ?array

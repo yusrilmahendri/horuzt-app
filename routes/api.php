@@ -37,6 +37,7 @@ use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\RekeningController;
 use App\Http\Controllers\ResultPernikahanController;
+use App\Http\Controllers\ReligionContentController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TagihanController;
@@ -537,6 +538,12 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
         Route::put('/v1/user/submission-filter-update', 'update');
         Route::get('/v1/user/list-data-setting', 'index');
         Route::delete('/v1/user/music/delete', 'deleteMusic'); // Kept for backward compatibility
+    });
+
+    Route::controller(ReligionContentController::class)->group(function () {
+        Route::get('/v1/user/religion-content', 'show');
+        Route::put('/v1/user/religion-content', 'update');
+        Route::post('/v1/user/religion-content/reset', 'reset');
     });
 
     Route::controller(ContactSettingController::class)->group(function () {

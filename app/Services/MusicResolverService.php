@@ -70,12 +70,9 @@ class MusicResolverService
             return null;
         }
 
-        // Priority 4: active default admin track.
-        $default = MusicTrack::where('is_default', true)
-            ->where('is_active', true)
-            ->orderBy('sort_order')
-            ->orderBy('id')
-            ->first();
+        // Priority 4: active default admin track. If no row is explicitly
+        // marked default, use the first active catalog item as a safe fallback.
+        $default = $this->defaultTrack();
 
         if ($default) {
             $info = $this->buildFromTrack('default', $default);
@@ -189,6 +186,8 @@ class MusicResolverService
             'resolved_music_url' => $resolved['url'] ?? null,
             'can_upload_custom_music' => $this->canUploadCustomMusicForUser($user),
             'music_source_type' => $this->normalizeSourceType($resolved['source'] ?? null),
+            'music_resolution_status' => $this->resolutionStatus($resolved, $default),
+            'music_resolution_message' => $this->resolutionMessage($resolved, $default),
             'active_music' => $resolved,
         ];
     }
@@ -315,6 +314,34 @@ class MusicResolverService
         return Schema::hasTable('music_tracks')
             && Schema::hasTable('settings')
             && Schema::hasColumn('settings', 'music_track_id');
+    }
+
+    private function resolutionStatus(?array $resolved, ?MusicTrack $default): string
+    {
+        if ($resolved) {
+            return 'resolved';
+        }
+
+        if (! $this->catalogSchemaReady()) {
+            return 'catalog_schema_unavailable';
+        }
+
+        if (! $default) {
+            return 'no_default_track';
+        }
+
+        return 'default_track_unresolvable';
+    }
+
+    private function resolutionMessage(?array $resolved, ?MusicTrack $default): string
+    {
+        return match ($this->resolutionStatus($resolved, $default)) {
+            'resolved' => 'Musik berhasil di-resolve.',
+            'catalog_schema_unavailable' => 'Schema katalog musik belum tersedia.',
+            'no_default_track' => 'Belum ada musik default aktif di katalog.',
+            'default_track_unresolvable' => 'Musik default aktif ditemukan, tetapi file musik tidak dapat diakses.',
+            default => 'Musik belum tersedia.',
+        };
     }
 
     private function externalCatalogSchemaReady(): bool
