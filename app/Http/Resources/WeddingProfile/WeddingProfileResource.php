@@ -55,11 +55,14 @@ class WeddingProfileResource extends JsonResource
             return null;
         }
 
+        // Safely access category relationship
+        $category = $jenisThema->category;
+
         return [
             'id' => $jenisThema->id,
             'slug' => $jenisThema->slug,
             'name' => $jenisThema->name,
-            'category_slug' => $jenisThema->category->slug ?? null,
+            'category_slug' => $category?->slug ?? null,
         ];
     }
 
@@ -462,6 +465,9 @@ class WeddingProfileResource extends JsonResource
             $jenisThema = $selectedTheme->jenisThema;
 
             if ($jenisThema) {
+                // Safely access category relationship
+                $category = $jenisThema->category;
+
                 $result['selected_theme'] = [
                     'id' => $jenisThema->id,
                     'slug' => $jenisThema->slug,
@@ -473,10 +479,10 @@ class WeddingProfileResource extends JsonResource
                     'features' => $jenisThema->features,
                     'description' => $jenisThema->description,
                     'category' => [
-                        'id' => $jenisThema->category->id ?? null,
-                        'name' => $jenisThema->category->name ?? null,
-                        'slug' => $jenisThema->category->slug ?? null,
-                        'type' => $jenisThema->category->type ?? null,
+                        'id' => $category?->id ?? null,
+                        'name' => $category?->name ?? null,
+                        'slug' => $category?->slug ?? null,
+                        'type' => $category?->type ?? null,
                     ],
                     'selected_at' => $selectedTheme->selected_at?->format('Y-m-d H:i:s'),
                 ];
