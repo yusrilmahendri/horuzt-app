@@ -7,6 +7,7 @@ use App\Models\CategoryThemas;
 use App\Models\JenisThemas;
 use App\Models\ResultThemas;
 use App\Models\PaketUndangan;
+use App\Services\AccountStatusService;
 use App\Services\PackageThemeAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -15,7 +16,10 @@ use Illuminate\Support\Facades\Log;
 
 class ThemeController extends Controller
 {
-    public function __construct(private PackageThemeAccessService $themeAccess)
+    public function __construct(
+        private PackageThemeAccessService $themeAccess,
+        private AccountStatusService $accountStatus
+    )
     {
         $this->middleware('auth:sanctum')->except([
             'getCategories',
@@ -36,7 +40,7 @@ class ThemeController extends Controller
         try {
             $type = $request->get('type', 'website'); // Default to website themes
             $package = $this->resolvePackageContext($request);
-            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+            $selectedThemeId = $this->selectedThemeId($request);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -45,12 +49,11 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            $categories = CategoryThemas::with(['jenisThemas' => function($query) use ($package) {
+            $categories = CategoryThemas::with(['jenisThemas' => function($query) {
                 $query->active()
                     ->whereNotNull('slug')
                     ->where('slug', '!=', '')
                     ->ordered()
-                    ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
                     ->select(
                         'id',
                         'category_id',
@@ -71,13 +74,17 @@ class ThemeController extends Controller
             }])
             ->where('type', $type)
             ->where('is_active', true)
-            ->whereIn('id', $categoryIds)
             ->ordered()
             ->select('id', 'name', 'slug', 'type', 'description', 'icon', 'sort_order', 'is_active')
             ->get();
 
-            // Filter out categories with no active themes
-            $categories = $categories->filter(function($category) {
+            $categories = $categories->map(function ($category) use ($package, $selectedThemeId) {
+                $category->setRelation('jenisThemas', $category->jenisThemas
+                    ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId))
+                    ->values());
+
+                return $category;
+            })->filter(function($category) {
                 return $category->jenisThemas->count() > 0;
             })->values();
 
@@ -113,20 +120,19 @@ class ThemeController extends Controller
     {
         try {
             $package = $this->resolvePackageContext($request);
-            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+            $selectedThemeId = $this->selectedThemeId($request);
 
             $category = CategoryThemas::where('is_active', true)
                 ->where('type', 'website')
-                ->whereIn('id', $categoryIds)
                 ->findOrFail($categoryId);
 
             $themes = JenisThemas::with('category:id,name,type,slug')
                 ->where('category_id', $categoryId)
                 ->active()
                 ->ordered()
-                ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
-                ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
-                ->get();
+                ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                ->get()
+                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
 
             return response()->json([
                 'status' => true,
@@ -163,6 +169,7 @@ class ThemeController extends Controller
         try {
             $request = request();
             $package = $this->resolvePackageContext($request);
+            $selectedThemeId = $this->selectedThemeId($request);
             $theme = JenisThemas::with(['category' => function($query) {
                 $query->where('is_active', true);
             }])
@@ -177,16 +184,9 @@ class ThemeController extends Controller
                 ], 404);
             }
 
-            if (! $this->canAccessThemeInCurrentContext($request, $package, $theme)) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Theme not found or inactive.'
-                ], 404);
-            }
-
             return response()->json([
                 'status' => true,
-                'data' => $theme
+                'data' => $this->themeAccessPayload($theme, $package, $selectedThemeId)
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -218,6 +218,25 @@ class ThemeController extends Controller
             ]);
 
             $user = Auth::user();
+            $accountSummary = $this->accountStatus->summary($user);
+
+            if ($accountSummary['account_status'] !== AccountStatusService::STATUS_ACTIVE) {
+                return response()->json([
+                    'status' => false,
+                    'code' => match ($accountSummary['account_status']) {
+                        AccountStatusService::STATUS_UNVERIFIED => 'ACCOUNT_NOT_VERIFIED',
+                        AccountStatusService::STATUS_EXPIRED => 'ACCOUNT_EXPIRED',
+                        default => 'PAYMENT_NOT_CONFIRMED',
+                    },
+                    'message' => match ($accountSummary['account_status']) {
+                        AccountStatusService::STATUS_UNVERIFIED => 'Verifikasi akun terlebih dahulu.',
+                        AccountStatusService::STATUS_EXPIRED => 'Masa aktif akun sudah berakhir.',
+                        default => 'Pembayaran belum dikonfirmasi.',
+                    },
+                    'data' => $accountSummary,
+                ], 403);
+            }
+
             $package = $this->themeAccess->packageForUser($user);
             $accessibleCategorySlugs = $package
                 ? $this->themeAccess->accessibleCategoriesForPackage($package)->pluck('slug')->values()->all()
@@ -360,7 +379,10 @@ class ThemeController extends Controller
 
                 return response()->json([
                     'status' => false,
-                    'message' => 'Tema ini tidak tersedia untuk paket Anda.'
+                    'message' => 'Tema ini membutuhkan upgrade paket.',
+                    'data' => [
+                        'theme' => $this->themeAccessPayload($theme, $package, null),
+                    ],
                 ], 403);
             }
 
@@ -517,7 +539,7 @@ class ThemeController extends Controller
             $layout = $request->get('layout');
             $type = $request->get('type', 'website');
             $package = $this->resolvePackageContext($request);
-            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+            $selectedThemeId = $this->selectedThemeId($request);
 
             if (!$layout) {
                 return response()->json([
@@ -541,16 +563,15 @@ class ThemeController extends Controller
                 $query->where('type', $type)->where('is_active', true);
             })
             ->where('is_active', true)
-            ->whereIn('category_id', $categoryIds)
-            ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
             ->where(function($query) use ($layout) {
                 $query->where('name', 'LIKE', '%' . $layout . '%')
                       ->orWhere('description', 'LIKE', '%' . $layout . '%')
                       ->orWhereJsonContains('features', $layout);
             })
             ->ordered()
-            ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
-            ->get();
+            ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+            ->get()
+            ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
 
             return response()->json([
                 'status' => true,
@@ -590,7 +611,7 @@ class ThemeController extends Controller
             $layout = $request->get('layout');
             $limit = $request->get('limit', 20);
             $package = $this->resolvePackageContext($request);
-            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+            $selectedThemeId = $this->selectedThemeId($request);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -605,9 +626,7 @@ class ThemeController extends Controller
             ->whereHas('category', function($categoryQuery) use ($type) {
                 $categoryQuery->where('type', $type)->where('is_active', true);
             })
-            ->where('is_active', true)
-            ->whereIn('category_id', $categoryIds)
-            ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package));
+            ->where('is_active', true);
 
             // Text search
             if (!empty($query)) {
@@ -641,8 +660,9 @@ class ThemeController extends Controller
 
             $results = $themes->ordered()
                              ->limit($limit)
-                             ->select('id', 'category_id', 'name', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
-                             ->get();
+                             ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                             ->get()
+                             ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
 
             return response()->json([
                 'status' => true,
@@ -679,21 +699,12 @@ class ThemeController extends Controller
     public function getDemoUrl($themeId)
     {
         try {
-            $request = request();
-            $package = $this->resolvePackageContext($request);
             $theme = JenisThemas::where('is_active', true)
                                ->whereHas('category', function($query) {
                                    $query->where('is_active', true);
                                })
                                ->select('id', 'name', 'demo_url', 'url_thema')
                                ->findOrFail($themeId);
-
-            if (! $this->canAccessThemeInCurrentContext($request, $package, $theme)) {
-                return response()->json([
-                    'status' => false,
-                    'message' => 'Theme not found or inactive.'
-                ], 404);
-            }
 
             $demoUrl = $theme->demo_url ?: $theme->url_thema;
 
@@ -740,7 +751,7 @@ class ThemeController extends Controller
             $type = $request->get('type', 'website');
             $limit = $request->get('limit', 10);
             $package = $this->resolvePackageContext($request);
-            $categoryIds = $this->resolveAccessibleCategoryIds($request, $package);
+            $selectedThemeId = $this->selectedThemeId($request);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -755,6 +766,7 @@ class ThemeController extends Controller
                     'id',
                     'category_id',
                     'name',
+                    'slug',
                     'price',
                     'preview',
                     'preview_image',
@@ -771,12 +783,11 @@ class ThemeController extends Controller
                     $query->where('type', $type)->where('is_active', true);
                 })
                 ->where('is_active', true)
-                ->whereIn('category_id', $categoryIds)
-                ->when($package, fn ($themeQuery) => $this->applyThemeVisibilityFilter($themeQuery, $package))
                 ->orderByDesc('result_themas_count')
                 ->orderBy('name', 'asc')
                 ->limit((int) $limit)
-                ->get();
+                ->get()
+                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
 
             return response()->json([
                 'status' => true,
@@ -801,6 +812,73 @@ class ThemeController extends Controller
         }
     }
 
+    private function themeAccessPayload(JenisThemas $theme, ?PaketUndangan $package, ?int $selectedThemeId): array
+    {
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        $targetPackage = $this->themeAccess->minimumPackageForTheme($theme);
+        $canUse = $package
+            ? $this->themeAccess->canPackageAccessTheme($package, $theme)
+            : false;
+
+        return [
+            'id' => $theme->id,
+            'name' => $theme->name,
+            'slug' => $theme->slug,
+            'category' => $theme->category ? [
+                'id' => $theme->category->id,
+                'name' => $theme->category->name,
+                'slug' => $theme->category->slug,
+                'type' => $theme->category->type,
+            ] : null,
+            'package_required' => $this->packagePayload($targetPackage),
+            'can_preview' => true,
+            'can_use' => $canUse,
+            'is_current_theme' => $selectedThemeId !== null && (int) $selectedThemeId === (int) $theme->id,
+            'upgrade_required' => $package !== null && ! $canUse,
+            'target_package' => $canUse ? null : $this->packagePayload($targetPackage),
+            'price' => $theme->price,
+            'preview' => $theme->preview,
+            'preview_image' => $theme->preview_image,
+            'thumbnail_image' => $theme->thumbnail_image,
+            'image' => $theme->image,
+            'demo_url' => $theme->demo_url,
+            'url_thema' => $theme->url_thema,
+            'features' => $theme->features,
+            'description' => $theme->description,
+            'sort_order' => $theme->sort_order,
+        ];
+    }
+
+    private function packagePayload(?PaketUndangan $package): ?array
+    {
+        if (! $package) {
+            return null;
+        }
+
+        return [
+            'id' => $package->id,
+            'code' => $package->code,
+            'name' => PaketUndangan::displayLabelFromCode($package->code, $package->name_paket),
+        ];
+    }
+
+    private function selectedThemeId(Request $request): ?int
+    {
+        if (! $request->user()) {
+            return null;
+        }
+
+        $selected = ResultThemas::query()
+            ->where('user_id', $request->user()->id)
+            ->latest('selected_at')
+            ->first();
+
+        return $selected?->jenis_id ? (int) $selected->jenis_id : null;
+    }
+
     private function resolvePackageContext(Request $request): ?PaketUndangan
     {
         if ($request->user()) {
@@ -814,63 +892,4 @@ class ThemeController extends Controller
         return $this->themeAccess->packageFromCodeOrId($identifier);
     }
 
-    private function resolveAccessibleCategoryIds(Request $request, ?PaketUndangan $package): array
-    {
-        if ($request->user()) {
-            return $this->themeAccess->accessibleCategoryIds($request->user());
-        }
-
-        if (! $package) {
-            return CategoryThemas::query()
-                ->active()
-                ->website()
-                ->ordered()
-                ->pluck('id')
-                ->all();
-        }
-
-        return $this->themeAccess->accessibleCategoryIdsForPackage($package);
-    }
-
-    private function canAccessThemeInCurrentContext(Request $request, ?PaketUndangan $package, JenisThemas $theme): bool
-    {
-        if ($request->user()) {
-            return $this->themeAccess->canAccessTheme($request->user(), $theme);
-        }
-
-        if (! $package) {
-            if (! $theme->relationLoaded('category')) {
-                $theme->load('category');
-            }
-
-            return (bool) $theme->is_active
-                && $theme->category
-                && $theme->category->is_active;
-        }
-
-        return $this->themeAccess->canPackageAccessTheme($package, $theme);
-    }
-
-    private function packageHasPivotAccess(?PaketUndangan $package): bool
-    {
-        return $package?->accessibleCategories()->exists() ?? false;
-    }
-
-    private function packageAllowsAllThemesFallback(?PaketUndangan $package): bool
-    {
-        return $package && (! $this->packageHasPivotAccess($package)) && (bool) $package->bebas_pilih_tema;
-    }
-
-    private function applyThemeVisibilityFilter($query, PaketUndangan $package)
-    {
-        if (
-            $this->themeAccess->packageUsesTierThemeCatalog($package)
-            || $this->packageHasPivotAccess($package)
-            || $this->packageAllowsAllThemesFallback($package)
-        ) {
-            return $query;
-        }
-
-        return $query->where('price', '<=', 0);
-    }
 }

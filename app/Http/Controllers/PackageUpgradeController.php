@@ -6,6 +6,8 @@ use App\Models\User;
 use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\PaketUndangan;
+use App\Services\AccountStatusService;
+use App\Services\PackageThemeAccessService;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -14,7 +16,10 @@ use Illuminate\Support\Facades\Schema;
 
 class PackageUpgradeController extends Controller
 {
-    public function __construct()
+    public function __construct(
+        private PackageThemeAccessService $themeAccess,
+        private AccountStatusService $accountStatus
+    )
     {
         $this->middleware('auth:sanctum');
     }
@@ -173,52 +178,79 @@ class PackageUpgradeController extends Controller
     public function initiateUpgrade(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'paket_undangan_id' => 'required|exists:paket_undangans,id',
+            'paket_undangan_id' => 'nullable|required_without_all:target_package_id,target_package_code|exists:paket_undangans,id',
+            'target_package_id' => 'nullable|required_without_all:paket_undangan_id,target_package_code|exists:paket_undangans,id',
+            'target_package_code' => 'nullable|required_without_all:paket_undangan_id,target_package_id|string',
         ]);
 
         return DB::transaction(function () use ($validated) {
             $user = auth()->user();
-            $newPackage = PaketUndangan::findOrFail($validated['paket_undangan_id']);
+            $accountSummary = $this->accountStatus->summary($user);
 
-            // Get user's current invitation (there should only be one)
-            $invitation = Invitation::where('user_id', $user->id)->first();
-
-            if (!$invitation) {
+            if ($accountSummary['account_status'] !== AccountStatusService::STATUS_ACTIVE) {
                 return response()->json([
-                    'message' => 'Invitation tidak ditemukan. Silakan hubungi support.'
+                    'message' => 'Akun harus aktif sebelum upgrade paket.',
+                    'data' => $accountSummary,
+                ], 403);
+            }
+
+            $targetIdentifier = $validated['target_package_code']
+                ?? $validated['target_package_id']
+                ?? $validated['paket_undangan_id'];
+            $newPackage = $this->themeAccess->packageFromCodeOrId($targetIdentifier);
+            $currentPackage = $this->themeAccess->packageForUser($user);
+
+            if (! $newPackage || ! $currentPackage) {
+                return response()->json([
+                    'message' => 'Paket tidak ditemukan.',
                 ], 404);
             }
 
-            // DUPLICATE PREVENTION: Check if there's already a pending upgrade
-            $currentSnapshot = $invitation->package_features_snapshot ?? [];
-            if (isset($currentSnapshot['upgrade_initiated_at'])) {
-                $initiatedAt = Carbon::parse($currentSnapshot['upgrade_initiated_at']);
-                // If upgrade was initiated less than 30 minutes ago, prevent duplicate
-                if ($initiatedAt->diffInMinutes(now()) < 30) {
-                    return response()->json([
-                        'message' => 'Anda memiliki pengajuan upgrade yang sedang diproses. Tunggu pembayaran selesai atau hubungi support.',
-                        'data' => [
-                            'invitation_id' => $invitation->id,
-                            'pending_upgrade' => true
-                        ]
-                    ], 409); // 409 Conflict
-                }
+            if (! $this->themeAccess->isHigherPackage($newPackage, $currentPackage)) {
+                return response()->json([
+                    'message' => 'Paket tujuan harus lebih tinggi dari paket aktif saat ini.',
+                    'data' => [
+                        'current_package' => $this->packagePayload($currentPackage),
+                        'target_package' => $this->packagePayload($newPackage),
+                    ],
+                ], 422);
             }
 
-            $newInvoiceNumber = '#UPG-' . str_pad($user->id, 6, '0', STR_PAD_LEFT) . '-' . time();
+            $pendingUpgrade = $this->themeAccess->pendingUpgradeForUser($user);
+            if ($pendingUpgrade) {
+                return response()->json([
+                    'message' => 'Anda memiliki invoice upgrade yang masih pending.',
+                    'data' => [
+                        'invoice' => $this->invoicePayload($pendingUpgrade),
+                    ],
+                ], 409);
+            }
 
-            // Store current package info for history before updating
-            $previousPackageId = $invitation->paket_undangan_id;
-            $previousFeatures = $invitation->package_features_snapshot ?? [];
+            $activeInvitation = Invitation::where('user_id', $user->id)
+                ->where('payment_status', 'paid')
+                ->orderByDesc('id')
+                ->first();
 
-            // Update existing invitation (not create new)
-            $updateData = [
+            if (! $activeInvitation) {
+                return response()->json([
+                    'message' => 'Paket aktif tidak ditemukan.',
+                ], 404);
+            }
+
+            $newInvoiceNumber = '#UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $newPackage->id;
+
+            $createData = [
+                'user_id' => $user->id,
                 'paket_undangan_id' => $newPackage->id,
                 'kode_pemesanan' => $newInvoiceNumber,
-                'payment_status' => 'pending', // Reset to pending for upgrade payment
+                'status' => $activeInvitation->status,
+                'payment_status' => 'pending',
+                'domain_expires_at' => null,
+                'payment_confirmed_at' => null,
                 'package_price_snapshot' => $newPackage->price,
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
+                    'invoice_type' => 'package_upgrade',
                     'code' => $newPackage->code,
                     'jenis_paket' => PaketUndangan::jenisPaketFromCode($newPackage->code, $newPackage->jenis_paket),
                     'name_paket' => PaketUndangan::displayLabelFromCode($newPackage->code, $newPackage->name_paket),
@@ -227,31 +259,61 @@ class PackageUpgradeController extends Controller
                     'bebas_pilih_tema' => $newPackage->bebas_pilih_tema,
                     'kirim_hadiah' => $newPackage->kirim_hadiah,
                     'import_data' => $newPackage->import_data,
-                    // UPGRADE HISTORY - preserve previous package info
                     'upgrade_initiated_at' => now()->toISOString(),
-                    'previous_package_id' => $previousPackageId,
-                    'previous_package_name' => $previousFeatures['name_paket'] ?? null,
-                    'original_status' => $invitation->status, // Remember original status
-                    'original_payment_status' => $previousFeatures['original_payment_status'] ?? $invitation->payment_status,
+                    'previous_invitation_id' => $activeInvitation->id,
+                    'previous_package_id' => $currentPackage->id,
+                    'previous_package_code' => $currentPackage->code,
+                    'previous_package_name' => PaketUndangan::displayLabelFromCode($currentPackage->code, $currentPackage->name_paket),
+                    'original_status' => $activeInvitation->status,
+                    'original_payment_status' => $activeInvitation->payment_status,
                 ]
             ];
 
             if ($this->hasIsTrialColumn()) {
-                $updateData['is_trial'] = false;
+                $createData['is_trial'] = false;
             }
 
-            $invitation->update($updateData);
+            $invoice = Invitation::create($createData);
 
             return response()->json([
-                'message' => 'Upgrade initiated',
+                'message' => 'Invoice upgrade paket berhasil dibuat',
                 'data' => [
-                    'invitation_id' => $invitation->id,
-                    'kode_pemesanan' => $newInvoiceNumber,
-                    'package' => $newPackage->name_paket,
-                    'amount' => $newPackage->price,
-                    'duration_days' => $newPackage->masa_aktif
+                    'invoice' => $this->invoicePayload($invoice),
+                    'current_package' => $this->packagePayload($currentPackage),
+                    'target_package' => $this->packagePayload($newPackage),
                 ]
             ], 201);
         });
+    }
+
+    private function packagePayload(PaketUndangan $package): array
+    {
+        return [
+            'id' => $package->id,
+            'code' => $package->code,
+            'name' => PaketUndangan::displayLabelFromCode($package->code, $package->name_paket),
+            'price' => $package->price,
+            'duration_days' => $package->masa_aktif,
+        ];
+    }
+
+    private function invoicePayload(Invitation $invoice): array
+    {
+        $invoice->loadMissing('paketUndangan');
+
+        return [
+            'id' => $invoice->id,
+            'invoice_number' => $invoice->kode_pemesanan,
+            'status' => $invoice->payment_status,
+            'payment_status' => $invoice->payment_status,
+            'amount' => $invoice->package_price_snapshot,
+            'package_id' => $invoice->paket_undangan_id,
+            'package_code' => $invoice->paketUndangan?->code,
+            'package_name' => PaketUndangan::displayLabelFromCode(
+                $invoice->paketUndangan?->code,
+                $invoice->paketUndangan?->name_paket
+            ),
+            'created_at' => $invoice->created_at,
+        ];
     }
 }

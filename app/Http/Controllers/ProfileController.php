@@ -8,6 +8,7 @@ use App\Http\Requests\Profile\UploadPhotoRequest;
 use App\Http\Resources\User\UserResource;
 use App\Models\PaketUndangan;
 use App\Models\User;
+use App\Services\AccountStatusService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,7 @@ use Illuminate\Support\Facades\Storage;
 
 class ProfileController extends Controller
 {
-    public function __construct()
+    public function __construct(private AccountStatusService $accountStatusService)
     {
         // Authentication middleware only - role middleware handled at route level
         $this->middleware('auth:sanctum');
@@ -49,7 +50,7 @@ class ProfileController extends Controller
                 'domain_info' => $this->getDomainInfo($user),
                 'created_at' => $user->created_at,
                 'updated_at' => $user->updated_at,
-            ];
+            ] + $this->accountStatusService->summary($user);
 
             return response()->json([
                 'success' => true,
@@ -63,6 +64,29 @@ class ProfileController extends Controller
                 'success' => false,
                 'message' => 'Terjadi kesalahan saat mengambil data profile',
                 'error' => config('app.debug') ? $e->getMessage() : null
+            ], 500);
+        }
+    }
+
+    public function status(): JsonResponse
+    {
+        try {
+            $user = Auth::user()->load([
+                'invitationOne.paketUndangan',
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'message' => 'Status akun berhasil diambil',
+                'data' => $this->accountStatusService->summary($user),
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Error getting profile status: ' . $e->getMessage());
+
+            return response()->json([
+                'success' => false,
+                'message' => 'Terjadi kesalahan saat mengambil status akun',
+                'error' => config('app.debug') ? $e->getMessage() : null,
             ], 500);
         }
     }
@@ -100,7 +124,7 @@ class ProfileController extends Controller
                     : null,
                 'package_info' => $this->getPackageInfo($user),
                 'updated_at' => $user->updated_at,
-            ];
+            ] + $this->accountStatusService->summary($user);
 
             return response()->json([
                 'success' => true,

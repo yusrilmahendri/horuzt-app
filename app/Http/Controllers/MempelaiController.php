@@ -4,14 +4,17 @@ namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
 use App\Models\Galery;
+use App\Models\Invitation;
 use App\Models\Mempelai;
 use Illuminate\Support\Facades\Validator;
 use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Http\Resources\Mempelai\MempelaiCollection;
+use App\Services\AccountStatusService;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class MempelaiController extends Controller
 {
@@ -185,78 +188,80 @@ class MempelaiController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id'        => 'required|exists:users,id',
-                'kode_pemesanan' => 'required|exists:users,kode_pemesanan',
+                'user_id' => 'required|exists:users,id',
+                'kode_pemesanan' => 'nullable|string|required_without_all:kode_invoice,no_invoice,invoice_number,order_id,transaksi_id',
+                'kode_invoice' => 'nullable|string',
+                'no_invoice' => 'nullable|string',
+                'invoice_number' => 'nullable|string',
+                'order_id' => 'nullable|string',
+                'transaksi_id' => 'nullable|string',
             ]);
 
-            $user = User::where('kode_pemesanan', $validated['kode_pemesanan'])->first();
-
+            $user = User::find($validated['user_id']);
             if (!$user) {
                 return response()->json([
-                    'message' => 'Kode pemesanan tidak valid atau tidak ditemukan',
+                    'message' => 'User tidak ditemukan',
                 ], 404);
             }
 
-            if ($user->id != $validated['user_id']) {
+            $invoiceCode = $this->extractInvoiceCode($validated);
+            $invoice = $this->resolveInvoiceForUser((int) $user->id, $invoiceCode);
+
+            if (!$invoice) {
                 return response()->json([
-                    'message' => 'User ID tidak cocok dengan kode pemesanan',
-                ], 400);
-            }
-
-            $mempelai = Mempelai::where('user_id', $user->id)->first();
-
-            if (!$mempelai) {
-                return response()->json([
-                    'message' => 'Data mempelai tidak ditemukan untuk user ini',
-                ], 404);
-            }
-
-            // Get invitation with package relation to access masa_aktif
-            $invitation = \App\Models\Invitation::with('paketUndangan')
-                ->where('user_id', $user->id)
-                ->first();
-
-            if (!$invitation) {
-                return response()->json([
-                    'message' => 'Data invitation tidak ditemukan untuk user ini',
+                    'message' => 'Kode pemesanan tidak ditemukan untuk pengguna ini.',
                 ], 404);
             }
 
             // Use database transaction for data consistency
-            return DB::transaction(function () use ($mempelai, $invitation, $user) {
+            return DB::transaction(function () use ($invoice, $user) {
                 $paymentConfirmedAt = now();
 
                 // Calculate domain expiry in days (masa_aktif is in days)
                 // Use snapshot data if available, otherwise try to get from relation
-                $masaAktif = $invitation->package_duration_snapshot
-                    ?? ($invitation->paketUndangan->masa_aktif ?? 30);
+                $masaAktif = $invoice->package_duration_snapshot
+                    ?? ($invoice->paketUndangan->masa_aktif ?? 30);
                 $activeDays = (int) $masaAktif;
                 $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
-                $mempelai->update([
-                    'status'    => 'Sudah Bayar',
-                    'kd_status' => 'SB',
-                ]);
+                $mempelai = Mempelai::where('user_id', $user->id)->first();
+                if ($mempelai) {
+                    $mempelai->update([
+                        'status'    => 'Sudah Bayar',
+                        'kd_status' => 'SB',
+                    ]);
+                }
 
                 // Update Invitation with payment confirmation and domain expiry
-                $invitation->update([
+                $invoice->update([
+                    'status' => 'completed',
                     'payment_status' => 'paid',
                     'payment_confirmed_at' => $paymentConfirmedAt,
                     'domain_expires_at' => $domainExpiresAt,
                 ]);
 
+                $invoice->refresh()->load('paketUndangan');
+                $accountStatus = app(AccountStatusService::class)->summary($user->fresh());
+
                 return response()->json([
-                    'message' => 'Status berhasil diperbarui',
+                    'message' => 'Status pembayaran berhasil dikonfirmasi dan invoice selesai.',
                     'mempelai' => $mempelai,
                     'invitation' => [
-                        'payment_status' => $invitation->payment_status,
-                        'payment_confirmed_at' => $invitation->payment_confirmed_at,
-                        'domain_expires_at' => $invitation->domain_expires_at,
+                        'id' => $invoice->id,
+                        'status' => $invoice->status,
+                        'kode_pemesanan' => $invoice->kode_pemesanan,
+                        'order_id' => $invoice->order_id,
+                        'midtrans_transaction_id' => $invoice->midtrans_transaction_id,
+                        'payment_status' => $invoice->payment_status,
+                        'payment_confirmed_at' => $invoice->payment_confirmed_at,
+                        'domain_expires_at' => $invoice->domain_expires_at,
                         'domain_active_days' => $activeDays,
-                        'package_used' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
-                        'original_price' => $invitation->package_price_snapshot,
+                        'package_used' => $invoice->package_features_snapshot['name_paket'] ?? 'Unknown',
+                        'original_price' => $invoice->package_price_snapshot,
                     ],
+                    'account_status' => $accountStatus['account_status'],
+                    'active_until' => $accountStatus['active_until'],
                 ], 200);
             });
 
@@ -272,6 +277,72 @@ class MempelaiController extends Controller
                 'error'   => $e->getMessage(),
             ], 500);
         }
+    }
+
+    private function extractInvoiceCode(array $validated): string
+    {
+        foreach (['kode_pemesanan', 'kode_invoice', 'no_invoice', 'invoice_number', 'order_id', 'transaksi_id'] as $field) {
+            $value = trim((string) ($validated[$field] ?? ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return '';
+    }
+
+    private function invoiceCodeVariants(string $code): array
+    {
+        $raw = trim($code);
+        $withoutHash = ltrim($raw, '#');
+
+        return collect([$raw, $withoutHash, '#'.$withoutHash])
+            ->filter(fn ($value) => $value !== '' && $value !== '#')
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function resolveInvoiceForUser(int $userId, string $code): ?Invitation
+    {
+        $variants = $this->invoiceCodeVariants($code);
+        $normalized = ltrim(trim($code), '#');
+
+        $query = Invitation::with('paketUndangan')
+            ->where('user_id', $userId)
+            ->where(function ($invoiceQuery) use ($variants, $normalized, $userId) {
+                $hasCondition = false;
+
+                foreach (['kode_pemesanan', 'order_id', 'midtrans_transaction_id'] as $column) {
+                    if (Schema::hasColumn('invitations', $column)) {
+                        $method = $hasCondition ? 'orWhereIn' : 'whereIn';
+                        $invoiceQuery->{$method}($column, $variants);
+                        $hasCondition = true;
+                    }
+                }
+
+                if (is_numeric($normalized)) {
+                    $id = (int) ltrim($normalized, '0');
+                    if ($id > 0) {
+                        $method = $hasCondition ? 'orWhere' : 'where';
+                        $invoiceQuery->{$method}('id', $id);
+                        $hasCondition = true;
+                    }
+                }
+
+                if (Schema::hasColumn('users', 'kode_pemesanan')) {
+                    $method = $hasCondition ? 'orWhereHas' : 'whereHas';
+                    $invoiceQuery->{$method}('user', function ($userQuery) use ($variants, $userId) {
+                        $userQuery->where('id', $userId)
+                            ->whereIn('kode_pemesanan', $variants);
+                    });
+                }
+            });
+
+        return $query
+            ->orderByRaw("CASE WHEN payment_status = 'pending' THEN 0 ELSE 1 END")
+            ->orderByDesc('id')
+            ->first();
     }
 
     private function normalizeStoragePath(?string $path): ?string

@@ -5,12 +5,17 @@ namespace App\Http\Controllers;
 use App\Models\Invitation;
 use App\Models\Ucapan;
 use App\Models\User;
+use App\Services\AccountStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Carbon\Carbon;
 
 class DashboardController extends Controller
 {
+    public function __construct(private AccountStatusService $accountStatusService)
+    {
+    }
+
     /**
      * Get comprehensive dashboard overview for specific wedding
      * GET /v1/dashboard/overview/{user_id}
@@ -109,7 +114,7 @@ class DashboardController extends Controller
                         'mungkin_percentage' => $totalResponses > 0 ? round(($metrics->mungkin_hadir / $totalResponses) * 100, 1) : 0
                     ]
                 ]
-            ];
+            ] + $this->accountStatusService->summary($user);
 
             return response()->json(['data' => $response], 200);
 
@@ -198,6 +203,7 @@ class DashboardController extends Controller
             return response()->json([
                 'data' => [
                     'user_id' => $dashboardUserId,
+                    ...$this->accountStatusService->summary($request->user()),
                     'period' => [
                         'from' => $dateRange['start']?->format('Y-m-d'),
                         'to' => $dateRange['end']?->format('Y-m-d'),
@@ -280,6 +286,7 @@ class DashboardController extends Controller
                 'data' => [
                     'user_id' => $dashboardUserId,
                     'wedding_owner' => $user->name,
+                    ...$this->accountStatusService->summary($user),
                     'pagination' => [
                         'total' => $totalCount,
                         'limit' => $limit,

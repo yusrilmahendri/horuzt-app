@@ -24,11 +24,22 @@ class PackageThemeAccessService
         'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],
     ];
 
+    private const PACKAGE_TIER_RANK = [
+        'trial' => 0,
+        'ruby' => 1,
+        'sapphire' => 2,
+        'diamond' => 3,
+    ];
+
     public function packageForUser(User $user): ?PaketUndangan
     {
         $invitations = Invitation::with('paketUndangan')
             ->where('user_id', $user->id)
-            ->whereIn('payment_status', ['paid', 'pending'])
+            ->where('payment_status', 'paid')
+            ->where(function ($query) {
+                $query->whereNull('domain_expires_at')
+                    ->orWhere('domain_expires_at', '>', now());
+            })
             ->orderByDesc('id')
             ->get();
 
@@ -49,6 +60,16 @@ class PackageThemeAccessService
         }
 
         return $trialFallback;
+    }
+
+    public function pendingUpgradeForUser(User $user): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->where('package_features_snapshot->invoice_type', 'package_upgrade')
+            ->orderByDesc('id')
+            ->first();
     }
 
     public function packageFromCodeOrId(null|int|string $identifier): ?PaketUndangan
@@ -212,6 +233,35 @@ class PackageThemeAccessService
         }
 
         return null;
+    }
+
+    public function packageRank(?PaketUndangan $package): int
+    {
+        $tier = $this->resolvePackageTier($package);
+
+        return self::PACKAGE_TIER_RANK[$tier] ?? -1;
+    }
+
+    public function isHigherPackage(?PaketUndangan $target, ?PaketUndangan $current): bool
+    {
+        return $this->packageRank($target) > $this->packageRank($current);
+    }
+
+    public function minimumPackageForTheme(?JenisThemas $theme): ?PaketUndangan
+    {
+        if (! $theme) {
+            return null;
+        }
+
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        return PaketUndangan::query()
+            ->whereNotNull('code')
+            ->get()
+            ->sortBy(fn (PaketUndangan $package) => $this->packageRank($package))
+            ->first(fn (PaketUndangan $package) => $this->canPackageAccessTheme($package, $theme));
     }
 
     public function cumulativeCategorySlugsForPackage(?PaketUndangan $package): array

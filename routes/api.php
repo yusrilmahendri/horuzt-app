@@ -399,6 +399,23 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     });
 });
 
+Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
+    Route::controller(ProfileController::class)->prefix('profile')->group(function () {
+        Route::get('/', 'show')->name('profile.show');
+        Route::get('/status', 'status')->name('profile.status');
+    });
+
+    Route::controller(UserController::class)->group(function () {
+        Route::get('/v1/user-profile', 'userProfile');
+    });
+
+    Route::controller(DashboardController::class)->group(function () {
+        Route::get('/v1/dashboard/overview/{user_id?}', 'overview')->name('dashboard.overview');
+        Route::get('/v1/dashboard/trends/{user_id?}', 'trends')->name('dashboard.trends');
+        Route::get('/v1/dashboard/messages/{user_id?}', 'messages')->name('dashboard.messages');
+    });
+});
+
 Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']], function () {
     // Midtrans Payment endpoints (authenticated)
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
@@ -408,7 +425,6 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     // Profile Management endpoints
 
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {
-        Route::get('/', 'show')->name('profile.show');
         Route::put('/', 'update')->name('profile.update');
         Route::post('/photo', 'uploadPhoto')->name('profile.upload-photo')->middleware(['large.files', 'bypass.post.size']);
         Route::delete('/photo', 'deletePhoto')->name('profile.delete-photo');
@@ -419,7 +435,6 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::get('/v1/user/paket-nikah', 'index');
     });
     Route::controller(UserController::class)->group(function () {
-        Route::get('/v1/user-profile', 'userProfile');
         Route::put('/v1/submission-update/user-profile', 'update');
     });
 
@@ -428,7 +443,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::get('/v1/user/eligible-packages', 'getEligiblePackages');
         Route::post('/v1/user/upgrade-package', 'initiateUpgrade');
     });
-    Route::controller(RekeningController::class)->group(function () {
+    Route::controller(RekeningController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/send-rekening', 'store');
         Route::get('/v1/user/get-rekening', 'index');
         Route::put('/v1/user/update-rekening/{id}', 'update');
@@ -436,7 +451,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     });
 
     // New Bank Account Management (User)
-    Route::controller(BankAccountController::class)->group(function () {
+    Route::controller(BankAccountController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/bank-accounts', 'index');
         Route::post('/v1/user/bank-accounts', 'store');
         Route::get('/v1/user/bank-accounts/{id}', 'show');
@@ -459,13 +474,13 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::delete('/v1/user/pengunjung/delete-all', 'deleteAll');
         Route::delete('/v1/user/pengunjung/{id}', 'deleteById');
     });
-    Route::controller(CeritaController::class)->group(function () {
+    Route::controller(CeritaController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/send-cerita', 'store');
         Route::get('/v1/user/list-cerita', 'index');
         Route::put('/v1/user/update-cerita', 'update');
         Route::delete('/v1/user/delete-cerita', 'destroy');
     });
-    Route::controller(QouteController::class)->group(function () {
+    Route::controller(QouteController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/send-qoute', 'store');
         Route::get('/v1/user/list-qoute', 'index');
         Route::put('/v1/user/update-qoute', 'update');
@@ -474,7 +489,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     Route::controller(TestimoniController::class)->group(function () {
         Route::post('/v1/user/testimoni', 'store')->name('testimoni.store');
     });
-    Route::controller(GaleryController::class)->group(function () {
+    Route::controller(GaleryController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/photos', 'photosIndex');
         Route::post('/v1/user/photos', 'storePhoto')->middleware(['large.files', 'bypass.post.size']);
         Route::put('/v1/user/photos/sort', 'sortPhotos');
@@ -487,7 +502,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::delete('/v1/user/delete-galery', 'destroy');
     });
 
-    Route::controller(AcaraController::class)->group(function () {
+    Route::controller(AcaraController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/acara', 'index');
         Route::post('/v1/user/submission-countdown', 'storeCountDown');
         Route::post('/v1/user/submission-acara', 'store');
@@ -504,14 +519,14 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::delete('/{id}', [AttendanceScanController::class, 'destroy']);
     });
 
-    Route::controller(MempelaiController::class)->group(function () {
+    Route::controller(MempelaiController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/get-mempelai', 'index');
         Route::post('/v1/user/update-mempelai', 'update');
 
     });
 
     // Music Management endpoints (Enhanced streaming with Range header support)
-    Route::controller(MusicController::class)->prefix('music')->group(function () {
+    Route::controller(MusicController::class)->prefix('music')->middleware('invitation.feature')->group(function () {
         Route::post('/upload', 'store');
         Route::get('/stream', 'stream');
         Route::get('/download', 'download');
@@ -520,24 +535,24 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     });
 
     // Music Catalog selection (all packages may pick a catalog track)
-    Route::controller(\App\Http\Controllers\MusicTrackController::class)->prefix('music')->group(function () {
+    Route::controller(\App\Http\Controllers\MusicTrackController::class)->prefix('music')->middleware('invitation.feature')->group(function () {
         Route::post('/select-track', 'selectTrack');
         Route::post('/clear-selection', 'clearSelection');
     });
 
     // Legacy music catalog endpoints used by the Angular dashboard.
-    Route::controller(\App\Http\Controllers\MusicTrackController::class)->group(function () {
+    Route::controller(\App\Http\Controllers\MusicTrackController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/music-options', 'options');
         Route::get('/v1/user/music-selection', 'selection');
         Route::put('/v1/user/music-selection', 'updateSelection');
     });
 
-    Route::controller(MusicController::class)->group(function () {
+    Route::controller(MusicController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/custom-music', 'store')->middleware(['large.files', 'bypass.post.size']);
         Route::delete('/v1/user/custom-music', 'destroy');
     });
 
-    Route::controller(SettingController::class)->group(function () {
+    Route::controller(SettingController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/settings/domain', 'storeDomainToken');
         Route::post('/v1/user/settings/music', 'storeMusic'); // Kept for backward compatibility
         Route::post('/v1/user/settings/salam', 'storeSalam');
@@ -582,13 +597,6 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     Route::controller(UcapanController::class)->group(function () {
         Route::get('/v1/user/ucapan', 'index');
         Route::get('/v1/user/ucapan-statistics', 'statistics');
-    });
-
-    // Dashboard Analytics endpoints (Wedding statistics & metrics)
-    Route::controller(DashboardController::class)->group(function () {
-        Route::get('/v1/dashboard/overview/{user_id?}', 'overview')->name('dashboard.overview');
-        Route::get('/v1/dashboard/trends/{user_id?}', 'trends')->name('dashboard.trends');
-        Route::get('/v1/dashboard/messages/{user_id?}', 'messages')->name('dashboard.messages');
     });
 
     // Theme Selection for Users

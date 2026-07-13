@@ -103,36 +103,44 @@ class PackageThemeAccessTest extends TestCase
             ->assertJsonPath('status', true);
     }
 
-    public function test_public_themes_are_filtered_by_package_code(): void
+    public function test_public_themes_include_access_info_by_package_code(): void
     {
         $response = $this->getJson('/api/themes/categories?package_code=ruby');
 
         $response->assertOk()
-            ->assertJsonPath('data.total_categories', 2)
-            ->assertJsonPath('data.total_themes', 3);
+            ->assertJsonPath('data.total_categories', 5)
+            ->assertJsonPath('data.total_themes', 6);
 
         $categorySlugs = collect($response->json('data.categories'))->pluck('slug')->all();
-        $themeNames = collect($response->json('data.categories'))
-            ->flatMap(fn ($category) => collect($category['jenis_themas'] ?? [])->pluck('name'))
-            ->all();
+        $themes = collect($response->json('data.categories'))
+            ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
+        $themeNames = $themes->pluck('name')->all();
 
-        $this->assertSame(['minimalis', 'floral'], $categorySlugs);
+        $this->assertSame(['minimalis', 'floral', 'modern', 'elegant', 'luxury'], $categorySlugs);
         $this->assertContains('Soft Ivory', $themeNames);
         $this->assertContains('Lavender Bloom', $themeNames);
         $this->assertContains('Garden Whisper', $themeNames);
-        $this->assertNotContains('Modern Vows', $themeNames);
-        $this->assertNotContains('Velvet Mauve', $themeNames);
+        $this->assertContains('Modern Vows', $themeNames);
+        $this->assertContains('Velvet Mauve', $themeNames);
+        $this->assertTrue($themes->firstWhere('slug', 'soft-ivory')['can_use']);
+        $this->assertFalse($themes->firstWhere('slug', 'velvet-mauve')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'velvet-mauve')['upgrade_required']);
     }
 
-    public function test_trial_package_uses_legacy_default_theme_flow(): void
+    public function test_trial_package_can_preview_all_themes_but_cannot_use_them(): void
     {
         $response = $this->getJson('/api/themes/categories?package_code=trial');
 
         $response->assertOk()
             ->assertJsonPath('status', true)
-            ->assertJsonPath('data.categories', [])
-            ->assertJsonPath('data.total_categories', 0)
-            ->assertJsonPath('data.total_themes', 0);
+            ->assertJsonPath('data.total_categories', 5)
+            ->assertJsonPath('data.total_themes', 6);
+
+        $themes = collect($response->json('data.categories'))
+            ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
+
+        $this->assertTrue($themes->every(fn ($theme) => $theme['can_preview'] === true));
+        $this->assertTrue($themes->every(fn ($theme) => $theme['can_use'] === false));
     }
 
     public function test_public_catalog_without_package_code_preserves_legacy_contract(): void
@@ -144,7 +152,7 @@ class PackageThemeAccessTest extends TestCase
             ->assertJsonPath('data.total_themes', 6);
     }
 
-    public function test_valid_package_with_no_active_themes_returns_empty_array(): void
+    public function test_valid_package_with_no_active_included_themes_still_previews_other_active_themes(): void
     {
         JenisThemas::whereIn('category_id', function ($query) {
             $query->select('category_thema_id')
@@ -156,9 +164,8 @@ class PackageThemeAccessTest extends TestCase
         $this->getJson('/api/themes/categories?package_code=ruby')
             ->assertOk()
             ->assertJsonPath('status', true)
-            ->assertJsonPath('data.categories', [])
-            ->assertJsonPath('data.total_categories', 0)
-            ->assertJsonPath('data.total_themes', 0);
+            ->assertJsonPath('data.total_categories', 3)
+            ->assertJsonPath('data.total_themes', 3);
     }
 
     public function test_theme_selection_without_login_is_rejected(): void
@@ -252,8 +259,8 @@ class PackageThemeAccessTest extends TestCase
         $resolvedPackage = app(PackageThemeAccessService::class)->packageForUser($user);
 
         $this->assertNotNull($resolvedPackage);
-        $this->assertSame($ruby->id, $resolvedPackage->id);
-        $this->assertSame('ruby', $resolvedPackage->code);
+        $this->assertSame($trial->id, $resolvedPackage->id);
+        $this->assertSame('trial', $resolvedPackage->code);
     }
 
     public function test_user_cannot_select_a_theme_outside_their_package_categories(): void
@@ -267,7 +274,7 @@ class PackageThemeAccessTest extends TestCase
             ->assertForbidden()
             ->assertJson([
                 'status' => false,
-                'message' => 'Tema ini tidak tersedia untuk paket Anda.',
+                'message' => 'Tema ini membutuhkan upgrade paket.',
             ]);
 
         $this->assertDatabaseMissing('result_themas', [

@@ -73,5 +73,6 @@ class Kernel extends HttpKernel
         'large.files' => \App\Http\Middleware\LargeFileHandler::class,
         'bypass.post.size' => \App\Http\Middleware\BypassPostSizeLimit::class,
         'account.verified' => \App\Http\Middleware\EnsureAccountIsVerified::class,
+        'invitation.feature' => \App\Http\Middleware\EnsureInvitationFeatureAccess::class,
     ];
 }

@@ -1,6 +1,7 @@
 <?php
 namespace App\Http\Resources\User;
 
+use App\Services\AccountStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 
@@ -42,7 +43,7 @@ class UserResource extends JsonResource
             'domain_create_date' => $domainCreateDate,
             'domain_end_date'    => $domainEndDate,
             'paket_undangan_id'  => $this->invitationOne ? $this->invitationOne->paket_undangan_id : null,
-
+        ] + app(AccountStatusService::class)->summary($this->resource) + [
 
             'invitations'        => $this->whenLoaded('invitation', function () {
                 return $this->invitations->map(function ($invitation) {

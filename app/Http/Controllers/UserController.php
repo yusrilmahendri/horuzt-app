@@ -19,9 +19,14 @@ class UserController extends Controller
         $user = auth()->user();
         if ($user->hasRole('user')) {
             $user->makeHidden(['roles']);
-            $dataUser = auth()->user()->load('invitation.paketUndangan');
+            $dataUser = auth()->user()->load([
+                'invitation.paketUndangan',
+                'invitationOne.paketUndangan',
+                'settingOne',
+                'mempelaiOne',
+            ]);
             if ($dataUser) {
-                return response()->json(['data' => $dataUser], 200);
+                return response()->json(['data' => new UserResource($dataUser)], 200);
             } else {
                 return new UserCollection(collect([$dataUser]));
             }
