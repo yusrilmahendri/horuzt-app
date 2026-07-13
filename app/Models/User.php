@@ -1,24 +1,8 @@
 <?php
+
 namespace App\Models;
 
 // use Illuminate\Contracts\Auth\MustVerifyEmail;
-use App\Models\Acara;
-use App\Models\BukuTamu;
-use App\Models\Cerita;
-use App\Models\FilterUndangan;
-use App\Models\Galery;
-use App\Models\Invitation;
-use App\Models\Mempelai;
-use App\Models\Order;
-use App\Models\Pernikahan;
-use App\Models\Qoute;
-use App\Models\Rekening;
-use App\Models\Setting;
-use App\Models\Testimoni;
-use App\Models\Themas;
-use App\Models\Ucapan;
-use App\Models\CountdownAcara;
-use App\Models\WeddingGuest;
 use App\Notifications\CustomResetPasswordNotification;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Foundation\Auth\User as Authenticatable;
@@ -28,7 +12,7 @@ use Spatie\Permission\Traits\HasRoles;
 
 class User extends Authenticatable
 {
-    use HasApiTokens, HasFactory, Notifiable, HasRoles;
+    use HasApiTokens, HasFactory, HasRoles, Notifiable;
 
     /**
      * The attributes that are mass assignable.
@@ -42,6 +26,8 @@ class User extends Authenticatable
         'phone',
         'kode_pemesanan',
         'profile_photo',
+        'verification_channel',
+        'whatsapp_verified_at',
     ];
 
     /**
@@ -61,8 +47,31 @@ class User extends Authenticatable
      */
     protected $casts = [
         'email_verified_at' => 'datetime',
-        'password'          => 'hashed',
+        'whatsapp_verified_at' => 'datetime',
+        'password' => 'hashed',
     ];
+
+    public function isEmailVerified(): bool
+    {
+        return $this->email_verified_at !== null;
+    }
+
+    public function isWhatsappVerified(): bool
+    {
+        return $this->whatsapp_verified_at !== null;
+    }
+
+    public function isAccountVerified(): bool
+    {
+        return $this->verification_channel === 'whatsapp'
+            ? $this->isWhatsappVerified()
+            : $this->isEmailVerified();
+    }
+
+    public function verificationTokens()
+    {
+        return $this->hasMany(AccountVerificationToken::class);
+    }
 
     /**
      * Send the custom Sena Digital password reset notification.
@@ -188,7 +197,7 @@ class User extends Authenticatable
         return $this->hasOne(Invitation::class, 'user_id')
             ->where(function ($query) {
                 $query->where('payment_status', 'paid')
-                      ->orWhere('payment_status', 'pending');
+                    ->orWhere('payment_status', 'pending');
             })
             ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
             ->orderBy('id', 'desc');

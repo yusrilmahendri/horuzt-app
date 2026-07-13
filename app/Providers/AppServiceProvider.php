@@ -4,11 +4,13 @@ namespace App\Providers;
 
 use App\Contracts\GlobalMusicCatalogProvider;
 use App\Contracts\GlobalMusicProviderInterface;
+use App\Contracts\WhatsAppGateway;
 use App\Services\GlobalCatalog\NullGlobalMusicCatalogProvider;
+use App\Services\HttpWhatsAppGateway;
 use Illuminate\Auth\Notifications\ResetPassword;
 use Illuminate\Support\ServiceProvider;
-use Laravel\Sanctum\Sanctum;
 use Laravel\Sanctum\PersonalAccessToken;
+use Laravel\Sanctum\Sanctum;
 use Midtrans\Config;
 
 class AppServiceProvider extends ServiceProvider
@@ -23,13 +25,13 @@ class AppServiceProvider extends ServiceProvider
             $providers = (array) config('music_catalog.providers', []);
             $providerClass = $providers[$providerKey] ?? config('music_catalog.provider_class', NullGlobalMusicCatalogProvider::class);
 
-            if (!class_exists($providerClass)) {
+            if (! class_exists($providerClass)) {
                 $providerClass = NullGlobalMusicCatalogProvider::class;
             }
 
             $provider = $app->make($providerClass);
 
-            if (!$provider instanceof GlobalMusicProviderInterface) {
+            if (! $provider instanceof GlobalMusicProviderInterface) {
                 return $app->make(NullGlobalMusicCatalogProvider::class);
             }
 
@@ -38,6 +40,7 @@ class AppServiceProvider extends ServiceProvider
 
         $this->app->bind(GlobalMusicProviderInterface::class, $resolver);
         $this->app->bind(GlobalMusicCatalogProvider::class, $resolver);
+        $this->app->bind(WhatsAppGateway::class, HttpWhatsAppGateway::class);
     }
 
     /**
@@ -54,8 +57,8 @@ class AppServiceProvider extends ServiceProvider
         // Point the password reset link in emails to the Angular frontend.
         ResetPassword::createUrlUsing(function ($user, string $token) {
             return rtrim(config('app.frontend_url'), '/')
-                . '/reset-password?token=' . $token
-                . '&email=' . urlencode($user->getEmailForPasswordReset());
+                .'/reset-password?token='.$token
+                .'&email='.urlencode($user->getEmailForPasswordReset());
         });
     }
 }

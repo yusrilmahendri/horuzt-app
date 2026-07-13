@@ -72,5 +72,6 @@ class Kernel extends HttpKernel
         'role_or_permission' => \Spatie\Permission\Middleware\RoleOrPermissionMiddleware::class,
         'large.files' => \App\Http\Middleware\LargeFileHandler::class,
         'bypass.post.size' => \App\Http\Middleware\BypassPostSizeLimit::class,
+        'account.verified' => \App\Http\Middleware\EnsureAccountIsVerified::class,
     ];
 }

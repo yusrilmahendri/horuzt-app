@@ -3,13 +3,10 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
-use Illuminate\Http\Request;
-use Illuminate\Support\Facades\Auth;
-use Spatie\Permission\Models\Role;
 use App\Models\User;
+use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Hash;
-use Laravel\Sanctum\PersonalAccessToken;
-
+use Spatie\Permission\Models\Role;
 
 class RegisterController extends Controller
 {
@@ -18,30 +15,43 @@ class RegisterController extends Controller
         $validatedData = $request->validate([
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
+            'phone' => 'nullable|string|max:30',
+            'verification_channel' => 'nullable|in:email,whatsapp',
         ]);
-    
+
         try {
             $user = User::create([
                 'email' => $validatedData['email'],
                 'password' => Hash::make($validatedData['password']),
+                'phone' => $validatedData['phone'] ?? null,
+                'verification_channel' => $validatedData['verification_channel'] ?? 'email',
             ]);
-    
+
             // Assign role to user (optional)
             if (method_exists($user, 'assignRole')) {
                 $user->assignRole('user');
             }
 
             $token = $user->createToken('auth_token')->plainTextToken;
-    
+
             return response()->json([
+                'status' => 201,
+                'message' => 'Registrasi berhasil. Silakan verifikasi akun Anda.',
+                'data' => [
+                    'user' => $user,
+                    'access_token' => $token,
+                    'token_type' => 'Bearer',
+                ],
+                // Legacy top-level keys retained for the existing Angular flow.
                 'user' => $user,
                 'access_token' => $token,
                 'token_type' => 'Bearer',
-            ], 201); 
-    
+            ], 201);
+
         } catch (\Exception $e) {
-            return response()->json(['error' => 'Failed to create user: ' . $e->getMessage()], 500);
+            report($e);
+
+            return response()->json(['status' => 500, 'message' => 'Registrasi gagal diproses.', 'data' => []], 500);
         }
     }
-    
 }

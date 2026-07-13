@@ -1,7 +1,6 @@
 <?php
 
 use App\Http\Controllers\AcaraController;
-use App\Http\Controllers\GuestTrackingController;
 use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
@@ -10,6 +9,7 @@ use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AttendanceScanController;
+use App\Http\Controllers\Auth\AccountVerificationController;
 use App\Http\Controllers\Auth\LoginController;
 use App\Http\Controllers\Auth\PasswordResetController;
 use App\Http\Controllers\Auth\RegisterController;
@@ -21,6 +21,7 @@ use App\Http\Controllers\CeritaController;
 use App\Http\Controllers\ContactSettingController;
 use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\GaleryController;
+use App\Http\Controllers\GuestTrackingController;
 use App\Http\Controllers\InvitationController;
 use App\Http\Controllers\JenisThemaController;
 use App\Http\Controllers\KomentarController;
@@ -29,6 +30,7 @@ use App\Http\Controllers\MethodePembayaran;
 use App\Http\Controllers\MidtransController;
 use App\Http\Controllers\MusicController;
 use App\Http\Controllers\OrderController;
+use App\Http\Controllers\PackageUpgradeController;
 use App\Http\Controllers\PaketController;
 use App\Http\Controllers\PembayaranController;
 use App\Http\Controllers\PengunjungController;
@@ -36,8 +38,8 @@ use App\Http\Controllers\PernikahanController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\QouteController;
 use App\Http\Controllers\RekeningController;
-use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\ReligionContentController;
+use App\Http\Controllers\ResultPernikahanController;
 use App\Http\Controllers\ResultThemaController;
 use App\Http\Controllers\SettingController;
 use App\Http\Controllers\TagihanController;
@@ -46,7 +48,6 @@ use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeddingProfileController;
-use App\Http\Controllers\PackageUpgradeController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -66,6 +67,9 @@ Route::post('/v1/login', [LoginController::class, 'login'])->name('login');
 // Public password reset endpoints (used by the Angular frontend)
 Route::post('/v1/forgot-password', [PasswordResetController::class, 'forgotPassword'])->name('password.email');
 Route::post('/v1/reset-password', [PasswordResetController::class, 'resetPassword'])->name('password.reset');
+Route::post('/v1/auth/forgot-password', [PasswordResetController::class, 'forgotPassword']);
+Route::post('/v1/auth/reset-password', [PasswordResetController::class, 'resetPassword']);
+Route::post('/v1/auth/reset-password/resend', [PasswordResetController::class, 'resend'])->middleware('throttle:3,1');
 Route::get('/v1/all-bank', [BankController::class, 'index'])->name('bank.index');
 Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 
@@ -73,7 +77,7 @@ Route::get('/v1/paket-undangan', [SettingControllerAdmin::class, 'indexPaket']);
 Route::get('/v1/debug/user/{userId}', function ($userId) {
     $invitation = \App\Models\Invitation::with('paketUndangan')->where('user_id', $userId)->first();
 
-    if (!$invitation) {
+    if (! $invitation) {
         return response()->json(['error' => 'Invitation not found'], 404);
     }
 
@@ -97,14 +101,15 @@ Route::post('/v1/midtrans/webhook', [MidtransController::class, 'handleWebhook']
 // Test endpoint for webhook connectivity
 Route::match(['get', 'post'], '/v1/midtrans/webhook-test', function (\Illuminate\Http\Request $request) {
     \Illuminate\Support\Facades\Log::info('Webhook test endpoint hit', [
-        'method'  => $request->method(),
-        'body'    => $request->all(),
+        'method' => $request->method(),
+        'body' => $request->all(),
         'headers' => $request->headers->all(),
     ]);
+
     return response()->json([
-        'success'       => true,
-        'message'       => 'Webhook endpoint is reachable',
-        'method'        => $request->method(),
+        'success' => true,
+        'message' => 'Webhook endpoint is reachable',
+        'method' => $request->method(),
         'received_data' => $request->all(),
     ]);
 });
@@ -186,6 +191,10 @@ Route::controller(MethodePembayaran::class)->group(function () {
 
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::post('/v1/logout', [LoginController::class, 'logout']);
+    Route::post('/v1/auth/verification/send', [AccountVerificationController::class, 'send'])->middleware('throttle:3,1');
+    Route::post('/v1/auth/verification/resend', [AccountVerificationController::class, 'resend'])->middleware('throttle:3,1');
+    Route::post('/v1/auth/verification/verify', [AccountVerificationController::class, 'verify'])->middleware('throttle:10,1');
+    Route::get('/v1/auth/verification/status', [AccountVerificationController::class, 'status']);
 });
 
 Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
@@ -390,7 +399,7 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     });
 });
 
-Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
+Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']], function () {
     // Midtrans Payment endpoints (authenticated)
     Route::post('/v1/midtrans/create-snap-token', [MidtransController::class, 'createSnapToken'])->name('midtrans.createSnapToken');
     Route::post('/v1/midtrans/check-status', [MidtransController::class, 'checkPaymentStatus']);

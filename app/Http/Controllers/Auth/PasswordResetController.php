@@ -3,83 +3,92 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Models\AccountVerificationToken;
+use App\Models\User;
+use App\Services\VerificationCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
-use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Facades\Password;
-use Illuminate\Support\Str;
-use Illuminate\Validation\Rules\Password as PasswordRule;
+use Illuminate\Validation\Rules\Password;
 
 class PasswordResetController extends Controller
 {
-    /**
-     * Send a password reset link to the given email.
-     * Public endpoint: POST /api/v1/forgot-password
-     *
-     * The response is intentionally generic so it never reveals whether an
-     * email is registered or not.
-     */
+    public function __construct(private readonly VerificationCodeService $codes) {}
+
     public function forgotPassword(Request $request): JsonResponse
     {
-        $validated = $request->validate([
-            'email' => ['required', 'string', 'email'],
+        $data = $request->validate([
+            'identifier' => ['nullable', 'string', 'required_without:email'],
+            'email' => ['nullable', 'email', 'required_without:identifier'],
+            'channel' => ['nullable', 'in:email,whatsapp'],
         ]);
-
-       
-        try {
-            // Throttling and token storage are handled by the Laravel broker.
-            Password::sendResetLink(['email' => $validated['email']]);
-        } catch (\Exception $e) {
-            // Log internally but keep the public response generic.
-            Log::error('Forgot password failed', [
-                'error' => $e->getMessage(),
-            ]);
+        $identifier = $data['identifier'] ?? $data['email'];
+        $channel = $data['channel'] ?? 'email';
+        $user = $this->findUser($identifier, $channel);
+        if ($user) {
+            try {
+                $this->codes->issue($user, $channel, 'password_reset');
+            } catch (\Throwable $e) {
+                report($e);
+            }
         }
 
-        return response()->json([
-            'status' => true,
-            'message' => 'Jika email terdaftar, tautan reset kata sandi akan dikirim.',
-            'data' => null,
-        ], 200);
+        return response()->json(['status' => 200, 'message' => 'Jika akun terdaftar, instruksi penggantian password akan dikirim.', 'data' => []]);
     }
 
-    /**
-     * Reset the user's password using the emailed token.
-     * Public endpoint: POST /api/v1/reset-password
-     */
+    public function resend(Request $request): JsonResponse
+    {
+        return $this->forgotPassword($request);
+    }
+
     public function resetPassword(Request $request): JsonResponse
     {
-        $request->validate([
-            'email' => ['required', 'string', 'email'],
-            'token' => ['required', 'string'],
-            'password' => ['required', 'string', 'confirmed', PasswordRule::min(8)],
+        $data = $request->validate([
+            'identifier' => ['nullable', 'string', 'required_without:email'],
+            'email' => ['nullable', 'email', 'required_without:identifier'],
+            'channel' => ['nullable', 'in:email,whatsapp'],
+            'code' => ['nullable', 'digits:6', 'required_without:token'],
+            'token' => ['nullable', 'string', 'required_without:code'],
+            'password' => ['required', 'confirmed', Password::min(8)],
         ]);
-
-        $status = Password::reset(
-            $request->only('email', 'password', 'password_confirmation', 'token'),
-            function ($user, string $password) {
-                $user->forceFill([
-                    'password' => Hash::make($password),
-                    'remember_token' => Str::random(60),
-                ])->save();
-            }
-        );
-
-        if ($status === Password::PASSWORD_RESET) {
-            return response()->json([
-                'status' => true,
-                'message' => 'Kata sandi berhasil diperbarui.',
-                'data' => null,
-            ], 200);
+        $identifier = $data['identifier'] ?? $data['email'];
+        $channel = $data['channel'] ?? 'email';
+        $user = $this->findUser($identifier, $channel);
+        $plain = $data['code'] ?? $data['token'];
+        if (! $user) {
+            return $this->invalid();
+        }
+        $result = $this->codes->verify($user, $channel, 'password_reset', $plain);
+        if ($result !== 'valid') {
+            return $this->invalid($result === 'expired' ? 'RESET_TOKEN_EXPIRED' : 'RESET_TOKEN_INVALID');
         }
 
-        return response()->json([
-            'status' => false,
-            'message' => 'Token reset kata sandi tidak valid atau sudah kedaluwarsa.',
-            'errors' => [
-                'token' => ['Token reset kata sandi tidak valid atau sudah kedaluwarsa.'],
-            ],
-        ], 422);
+        DB::transaction(function () use ($user, $data) {
+            $user->forceFill(['password' => Hash::make($data['password']), 'remember_token' => null])->save();
+            AccountVerificationToken::query()->whereBelongsTo($user)->where('purpose', 'password_reset')
+                ->whereNull('used_at')->update(['used_at' => now()]);
+            $user->tokens()->delete();
+        });
+
+        return response()->json(['status' => 200, 'message' => 'Kata sandi berhasil diperbarui.', 'data' => []]);
+    }
+
+    private function findUser(string $identifier, string $channel): ?User
+    {
+        if ($channel === 'email') {
+            return User::where('email', $identifier)->first();
+        }
+        $normalized = $this->codes->normalizePhone($identifier);
+        $local = str_starts_with($normalized, '62') ? '0'.substr($normalized, 2) : $normalized;
+
+        return User::whereIn('phone', array_unique([$identifier, $normalized, '+'.$normalized, $local]))->first();
+    }
+
+    private function invalid(string $code = 'RESET_TOKEN_INVALID'): JsonResponse
+    {
+        $message = $code === 'RESET_TOKEN_EXPIRED' ? 'Token reset sudah kedaluwarsa.' : 'Token reset tidak valid.';
+
+        return response()->json(['status' => 422, 'code' => $code, 'message' => $message, 'errors' => ['token' => [$message]]], 422);
     }
 }
