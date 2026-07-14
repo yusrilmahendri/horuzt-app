@@ -5,7 +5,9 @@ namespace App\Http\Controllers\Api\Admin;
 use App\Http\Controllers\Controller;
 use App\Models\CategoryThemas;
 use App\Models\JenisThemas;
+use App\Models\PaketUndangan;
 use Illuminate\Http\Request;
+use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
@@ -13,6 +15,14 @@ use Illuminate\Support\Str;
 
 class WebsiteInvitationCategoryController extends Controller
 {
+    private const PRIMARY_WEBSITE_THEMES = [
+        'soft-ivory' => ['name' => 'Soft Ivory', 'category' => 'minimalis', 'package' => 'ruby', 'sort_order' => 10],
+        'lavender-bloom' => ['name' => 'Lavender Bloom', 'category' => 'floral', 'package' => 'ruby', 'sort_order' => 20],
+        'garden-whisper' => ['name' => 'Garden Whisper', 'category' => 'floral', 'package' => 'sapphire', 'sort_order' => 30],
+        'champagne-rose' => ['name' => 'Champagne Rose', 'category' => 'elegant', 'package' => 'diamond', 'sort_order' => 40],
+        'diamond-garden' => ['name' => 'Diamond Garden', 'category' => 'luxury', 'package' => 'diamond', 'sort_order' => 50],
+    ];
+
     public function __construct()
     {
         $this->middleware('auth:sanctum');
@@ -25,39 +35,40 @@ class WebsiteInvitationCategoryController extends Controller
     public function index(Request $request)
     {
         try {
-            $query = CategoryThemas::where('type', 'website');
+            $themes = JenisThemas::with('category')
+                ->whereIn('slug', array_keys(self::PRIMARY_WEBSITE_THEMES))
+                ->get()
+                ->keyBy('slug');
 
-            // Search by name
-            if ($request->has('search') && !empty($request->search)) {
-                $query->where('name', 'like', '%' . $request->search . '%');
-            }
+            $items = collect(self::PRIMARY_WEBSITE_THEMES)
+                ->map(fn (array $definition, string $slug) => $this->websiteThemePayload($slug, $definition, $themes->get($slug)))
+                ->when($request->filled('search'), function ($collection) use ($request) {
+                    $search = strtolower((string) $request->search);
 
-            // Filter by status
-            if ($request->has('status')) {
-                $isActive = $request->status === 'active';
-                $query->where('is_active', $isActive);
-            }
+                    return $collection->filter(fn ($item) => str_contains(strtolower($item['nama_kategori']), $search)
+                        || str_contains(strtolower($item['slug']), $search));
+                })
+                ->when($request->has('status'), function ($collection) use ($request) {
+                    $isActive = $request->status === 'active';
 
-            // Order results
-            $query->ordered();
+                    return $collection->filter(fn ($item) => (bool) $item['is_active'] === $isActive);
+                })
+                ->sortBy('urutan')
+                ->values();
 
-            // Pagination
-            $perPage = $request->get('per_page', 15);
-            $categories = $query->paginate($perPage);
+            $perPage = (int) $request->get('per_page', 15);
+            $currentPage = (int) $request->get('page', 1);
+            $pagedItems = $items->slice(($currentPage - 1) * $perPage, $perPage)->values();
+            $categories = new LengthAwarePaginator(
+                $pagedItems,
+                $items->count(),
+                $perPage,
+                $currentPage
+            );
 
             return response()->json([
                 'status' => true,
-                'data' => $categories->map(function($category) {
-                    return [
-                        'id' => $category->id,
-                        'nama_kategori' => $category->name,
-                        'slug' => $category->slug,
-                        'image' => $category->image ? asset('storage/' . $category->image) : null,
-                        'is_active' => $category->is_active,
-                        'created_at' => $category->created_at,
-                        'updated_at' => $category->updated_at
-                    ];
-                }),
+                'data' => $categories->items(),
                 'meta' => [
                     'current_page' => $categories->currentPage(),
                     'from' => $categories->firstItem(),
@@ -162,19 +173,17 @@ class WebsiteInvitationCategoryController extends Controller
     public function show($id)
     {
         try {
-            $category = CategoryThemas::where('type', 'website')->findOrFail($id);
+            $theme = $this->resolveWebsiteTheme($id);
+            $definition = self::PRIMARY_WEBSITE_THEMES[$theme->slug] ?? [
+                'name' => $theme->name,
+                'category' => $theme->category?->slug,
+                'package' => $this->packageCodeForCategorySlug($theme->category?->slug),
+                'sort_order' => $theme->sort_order,
+            ];
 
             return response()->json([
                 'status' => true,
-                'data' => [
-                    'id' => $category->id,
-                    'nama_kategori' => $category->name,
-                    'slug' => $category->slug,
-                    'image' => $category->image ? asset('storage/' . $category->image) : null,
-                    'is_active' => $category->is_active,
-                    'created_at' => $category->created_at,
-                    'updated_at' => $category->updated_at
-                ]
+                'data' => $this->websiteThemePayload($theme->slug, $definition, $theme)
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -198,59 +207,75 @@ class WebsiteInvitationCategoryController extends Controller
     {
         try {
             $request->validate([
-                'nama_kategori' => 'required|string|max:255',
-                'slug' => 'nullable|string|max:255|unique:category_themas,slug,' . $id,
-                'image' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-                'is_active' => 'nullable|in:true,false,1,0'
+                'nama_kategori' => 'sometimes|required|string|max:255',
+                'slug' => 'sometimes|nullable|string|max:255|unique:jenis_themas,slug,' . $id,
+                'image' => 'sometimes|nullable|file|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'preview_image' => 'sometimes|nullable|file|image|mimes:jpeg,png,jpg,gif|max:4096',
+                'master_theme_id' => 'sometimes|nullable|integer|exists:jenis_themas,id',
+                'urutan' => 'sometimes|integer|min:0',
+                'is_active' => 'sometimes|boolean',
+                'status' => 'sometimes|nullable'
             ]);
 
             DB::beginTransaction();
 
-            $category = CategoryThemas::where('type', 'website')->findOrFail($id);
+            $theme = $request->filled('master_theme_id')
+                ? JenisThemas::with('category')->findOrFail((int) $request->master_theme_id)
+                : $this->resolveWebsiteTheme($id);
 
-            $slug = $request->slug ?: Str::slug($request->nama_kategori);
+            $category = $theme->category;
+            if (! $category) {
+                throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(CategoryThemas::class);
+            }
+
+            $name = $request->input('nama_kategori', $theme->name);
+            $slug = $request->input('slug', $theme->slug ?: Str::slug($name));
 
             // Handle image upload
-            $imagePath = $category->image;
-            if ($request->hasFile('image')) {
+            $imagePath = $theme->getRawOriginal('image') ?: $category->image;
+            $imageFile = $request->file('preview_image') ?: $request->file('image');
+            if ($imageFile) {
                 // Delete old image
                 if ($imagePath && Storage::disk('public')->exists($imagePath)) {
                     Storage::disk('public')->delete($imagePath);
                 }
-                $imagePath = $request->file('image')->store('website-categories', 'public');
+                $imagePath = $imageFile->store('website-categories', 'public');
             }
 
-            // Update the category
-            $category->update([
-                'name' => $request->nama_kategori,
+            $isActive = $this->resolveBooleanStatus($request, $theme->is_active);
+            $sortOrder = $request->has('urutan') ? (int) $request->urutan : $theme->sort_order;
+
+            $themePayload = [
+                'name' => $name,
                 'slug' => $slug,
                 'image' => $imagePath,
-                'is_active' => filter_var($request->get('is_active', true), FILTER_VALIDATE_BOOLEAN)
-            ]);
+                'preview' => $imagePath ?: $theme->getRawOriginal('preview'),
+                'is_active' => $isActive,
+                'sort_order' => $sortOrder,
+            ];
 
-            // Update synchronized theme with same data
-            $theme = JenisThemas::where('category_id', $category->id)->first();
-            if ($theme) {
-                $theme->update([
-                    'name' => $request->nama_kategori,
-                    'slug' => $slug,
-                    'image' => $imagePath,
-                    'is_active' => filter_var($request->get('is_active', true), FILTER_VALIDATE_BOOLEAN)
-                ]);
+            if ($imagePath) {
+                $themePayload['preview_image'] = $imagePath;
+                $themePayload['thumbnail_image'] = $imagePath;
             }
+
+            $theme->update($themePayload);
 
             DB::commit();
 
             return response()->json([
                 'status' => true,
                 'message' => 'Website category and theme updated successfully',
-                'data' => [
-                    'id' => $category->id,
-                    'nama_kategori' => $category->name,
-                    'slug' => $category->slug,
-                    'image' => $category->image ? asset('storage/' . $category->image) : null,
-                    'is_active' => $category->is_active
-                ]
+                'data' => $this->websiteThemePayload(
+                    $theme->slug,
+                    self::PRIMARY_WEBSITE_THEMES[$theme->slug] ?? [
+                        'name' => $theme->name,
+                        'category' => $theme->category?->slug,
+                        'package' => $this->packageCodeForCategorySlug($theme->category?->slug),
+                        'sort_order' => $theme->sort_order,
+                    ],
+                    $theme->fresh('category')
+                )
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -340,13 +365,9 @@ class WebsiteInvitationCategoryController extends Controller
 
             DB::beginTransaction();
 
-            $category = CategoryThemas::where('type', 'website')->findOrFail($id);
+            $theme = $this->resolveWebsiteTheme($id);
             $isActive = filter_var($request->is_active, FILTER_VALIDATE_BOOLEAN);
-            $category->update(['is_active' => $isActive]);
-
-            // Update synchronized theme
-            JenisThemas::where('category_id', $category->id)
-                      ->update(['is_active' => $isActive]);
+            $theme->update(['is_active' => $isActive]);
 
             DB::commit();
 
@@ -355,13 +376,16 @@ class WebsiteInvitationCategoryController extends Controller
             return response()->json([
                 'status' => true,
                 'message' => "Website category {$status} successfully",
-                'data' => [
-                    'id' => $category->id,
-                    'nama_kategori' => $category->name,
-                    'slug' => $category->slug,
-                    'image' => $category->image ? asset('storage/' . $category->image) : null,
-                    'is_active' => $category->is_active
-                ]
+                'data' => $this->websiteThemePayload(
+                    $theme->slug,
+                    self::PRIMARY_WEBSITE_THEMES[$theme->slug] ?? [
+                        'name' => $theme->name,
+                        'category' => $theme->category?->slug,
+                        'package' => $this->packageCodeForCategorySlug($theme->category?->slug),
+                        'sort_order' => $theme->sort_order,
+                    ],
+                    $theme->fresh('category')
+                )
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -382,6 +406,116 @@ class WebsiteInvitationCategoryController extends Controller
                 'message' => 'Failed to update website category status.'
             ], 500);
         }
+    }
+
+    private function websiteThemePayload(string $slug, array $definition, ?JenisThemas $theme): array
+    {
+        $category = $theme?->category;
+        $categorySlug = $category?->slug;
+        $packageCode = $definition['package'] ?? $this->packageCodeForCategorySlug($categorySlug);
+        $previewImage = $this->assetUrl(
+            $theme?->getRawOriginal('preview_image')
+                ?: $theme?->getRawOriginal('image')
+                ?: $theme?->getRawOriginal('preview')
+        );
+        $isConnected = $theme !== null
+            && $category !== null
+            && $theme->slug === $slug
+            && ($definition['category'] ?? $categorySlug) === $categorySlug;
+
+        return [
+            'id' => $theme?->id,
+            'nama_kategori' => $theme?->name ?? $definition['name'],
+            'slug' => $slug,
+            'urutan' => (int) ($theme?->sort_order ?? $definition['sort_order'] ?? 0),
+            'is_active' => (bool) ($theme?->is_active ?? false),
+            'preview_image' => $previewImage,
+            'image' => $previewImage,
+            'master_theme_id' => $theme?->id,
+            'master_theme_slug' => $theme?->slug,
+            'category_user_id' => $category?->id,
+            'category_user_slug' => $categorySlug,
+            'package_required' => $this->packagePayload($packageCode),
+            'is_connected' => $isConnected,
+            'status_terhubung' => $isConnected,
+            'created_at' => $theme?->created_at,
+            'updated_at' => $theme?->updated_at,
+        ];
+    }
+
+    private function resolveWebsiteTheme($id): JenisThemas
+    {
+        $theme = JenisThemas::with('category')
+            ->whereHas('category', fn ($query) => $query->where('type', 'website'))
+            ->find($id);
+
+        if ($theme) {
+            return $theme;
+        }
+
+        $category = CategoryThemas::where('type', 'website')->findOrFail($id);
+
+        return JenisThemas::with('category')
+            ->where('category_id', $category->id)
+            ->ordered()
+            ->firstOrFail();
+    }
+
+    private function resolveBooleanStatus(Request $request, bool $fallback): bool
+    {
+        if ($request->has('is_active')) {
+            return filter_var($request->input('is_active'), FILTER_VALIDATE_BOOLEAN);
+        }
+
+        if ($request->has('status')) {
+            $status = $request->input('status');
+
+            if (is_string($status) && in_array(strtolower($status), ['active', 'inactive'], true)) {
+                return strtolower($status) === 'active';
+            }
+
+            return filter_var($status, FILTER_VALIDATE_BOOLEAN);
+        }
+
+        return $fallback;
+    }
+
+    private function packageCodeForCategorySlug(?string $categorySlug): ?string
+    {
+        return match ($categorySlug) {
+            'minimalis', 'floral' => 'ruby',
+            'modern' => 'sapphire',
+            'elegant', 'luxury' => 'diamond',
+            default => null,
+        };
+    }
+
+    private function packagePayload(?string $packageCode): ?array
+    {
+        if (! $packageCode) {
+            return null;
+        }
+
+        $package = PaketUndangan::where('code', $packageCode)->first();
+
+        return [
+            'id' => $package?->id,
+            'code' => $packageCode,
+            'name' => PaketUndangan::displayLabelFromCode($packageCode),
+        ];
+    }
+
+    private function assetUrl(?string $path): ?string
+    {
+        if (! $path) {
+            return null;
+        }
+
+        if (str_starts_with($path, 'http://') || str_starts_with($path, 'https://')) {
+            return $path;
+        }
+
+        return asset('storage/' . ltrim(preg_replace('#^/?storage/#', '', $path), '/'));
     }
 
     /**

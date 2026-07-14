@@ -35,6 +35,7 @@ class AdminWebsiteThemeConnectionTest extends TestCase
             'garden-whisper',
             'modern-vows',
             'champagne-rose',
+            'diamond-garden',
             'velvet-mauve',
         ];
 

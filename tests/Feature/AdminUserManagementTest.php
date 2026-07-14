@@ -177,6 +177,7 @@ class AdminUserManagementTest extends TestCase
         $response = $this->deleteJson("/api/v1/admin/users/{$user->id}/soft-data");
 
         $response->assertOk()
+            ->assertJsonPath('status', true)
             ->assertJsonPath('message', 'Data pengguna berhasil dibersihkan.');
 
         $this->assertDatabaseHas('users', ['id' => $user->id]);
@@ -194,6 +195,34 @@ class AdminUserManagementTest extends TestCase
         $this->assertDatabaseMissing('komentars', ['invitation_id' => $invitationId]);
 
         $this->assertDatabaseHas('invitations', ['id' => $invitationId]);
+    }
+
+    public function test_frontend_soft_delete_route_exists_and_cleans_user_data(): void
+    {
+        $admin = $this->createAdminUser();
+        Sanctum::actingAs($admin);
+
+        $user = User::create([
+            'name' => 'Frontend Soft Delete User',
+            'email' => 'frontend-soft-delete@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        DB::table('settings')->insert([
+            'user_id' => $user->id,
+            'domain' => 'frontend-soft-delete',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $response = $this->postJson("/api/v1/admin/get-users/{$user->id}/soft-delete-data");
+
+        $response->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Data pengguna berhasil dibersihkan.');
+
+        $this->assertDatabaseHas('users', ['id' => $user->id]);
+        $this->assertDatabaseMissing('settings', ['user_id' => $user->id]);
     }
 
     public function test_admin_can_hard_delete_user_and_all_related_data(): void
@@ -276,7 +305,8 @@ class AdminUserManagementTest extends TestCase
         $response = $this->deleteJson("/api/v1/admin/users/{$user->id}");
 
         $response->assertOk()
-            ->assertJsonPath('message', 'Akun pengguna beserta seluruh data berhasil dihapus.');
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Akun pengguna berhasil dihapus.');
 
         $this->assertDatabaseMissing('users', ['id' => $user->id]);
         $this->assertDatabaseMissing('invitations', ['id' => $invitationId]);
@@ -288,6 +318,56 @@ class AdminUserManagementTest extends TestCase
             'model_type' => User::class,
             'model_id' => $user->id,
         ]);
+    }
+
+    public function test_frontend_hard_delete_route_exists_and_deletes_user(): void
+    {
+        $admin = $this->createAdminUser();
+        Sanctum::actingAs($admin);
+
+        $user = User::create([
+            'name' => 'Frontend Hard Delete User',
+            'email' => 'frontend-hard-delete@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        $response = $this->deleteJson("/api/v1/admin/get-users/{$user->id}/hard-delete");
+
+        $response->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Akun pengguna berhasil dihapus.');
+
+        $this->assertDatabaseMissing('users', ['id' => $user->id]);
+    }
+
+    public function test_delete_user_not_found_returns_clear_404(): void
+    {
+        $admin = $this->createAdminUser();
+        Sanctum::actingAs($admin);
+
+        $this->deleteJson('/api/v1/admin/get-users/999999/hard-delete')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Pengguna tidak ditemukan.');
+
+        $this->postJson('/api/v1/admin/get-users/999999/soft-delete-data')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Pengguna tidak ditemukan.');
+    }
+
+    public function test_admin_cannot_delete_own_account(): void
+    {
+        $admin = $this->createAdminUser();
+        Sanctum::actingAs($admin);
+
+        $this->deleteJson("/api/v1/admin/get-users/{$admin->id}/hard-delete")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Admin tidak dapat menghapus akun sendiri.');
+
+        $this->postJson("/api/v1/admin/get-users/{$admin->id}/soft-delete-data")
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Admin tidak dapat menghapus akun sendiri.');
+
+        $this->assertDatabaseHas('users', ['id' => $admin->id]);
     }
 
     private function createAdminUser(): User

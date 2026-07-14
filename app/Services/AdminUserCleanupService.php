@@ -34,10 +34,25 @@ class AdminUserCleanupService
         $storagePaths = array_values(array_unique(array_filter($storagePaths)));
 
         $summary = DB::transaction(function () use ($user, $userId, $deleteUserAccount) {
+            $pernikahanIds = DB::table('pernikahans')->where('user_id', $userId)->pluck('id')->all();
+            $mempelaiIds = DB::table('mempelais')->where('user_id', $userId)->pluck('id')->all();
+            $acaraIds = DB::table('acaras')->where('user_id', $userId)->pluck('id')->all();
+            $qouteIds = DB::table('qoutes')->where('user_id', $userId)->pluck('id')->all();
+            $resultPernikahanQuery = DB::table('result_pernikahans')
+                ->whereIn('pernikahan_id', $pernikahanIds)
+                ->orWhereIn('mempelai_id', $mempelaiIds)
+                ->orWhereIn('acara_id', $acaraIds)
+                ->orWhereIn('qoute_id', $qouteIds);
+            $pengunjungIds = (clone $resultPernikahanQuery)->pluck('pengunjung_id')->all();
+
             $summary = [
                 'deleted_relations' => [
                     'attendance_scans' => DB::table('attendance_scans')->where('user_id', $userId)->delete(),
                     'wedding_guests' => DB::table('wedding_guests')->where('user_id', $userId)->delete(),
+                    'result_pernikahans' => $resultPernikahanQuery->delete(),
+                    'pengunjungs' => empty($pengunjungIds)
+                        ? 0
+                        : DB::table('pengunjungs')->whereIn('id', $pengunjungIds)->delete(),
                     'acaras' => DB::table('acaras')->where('user_id', $userId)->delete(),
                     'countdown_acaras' => DB::table('countdown_acaras')->where('user_id', $userId)->delete(),
                     'galeries' => DB::table('galeries')->where('user_id', $userId)->delete(),

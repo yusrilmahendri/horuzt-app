@@ -32,6 +32,24 @@ class PackageThemeAccessService
         'diamond' => 3,
     ];
 
+    private const THEME_PACKAGE_REQUIREMENTS = [
+        'soft-ivory' => 'ruby',
+        'lavender-bloom' => 'ruby',
+        'garden-whisper' => 'sapphire',
+        'blue-sapphire' => 'sapphire',
+        'champagne-rose' => 'diamond',
+        'diamond-garden' => 'diamond',
+        'velvet-mauve' => 'diamond',
+    ];
+
+    private const CATEGORY_PACKAGE_REQUIREMENTS = [
+        'minimalis' => 'ruby',
+        'floral' => 'ruby',
+        'modern' => 'sapphire',
+        'elegant' => 'diamond',
+        'luxury' => 'diamond',
+    ];
+
     public function packageForUser(User $user): ?PaketUndangan
     {
         $invitations = Invitation::with('paketUndangan')
@@ -212,6 +230,51 @@ class PackageThemeAccessService
         );
     }
 
+    public function canPackageCoverTheme(?PaketUndangan $package, ?JenisThemas $theme): bool
+    {
+        if (! $package || ! $theme) {
+            return false;
+        }
+
+        if (! $theme->relationLoaded('category') || $this->themeCategoryNeedsReload($theme)) {
+            $theme->load('category');
+        }
+
+        if ($this->resolvePackageTier($package) === 'trial') {
+            $trialTheme = $this->trialThemeForPackage($package);
+
+            return $trialTheme && (int) $trialTheme->id === (int) $theme->id;
+        }
+
+        $requiredCode = $this->requiredPackageCodeForTheme($theme);
+
+        if (! $requiredCode) {
+            return false;
+        }
+
+        return $this->packageRank($package) >= (self::PACKAGE_TIER_RANK[$requiredCode] ?? PHP_INT_MAX);
+    }
+
+    public function requiredPackageCodeForTheme(?JenisThemas $theme): ?string
+    {
+        if (! $theme) {
+            return null;
+        }
+
+        if (! $theme->relationLoaded('category') || $this->themeCategoryNeedsReload($theme)) {
+            $theme->load('category');
+        }
+
+        $themeSlug = strtolower(trim((string) $theme->slug));
+        if ($themeSlug !== '' && isset(self::THEME_PACKAGE_REQUIREMENTS[$themeSlug])) {
+            return self::THEME_PACKAGE_REQUIREMENTS[$themeSlug];
+        }
+
+        $categorySlug = strtolower(trim((string) $theme->category?->slug));
+
+        return self::CATEGORY_PACKAGE_REQUIREMENTS[$categorySlug] ?? null;
+    }
+
     public function resolvePackageTier(?PaketUndangan $package): ?string
     {
         if (! $package) {
@@ -250,19 +313,15 @@ class PackageThemeAccessService
 
     public function minimumPackageForTheme(?JenisThemas $theme): ?PaketUndangan
     {
-        if (! $theme) {
+        $requiredCode = $this->requiredPackageCodeForTheme($theme);
+
+        if (! $requiredCode) {
             return null;
         }
 
-        if (! $theme->relationLoaded('category')) {
-            $theme->load('category');
-        }
-
         return PaketUndangan::query()
-            ->whereNotNull('code')
-            ->get()
-            ->sortBy(fn (PaketUndangan $package) => $this->packageRank($package))
-            ->first(fn (PaketUndangan $package) => $this->canPackageAccessTheme($package, $theme));
+            ->where('code', $requiredCode)
+            ->first();
     }
 
     public function cumulativeCategorySlugsForPackage(?PaketUndangan $package): array
@@ -420,16 +479,31 @@ class PackageThemeAccessService
         ];
     }
 
-    public function themeAccessPayload(JenisThemas $theme, ?PaketUndangan $package, ?int $selectedThemeId = null): array
+    public function themeAccessPayload(
+        JenisThemas $theme,
+        ?PaketUndangan $package,
+        ?int $selectedThemeId = null,
+        ?string $accountStatus = 'active'
+    ): array
     {
-        if (! $theme->relationLoaded('category')) {
+        if (! $theme->relationLoaded('category') || $this->themeCategoryNeedsReload($theme)) {
             $theme->load('category');
         }
 
         $targetPackage = $this->minimumPackageForTheme($theme);
-        $canUse = $package
-            ? $this->canPackageAccessTheme($package, $theme)
-            : false;
+        $adminIsActive = (bool) $theme->is_active
+            && (bool) ($theme->category?->is_active ?? false)
+            && $theme->category?->type === 'website';
+        $accountIsActive = $accountStatus === null || $accountStatus === 'active';
+        $packageCoversTheme = $this->canPackageCoverTheme($package, $theme);
+        $canUse = $accountIsActive && $packageCoversTheme && $adminIsActive;
+        $userRank = $this->packageRank($package);
+        $requiredRank = $this->packageRank($targetPackage);
+        $upgradeRequired = $accountIsActive
+            && $package !== null
+            && $targetPackage !== null
+            && $userRank >= 0
+            && $requiredRank > $userRank;
 
         return [
             'id' => $theme->id,
@@ -442,12 +516,14 @@ class PackageThemeAccessService
                 'type' => $theme->category->type,
             ] : null,
             'package_required' => $this->packageSummaryPayload($targetPackage),
+            'admin_is_active' => $adminIsActive,
             'can_preview' => true,
             'can_use' => $canUse,
             'is_current_theme' => $selectedThemeId !== null && (int) $selectedThemeId === (int) $theme->id,
-            'upgrade_required' => $package !== null && ! $canUse,
+            'upgrade_required' => $upgradeRequired,
             'locked' => ! $canUse,
-            'target_package' => $canUse ? null : $this->packageSummaryPayload($targetPackage),
+            'inactive_by_admin' => $packageCoversTheme && ! $adminIsActive,
+            'target_package' => $upgradeRequired ? $this->packageSummaryPayload($targetPackage) : null,
             'price' => $theme->price,
             'preview' => $theme->preview,
             'preview_image' => $theme->preview_image,

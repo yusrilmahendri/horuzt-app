@@ -284,6 +284,8 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     Route::controller(AdminUserManagementController::class)->group(function () {
         Route::get('/v1/admin/users', 'index');
         Route::get('/v1/admin/get-users', 'index');
+        Route::delete('/v1/admin/get-users/{user}/hard-delete', 'hardDelete')->where('user', '[0-9]+');
+        Route::post('/v1/admin/get-users/{user}/soft-delete-data', 'softDelete')->where('user', '[0-9]+');
         Route::delete('/v1/admin/users/{userId}/soft-data', 'softDelete')->where('userId', '[0-9]+');
         Route::delete('/v1/admin/users/{userId}', 'hardDelete')->where('userId', '[0-9]+');
     });

@@ -49,9 +49,9 @@ class ThemeController extends Controller
                 ], 400);
             }
 
+            $accountStatus = $this->accountStatusForRequest($request);
             $categories = CategoryThemas::with(['jenisThemas' => function($query) {
-                $query->active()
-                    ->whereNotNull('slug')
+                $query->whereNotNull('slug')
                     ->where('slug', '!=', '')
                     ->ordered()
                     ->select(
@@ -78,9 +78,9 @@ class ThemeController extends Controller
             ->select('id', 'name', 'slug', 'type', 'description', 'icon', 'sort_order', 'is_active')
             ->get();
 
-            $categories = $categories->map(function ($category) use ($package, $selectedThemeId) {
+            $categories = $categories->map(function ($category) use ($package, $selectedThemeId, $accountStatus) {
                 $category->setRelation('jenisThemas', $category->jenisThemas
-                    ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId))
+                    ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus))
                     ->values());
 
                 return $category;
@@ -121,6 +121,7 @@ class ThemeController extends Controller
         try {
             $package = $this->resolvePackageContext($request);
             $selectedThemeId = $this->selectedThemeId($request);
+            $accountStatus = $this->accountStatusForRequest($request);
 
             $category = CategoryThemas::where('is_active', true)
                 ->where('type', 'website')
@@ -128,11 +129,10 @@ class ThemeController extends Controller
 
             $themes = JenisThemas::with('category:id,name,type,slug')
                 ->where('category_id', $categoryId)
-                ->active()
                 ->ordered()
-                ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order', 'is_active')
                 ->get()
-                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
+                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus));
 
             return response()->json([
                 'status' => true,
@@ -170,10 +170,10 @@ class ThemeController extends Controller
             $request = request();
             $package = $this->resolvePackageContext($request);
             $selectedThemeId = $this->selectedThemeId($request);
+            $accountStatus = $this->accountStatusForRequest($request);
             $theme = JenisThemas::with(['category' => function($query) {
                 $query->where('is_active', true);
             }])
-            ->where('is_active', true)
             ->findOrFail($themeId);
 
             // Check if category is active
@@ -186,7 +186,7 @@ class ThemeController extends Controller
 
             return response()->json([
                 'status' => true,
-                'data' => $this->themeAccessPayload($theme, $package, $selectedThemeId)
+                'data' => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus)
             ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
@@ -235,11 +235,8 @@ class ThemeController extends Controller
                 : [];
 
             // Verify theme is active and available
-            $theme = JenisThemas::with(['category' => function($query) {
-                $query->where('is_active', true)->where('type', 'website');
-            }])
+            $theme = JenisThemas::with('category')
             ->where('id', $request->theme_id)
-            ->where('is_active', true)
             ->whereNotNull('slug')
             ->where('slug', '!=', '')
             ->first();
@@ -307,7 +304,21 @@ class ThemeController extends Controller
                 ], 400);
             }
 
-            $canAccessTheme = $this->themeAccess->canPackageAccessTheme($package, $theme);
+            $adminThemeActive = (bool) $theme->is_active
+                && (bool) ($theme->category?->is_active ?? false)
+                && $theme->category?->type === 'website';
+            if (! $adminThemeActive) {
+                return response()->json([
+                    'status' => false,
+                    'code' => 'THEME_INACTIVE',
+                    'message' => 'Tema belum aktif.',
+                    'data' => [
+                        'theme' => $this->themeAccessPayload($theme, $package, null, $accountSummary['account_status']),
+                    ],
+                ], 403);
+            }
+
+            $canAccessTheme = $this->themeAccess->canPackageCoverTheme($package, $theme);
 
             Log::info('Theme selection package access decision', [
                 'user_id' => $user?->id,
@@ -417,7 +428,7 @@ class ThemeController extends Controller
                 'status' => true,
                 'message' => 'Theme selected successfully',
                 'data' => [
-                    'theme' => $this->themeAccessPayload($theme, $package, (int) $theme->id),
+                    'theme' => $this->themeAccessPayload($theme, $package, (int) $theme->id, $accountSummary['account_status']),
                     'selection' => $resultThema
                 ]
             ], 200);
@@ -533,6 +544,7 @@ class ThemeController extends Controller
             $type = $request->get('type', 'website');
             $package = $this->resolvePackageContext($request);
             $selectedThemeId = $this->selectedThemeId($request);
+            $accountStatus = $this->accountStatusForRequest($request);
 
             if (!$layout) {
                 return response()->json([
@@ -555,16 +567,15 @@ class ThemeController extends Controller
             ->whereHas('category', function($query) use ($type) {
                 $query->where('type', $type)->where('is_active', true);
             })
-            ->where('is_active', true)
             ->where(function($query) use ($layout) {
                 $query->where('name', 'LIKE', '%' . $layout . '%')
                       ->orWhere('description', 'LIKE', '%' . $layout . '%')
                       ->orWhereJsonContains('features', $layout);
             })
             ->ordered()
-            ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+            ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order', 'is_active')
             ->get()
-            ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
+            ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus));
 
             return response()->json([
                 'status' => true,
@@ -605,6 +616,7 @@ class ThemeController extends Controller
             $limit = $request->get('limit', 20);
             $package = $this->resolvePackageContext($request);
             $selectedThemeId = $this->selectedThemeId($request);
+            $accountStatus = $this->accountStatusForRequest($request);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -618,8 +630,7 @@ class ThemeController extends Controller
             }])
             ->whereHas('category', function($categoryQuery) use ($type) {
                 $categoryQuery->where('type', $type)->where('is_active', true);
-            })
-            ->where('is_active', true);
+            });
 
             // Text search
             if (!empty($query)) {
@@ -653,9 +664,9 @@ class ThemeController extends Controller
 
             $results = $themes->ordered()
                              ->limit($limit)
-                             ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order')
+                             ->select('id', 'category_id', 'name', 'slug', 'price', 'preview', 'preview_image', 'thumbnail_image', 'image', 'demo_url', 'features', 'description', 'url_thema', 'sort_order', 'is_active')
                              ->get()
-                             ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
+                             ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus));
 
             return response()->json([
                 'status' => true,
@@ -745,6 +756,7 @@ class ThemeController extends Controller
             $limit = $request->get('limit', 10);
             $package = $this->resolvePackageContext($request);
             $selectedThemeId = $this->selectedThemeId($request);
+            $accountStatus = $this->accountStatusForRequest($request);
 
             if (!in_array($type, ['website', 'video'])) {
                 return response()->json([
@@ -768,19 +780,19 @@ class ThemeController extends Controller
                     'demo_url',
                     'features',
                     'url_thema',
-                    'sort_order'
+                    'sort_order',
+                    'is_active'
                 )
                 ->with(['category:id,name,type,slug'])
                 ->withCount('resultThemas')
                 ->whereHas('category', function ($query) use ($type) {
                     $query->where('type', $type)->where('is_active', true);
                 })
-                ->where('is_active', true)
                 ->orderByDesc('result_themas_count')
                 ->orderBy('name', 'asc')
                 ->limit((int) $limit)
                 ->get()
-                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId));
+                ->map(fn ($theme) => $this->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus));
 
             return response()->json([
                 'status' => true,
@@ -805,13 +817,18 @@ class ThemeController extends Controller
         }
     }
 
-    private function themeAccessPayload(JenisThemas $theme, ?PaketUndangan $package, ?int $selectedThemeId): array
+    private function themeAccessPayload(
+        JenisThemas $theme,
+        ?PaketUndangan $package,
+        ?int $selectedThemeId,
+        ?string $accountStatus = 'active'
+    ): array
     {
         if (! $theme->relationLoaded('category')) {
             $theme->load('category');
         }
 
-        return $this->themeAccess->themeAccessPayload($theme, $package, $selectedThemeId);
+        return $this->themeAccess->themeAccessPayload($theme, $package, $selectedThemeId, $accountStatus);
     }
 
     private function selectedThemeId(Request $request): ?int
@@ -839,6 +856,13 @@ class ThemeController extends Controller
             ?? $request->query('package');
 
         return $this->themeAccess->packageFromCodeOrId($identifier);
+    }
+
+    private function accountStatusForRequest(Request $request): ?string
+    {
+        return $request->user()
+            ? $this->accountStatus->summary($request->user())['account_status']
+            : 'active';
     }
 
 }

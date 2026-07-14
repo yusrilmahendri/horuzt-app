@@ -48,7 +48,9 @@ class ThemeUpgradeModuleTest extends TestCase
 
         $this->assertSame(['Soft Ivory', 'Garden Whisper', 'Blue Sapphire', 'Velvet Mauve'], $themes->pluck('name')->all());
         $this->assertTrue($themes->firstWhere('slug', 'soft-ivory')['can_use']);
-        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['can_use']);
+        $this->assertFalse($themes->firstWhere('slug', 'garden-whisper')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['upgrade_required']);
+        $this->assertSame('sapphire', $themes->firstWhere('slug', 'garden-whisper')['target_package']['code']);
         $this->assertFalse($themes->firstWhere('slug', 'blue-sapphire')['can_use']);
         $this->assertTrue($themes->firstWhere('slug', 'blue-sapphire')['upgrade_required']);
         $this->assertSame('sapphire', $themes->firstWhere('slug', 'blue-sapphire')['target_package']['code']);
@@ -152,10 +154,57 @@ class ThemeUpgradeModuleTest extends TestCase
             $themes->pluck('slug')->values()->all()
         );
         $this->assertTrue($themes->every(fn ($theme) => $theme['can_preview'] === true));
+        $this->assertTrue($themes->every(fn ($theme) => $theme['admin_is_active'] === true));
         $this->assertTrue($themes->every(fn ($theme) => $theme['can_use'] === true));
         $this->assertTrue($themes->every(fn ($theme) => $theme['upgrade_required'] === false));
+        $this->assertTrue($themes->every(fn ($theme) => $theme['inactive_by_admin'] === false));
         $this->assertTrue($themes->every(fn ($theme) => $theme['locked'] === false));
-        $this->assertSame(['ruby', 'ruby', 'sapphire', 'diamond'], $themes->pluck('package_required.code')->values()->all());
+        $this->assertSame(['ruby', 'sapphire', 'sapphire', 'diamond'], $themes->pluck('package_required.code')->values()->all());
+    }
+
+    public function test_user_sapphire_bisa_pakai_ruby_dan_sapphire_tapi_tidak_diamond(): void
+    {
+        $user = $this->createUserWithPackage('sapphire');
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/themes/categories');
+        $response->assertOk()->assertJsonPath('status', true);
+
+        $themes = collect($response->json('data.categories'))
+            ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
+
+        $this->assertTrue($themes->firstWhere('slug', 'soft-ivory')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'blue-sapphire')['can_use']);
+        $this->assertFalse($themes->firstWhere('slug', 'velvet-mauve')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'velvet-mauve')['upgrade_required']);
+        $this->assertSame('diamond', $themes->firstWhere('slug', 'velvet-mauve')['target_package']['code']);
+    }
+
+    public function test_tema_nonaktif_admin_tidak_bisa_dipilih_walaupun_paket_sesuai(): void
+    {
+        $user = $this->createUserWithPackage('diamond');
+        $theme = JenisThemas::where('slug', 'velvet-mauve')->firstOrFail();
+        $theme->update(['is_active' => false]);
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/themes/categories');
+        $response->assertOk();
+        $themes = collect($response->json('data.categories'))
+            ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
+        $inactiveTheme = $themes->firstWhere('slug', 'velvet-mauve');
+
+        $this->assertTrue($inactiveTheme['can_preview']);
+        $this->assertFalse($inactiveTheme['admin_is_active']);
+        $this->assertFalse($inactiveTheme['can_use']);
+        $this->assertTrue($inactiveTheme['locked']);
+        $this->assertFalse($inactiveTheme['upgrade_required']);
+        $this->assertTrue($inactiveTheme['inactive_by_admin']);
+        $this->assertNull($inactiveTheme['target_package']);
+
+        $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'THEME_INACTIVE');
     }
 
     public function test_user_diamond_bisa_pilih_garden_whisper_dan_profile_mengembalikan_selected_theme(): void

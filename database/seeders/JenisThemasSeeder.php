@@ -19,7 +19,7 @@ class JenisThemasSeeder extends Seeder
             ['name' => 'Garden Whisper', 'slug' => 'garden-whisper', 'category' => 'floral', 'sort_order' => 20],
             ['name' => 'Modern Vows', 'slug' => 'modern-vows', 'category' => 'modern', 'sort_order' => 10],
             ['name' => 'Champagne Rose', 'slug' => 'champagne-rose', 'category' => 'elegant', 'sort_order' => 10],
-            ['name' => 'Velvet Mauve', 'slug' => 'velvet-mauve', 'category' => 'luxury', 'sort_order' => 10],
+            ['name' => 'Diamond Garden', 'slug' => 'diamond-garden', 'category' => 'luxury', 'sort_order' => 10],
         ];
 
         foreach ($themes as $theme) {

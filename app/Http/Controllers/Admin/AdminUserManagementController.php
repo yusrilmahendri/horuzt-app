@@ -228,6 +228,13 @@ class AdminUserManagementController extends Controller
             ], 404);
         }
 
+        if ((int) $user->id === (int) auth()->id()) {
+            return response()->json([
+                'status' => 422,
+                'message' => 'Admin tidak dapat menghapus akun sendiri.',
+            ], 422);
+        }
+
         if ($user->hasRole('admin')) {
             return response()->json([
                 'status' => 422,
@@ -239,7 +246,7 @@ class AdminUserManagementController extends Controller
             $summary = $this->cleanupService->softDeleteUserData($user);
 
             return response()->json([
-                'status' => 200,
+                'status' => true,
                 'message' => 'Data pengguna berhasil dibersihkan.',
                 'data' => $summary,
             ]);
@@ -263,6 +270,13 @@ class AdminUserManagementController extends Controller
             ], 404);
         }
 
+        if ((int) $user->id === (int) auth()->id()) {
+            return response()->json([
+                'status' => 422,
+                'message' => 'Admin tidak dapat menghapus akun sendiri.',
+            ], 422);
+        }
+
         if ($user->hasRole('admin')) {
             return response()->json([
                 'status' => 422,
@@ -274,8 +288,8 @@ class AdminUserManagementController extends Controller
             $summary = $this->cleanupService->hardDeleteUser($user);
 
             return response()->json([
-                'status' => 200,
-                'message' => 'Akun pengguna beserta seluruh data berhasil dihapus.',
+                'status' => true,
+                'message' => 'Akun pengguna berhasil dihapus.',
                 'data' => $summary,
             ]);
         } catch (Throwable $exception) {
