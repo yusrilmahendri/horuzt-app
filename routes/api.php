@@ -131,6 +131,7 @@ Route::controller(TestimoniController::class)->group(function () {
 // Public Wedding Profile endpoints (for viewing wedding invitations)
 Route::get('/v1/wedding-profile/public', [WeddingProfileController::class, 'publicProfile']);
 Route::get('/v1/wedding-profile/couple/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
+Route::get('/v1/public/wedding/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
 
 // Public Guest Tracking endpoints (for guest visit tracking and QR verification)
 Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->group(function () {

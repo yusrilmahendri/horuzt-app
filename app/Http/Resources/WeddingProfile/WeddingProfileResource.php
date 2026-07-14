@@ -2,6 +2,8 @@
 
 namespace App\Http\Resources\WeddingProfile;
 
+use App\Models\JenisThemas;
+use App\Services\PackageThemeAccessService;
 use App\Services\LocationResolverService;
 use App\Services\ReligionContentResolver;
 use Illuminate\Http\Request;
@@ -15,6 +17,8 @@ class WeddingProfileResource extends JsonResource
     protected ?string $domainContext;
     protected ?int $ownerUserIdContext;
     protected ?array $resolvedReligionContentCache = null;
+    protected ?array $selectedThemeResolutionCache = null;
+    protected bool $selectedThemeResolutionResolved = false;
 
     public function __construct($resource, $isPublicView = false, ?string $domainContext = null, ?int $ownerUserIdContext = null)
     {
@@ -31,11 +35,16 @@ class WeddingProfileResource extends JsonResource
      */
     public function toArray(Request $request): array
     {
+        $selectedTheme = $this->getSelectedThemeSummary();
+
         return [
             'user_info' => $this->getUserInfo(),
             'mempelai' => $this->getMempelaiInfo(),
             'invitation_package' => $this->getInvitationPackageInfo(),
-            'selected_theme' => $this->getSelectedThemeSummary(),
+            'selected_theme' => $selectedTheme,
+            'selected_theme_slug' => $selectedTheme['slug'] ?? null,
+            'theme_slug' => $selectedTheme['slug'] ?? null,
+            'guest_name' => $this->publicGuestName(),
             'events' => $this->getEventsInfo(),
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
@@ -61,13 +70,10 @@ class WeddingProfileResource extends JsonResource
 
     private function getSelectedThemeSummary(): ?array
     {
-        if (! $this->relationLoaded('selectedTheme') || ! $this->selectedTheme) {
-            return null;
-        }
+        $resolved = $this->resolveSelectedTheme();
+        $jenisThema = $resolved['theme'] ?? null;
 
-        $jenisThema = $this->selectedTheme->jenisThema;
-
-        if (! $jenisThema || ! $jenisThema->slug) {
+        if (! $jenisThema instanceof JenisThemas || ! $jenisThema->slug) {
             return null;
         }
 
@@ -76,7 +82,64 @@ class WeddingProfileResource extends JsonResource
             'slug' => $jenisThema->slug,
             'name' => $jenisThema->name,
             'category_slug' => $jenisThema->category->slug ?? null,
+            'is_fallback' => (bool) ($resolved['is_fallback'] ?? false),
         ];
+    }
+
+    private function resolveSelectedTheme(): ?array
+    {
+        if ($this->selectedThemeResolutionResolved) {
+            return $this->selectedThemeResolutionCache;
+        }
+
+        $this->selectedThemeResolutionResolved = true;
+
+        if ($this->relationLoaded('selectedTheme') && $this->selectedTheme) {
+            $jenisThema = $this->selectedTheme->jenisThema;
+
+            if ($jenisThema instanceof JenisThemas && $jenisThema->slug) {
+                $this->selectedThemeResolutionCache = [
+                    'theme' => $jenisThema,
+                    'selected_at' => $this->selectedTheme->selected_at,
+                    'is_fallback' => false,
+                ];
+
+                return $this->selectedThemeResolutionCache;
+            }
+        }
+
+        $package = $this->invitationOne?->paketUndangan;
+        $accessService = app(PackageThemeAccessService::class);
+        $fallbackTheme = null;
+
+        if ($package) {
+            $categories = $accessService->accessibleCategoriesForPackage($package, true);
+            $fallbackTheme = $categories
+                ->flatMap(fn ($category) => $category->jenisThemas ?? collect())
+                ->filter(fn ($theme) => $theme instanceof JenisThemas && $theme->is_active)
+                ->sortBy([
+                    ['sort_order', 'asc'],
+                    ['name', 'asc'],
+                ])
+                ->first();
+        }
+
+        if (! $fallbackTheme) {
+            $fallbackTheme = JenisThemas::query()
+                ->with('category')
+                ->active()
+                ->withActiveCategory()
+                ->ordered()
+                ->first();
+        }
+
+        $this->selectedThemeResolutionCache = $fallbackTheme ? [
+            'theme' => $fallbackTheme,
+            'selected_at' => null,
+            'is_fallback' => true,
+        ] : null;
+
+        return $this->selectedThemeResolutionCache;
     }
 
     private function getUserInfo(): array
@@ -496,7 +559,7 @@ class WeddingProfileResource extends JsonResource
             : null;
 
         $context = [
-            'guest_name' => request()->query('guest_name', 'Tamu Undangan'),
+            'guest_name' => $this->publicGuestName(),
             'bride_name' => $mempelai?->name_panggilan_wanita ?? $mempelai?->name_lengkap_wanita ?? '',
             'groom_name' => $mempelai?->name_panggilan_pria ?? $mempelai?->name_lengkap_pria ?? '',
             'invitation_url' => $this->domainContext ? url('/'.$this->domainContext) : '',
@@ -610,31 +673,29 @@ class WeddingProfileResource extends JsonResource
             'legacy_themes' => [],
         ];
 
-        // Get current selected theme (from jenis_themas)
-        if ($this->relationLoaded('selectedTheme') && $this->selectedTheme) {
-            $selectedTheme = $this->selectedTheme;
-            $jenisThema = $selectedTheme->jenisThema;
+        $resolved = $this->resolveSelectedTheme();
+        $jenisThema = $resolved['theme'] ?? null;
 
-            if ($jenisThema) {
-                $result['selected_theme'] = [
-                    'id' => $jenisThema->id,
-                    'slug' => $jenisThema->slug,
-                    'name' => $jenisThema->name,
-                    'price' => $jenisThema->price,
-                    'preview' => $jenisThema->preview,
-                    'url_thema' => $jenisThema->url_thema,
-                    'demo_url' => $jenisThema->demo_url,
-                    'features' => $jenisThema->features,
-                    'description' => $jenisThema->description,
-                    'category' => [
-                        'id' => $jenisThema->category->id ?? null,
-                        'name' => $jenisThema->category->name ?? null,
-                        'slug' => $jenisThema->category->slug ?? null,
-                        'type' => $jenisThema->category->type ?? null,
-                    ],
-                    'selected_at' => $selectedTheme->selected_at?->format('Y-m-d H:i:s'),
-                ];
-            }
+        if ($jenisThema instanceof JenisThemas) {
+            $result['selected_theme'] = [
+                'id' => $jenisThema->id,
+                'slug' => $jenisThema->slug,
+                'name' => $jenisThema->name,
+                'price' => $jenisThema->price,
+                'preview' => $jenisThema->preview,
+                'url_thema' => $jenisThema->url_thema,
+                'demo_url' => $jenisThema->demo_url,
+                'features' => $jenisThema->features,
+                'description' => $jenisThema->description,
+                'category' => [
+                    'id' => $jenisThema->category->id ?? null,
+                    'name' => $jenisThema->category->name ?? null,
+                    'slug' => $jenisThema->category->slug ?? null,
+                    'type' => $jenisThema->category->type ?? null,
+                ],
+                'selected_at' => $resolved['selected_at']?->format('Y-m-d H:i:s'),
+                'is_fallback' => (bool) ($resolved['is_fallback'] ?? false),
+            ];
         }
 
         // Get legacy themes (from old themas table for backward compatibility)
@@ -649,6 +710,17 @@ class WeddingProfileResource extends JsonResource
         }
 
         return $result;
+    }
+
+    private function publicGuestName(): string
+    {
+        $guestName = trim((string) request()->query('guest_name', ''));
+
+        if ($guestName === '') {
+            $guestName = trim((string) request()->query('to', ''));
+        }
+
+        return $guestName !== '' ? $guestName : 'Tamu Undangan';
     }
 
     private function getMetadata(): array

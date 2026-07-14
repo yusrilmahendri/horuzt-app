@@ -5,6 +5,8 @@ use App\Http\Controllers\Controller;
 use App\Http\Requests\StoreJenisThemaRequest;
 use App\Models\JenisThemas;
 use App\Models\CategoryThemas;
+use App\Models\PaketUndangan;
+use App\Services\PackageThemeAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -14,8 +16,9 @@ use Intervention\Image\Facades\Image;
 
 class JenisThemaController extends Controller
 {
-    public function __construct()
-    {
+    public function __construct(
+        private PackageThemeAccessService $themeAccess
+    ) {
         $this->middleware('auth:sanctum');
         $this->middleware('role:admin');
     }
@@ -57,6 +60,9 @@ class JenisThemaController extends Controller
             // Pagination
             $perPage = $request->get('per_page', 15);
             $themes = $query->paginate($perPage);
+            $themes->setCollection($themes->getCollection()->map(
+                fn (JenisThemas $theme) => $this->adminThemePayload($theme)
+            ));
 
             return response()->json([
                 'status' => true,
@@ -425,6 +431,36 @@ class JenisThemaController extends Controller
                 'message' => 'Failed to update themes status.'
             ], 500);
         }
+    }
+
+    private function adminThemePayload(JenisThemas $theme): array
+    {
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        $packageCode = $this->themeAccess->requiredPackageCodeForTheme($theme);
+        $package = $packageCode
+            ? PaketUndangan::query()->where('code', $packageCode)->first()
+            : null;
+
+        return array_merge($theme->toArray(), [
+            'theme_slug' => $theme->slug,
+            'master_theme_id' => $theme->id,
+            'master_theme_slug' => $theme->slug,
+            'category_user_id' => $theme->category?->id,
+            'category_user_slug' => $theme->category?->slug,
+            'category_slug' => $theme->category?->slug,
+            'package_required' => $packageCode,
+            'package_code' => $packageCode,
+            'package_required_detail' => $packageCode ? [
+                'id' => $package?->id,
+                'code' => $packageCode,
+                'name' => PaketUndangan::displayLabelFromCode($packageCode),
+            ] : null,
+            'is_connected' => $theme->slug !== null && $theme->category !== null,
+            'status_terhubung' => $theme->slug !== null && $theme->category !== null,
+        ]);
     }
 
     /**

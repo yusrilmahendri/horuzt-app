@@ -425,8 +425,10 @@ class WebsiteInvitationCategoryController extends Controller
 
         return [
             'id' => $theme?->id,
+            'name' => $theme?->name ?? $definition['name'],
             'nama_kategori' => $theme?->name ?? $definition['name'],
             'slug' => $slug,
+            'theme_slug' => $theme?->slug,
             'urutan' => (int) ($theme?->sort_order ?? $definition['sort_order'] ?? 0),
             'is_active' => (bool) ($theme?->is_active ?? false),
             'preview_image' => $previewImage,
@@ -435,7 +437,10 @@ class WebsiteInvitationCategoryController extends Controller
             'master_theme_slug' => $theme?->slug,
             'category_user_id' => $category?->id,
             'category_user_slug' => $categorySlug,
-            'package_required' => $this->packagePayload($packageCode),
+            'category_slug' => $categorySlug,
+            'package_required' => $packageCode,
+            'package_code' => $packageCode,
+            'package_required_detail' => $this->packagePayload($packageCode),
             'is_connected' => $isConnected,
             'status_terhubung' => $isConnected,
             'created_at' => $theme?->created_at,

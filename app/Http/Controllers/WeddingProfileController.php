@@ -8,6 +8,7 @@ use App\Services\DomainService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Log;
 
 class WeddingProfileController extends Controller
 {
@@ -168,45 +169,11 @@ class WeddingProfileController extends Controller
                 ], 404);
             }
 
-            // Only show completed invitations for public view
-            $user = User::with([
-                'mempelaiOne',
-                'settingOne',
-                'filterUndanganOne',
-                'invitationOne.paketUndangan.accessibleCategories',
-                'acara',
-                'cerita',
-                'qoute',
-                'gallery' => function ($query) {
-                    $query->where('status', true)
-                        ->where(function ($query) {
-                            $query->whereNull('photo_type')
-                                ->orWhere('photo_type', 'gallery');
-                        })
-                        ->orderByDesc('is_featured')
-                        ->orderBy('sort_order'); // Only show active gallery items
-                },
-                'collage' => function ($query) {
-                    $query->where('status', true)
-                        ->where('photo_type', 'collage')
-                        ->orderByDesc('is_featured')
-                        ->orderBy('sort_order');
-                },
-                'rekening.bank',
-                'testimoni', // Added missing testimoni relationship
-                'bukuTamu', // Added missing bukuTamu relationship
-                'thema', // Added missing thema relationship
-                'selectedTheme.jenisThema.category',
-                'ucapan' => function ($query) {
-                    $query->whereNotNull('user_id'); // Only user's own ucapan
-                },
-            ])->findOrFail($ownerUserId);
+            $user = $this->loadPublicWeddingUser((int) $ownerUserId);
+            $paymentGuard = $this->paymentConfirmedResponse($user);
 
-            // Check if invitation is completed
-            if ($user->invitationOne?->status !== 'step3') {
-                return response()->json([
-                    'message' => 'Wedding invitation is not yet available for public viewing.',
-                ], 403);
+            if ($paymentGuard) {
+                return $paymentGuard;
             }
 
             return response()->json([
@@ -218,10 +185,16 @@ class WeddingProfileController extends Controller
                 'message' => 'Wedding profile not found.',
             ], 404);
         } catch (\Exception $e) {
+            Log::error('[PublicWeddingProfile] Failed to retrieve wedding profile.', [
+                'domain' => $domain ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
-                'message' => 'Failed to retrieve wedding profile.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
-            ], 500);
+                'code' => 'PUBLIC_WEDDING_LOAD_FAILED',
+                'message' => 'Unable to load wedding invitation.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 422);
         }
     }
 
@@ -250,88 +223,94 @@ class WeddingProfileController extends Controller
                 ], 404);
             }
 
-            // Load user with all relationships
-            $user = User::with([
-                'mempelaiOne',
-                'settingOne',
-                'filterUndanganOne',
-                'invitationOne.paketUndangan.accessibleCategories',
-                'acara',
-                'cerita',
-                'qoute',
-                'gallery' => function ($query) {
-                    $query->where('status', true)
-                        ->where(function ($query) {
-                            $query->whereNull('photo_type')
-                                ->orWhere('photo_type', 'gallery');
-                        })
-                        ->orderByDesc('is_featured')
-                        ->orderBy('sort_order'); // Only show active gallery items
-                },
-                'collage' => function ($query) {
-                    $query->where('status', true)
-                        ->where('photo_type', 'collage')
-                        ->orderByDesc('is_featured')
-                        ->orderBy('sort_order');
-                },
-                'rekening.bank',
-                'testimoni',
-                'bukuTamu',
-                'thema',
-                'selectedTheme.jenisThema.category', // Add user's selected theme with category
-                'ucapan' => function ($query) {
-                    $query->whereNotNull('user_id'); // Only user's own ucapan
-                },
-            ])->findOrFail($ownerUserId);
+            $user = $this->loadPublicWeddingUser((int) $ownerUserId);
+            $paymentGuard = $this->paymentConfirmedResponse($user);
 
-            // Check if invitation is completed
-            if ($user->invitationOne?->status !== 'step3') {
-                return response()->json([
-                    'message' => 'Wedding invitation is not yet available for public viewing.',
-                ], 403);
+            if ($paymentGuard) {
+                return $paymentGuard;
             }
 
-            // Check payment status from mempelai
-            $paymentStatus = $user->mempelaiOne?->kd_status;
-            $invitation = $user->invitationOne;
-
-            // MK (Menunggu Konfirmasi) = pending manual payment.
-            // Allow access only if the trial window (domain_expires_at) is still active.
-            // Once the trial window lapses, block access until admin confirms payment.
-            if ($paymentStatus === 'MK') {
-                if ($invitation && $invitation->isDomainActive()) {
-                    return response()->json([
-                        'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId),
-                    ], 200);
-                }
-
-                return response()->json([
-                    'message' => 'Masa aktif domain habis. Menunggu konfirmasi pembayaran dari admin.',
-                ], 403);
-            }
-
-            // SB (Sudah Bayar) = payment confirmed by admin, full access.
-            if ($paymentStatus === 'SB') {
-                return response()->json([
-                    'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId),
-                ], 200);
-            }
-
-            // Unknown or unset payment status
             return response()->json([
-                'message' => 'Wedding profile payment status is not valid.',
-            ], 403);
+                'data' => new WeddingProfileResource($user, true, $domain, (int) $ownerUserId),
+            ], 200);
 
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
             return response()->json([
                 'message' => 'Wedding profile not found.',
             ], 404);
         } catch (\Exception $e) {
+            Log::error('[PublicWeddingProfile] Failed to retrieve wedding profile by domain.', [
+                'domain' => $domain ?? null,
+                'error' => $e->getMessage(),
+            ]);
+
             return response()->json([
-                'message' => 'Failed to retrieve wedding profile.',
-                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
-            ], 500);
+                'code' => 'PUBLIC_WEDDING_LOAD_FAILED',
+                'message' => 'Unable to load wedding invitation.',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ], 422);
         }
+    }
+
+    private function loadPublicWeddingUser(int $ownerUserId): User
+    {
+        return User::with([
+            'mempelaiOne',
+            'settingOne',
+            'filterUndanganOne',
+            'invitationOne.paketUndangan.accessibleCategories',
+            'invitationOne.komentars' => function ($query) {
+                $query->latest()->limit(50);
+            },
+            'acara.countdownAcara',
+            'cerita',
+            'qoute',
+            'gallery' => function ($query) {
+                $query->where('status', true)
+                    ->where(function ($query) {
+                        $query->whereNull('photo_type')
+                            ->orWhere('photo_type', 'gallery');
+                    })
+                    ->orderByDesc('is_featured')
+                    ->orderBy('sort_order');
+            },
+            'collage' => function ($query) {
+                $query->where('status', true)
+                    ->where('photo_type', 'collage')
+                    ->orderByDesc('is_featured')
+                    ->orderBy('sort_order');
+            },
+            'rekening.bank',
+            'testimoni',
+            'bukuTamu',
+            'thema',
+            'selectedTheme.jenisThema.category',
+            'ucapan' => function ($query) {
+                $query->whereNotNull('user_id');
+            },
+        ])->findOrFail($ownerUserId);
+    }
+
+    private function paymentConfirmedResponse(User $user): ?JsonResponse
+    {
+        $invitation = $user->invitationOne;
+        $paymentStatus = strtolower(trim((string) ($invitation?->payment_status ?? '')));
+        $mempelaiPaymentStatus = strtoupper(trim((string) ($user->mempelaiOne?->kd_status ?? '')));
+        $isPaymentConfirmed = in_array($paymentStatus, ['paid', 'confirmed'], true)
+            || $invitation?->payment_confirmed_at !== null
+            || $mempelaiPaymentStatus === 'SB';
+        $isExpired = $invitation?->domain_expires_at
+            ? now()->greaterThan($invitation->domain_expires_at)
+            : false;
+
+        if (! $invitation || ! $isPaymentConfirmed || $isExpired) {
+            return response()->json([
+                'code' => 'PAYMENT_NOT_CONFIRMED',
+                'message' => 'Pembayaran belum dikonfirmasi.',
+            ], 403);
+        }
+
+        return null;
     }
 
     private function extractDomain(string $domain): string

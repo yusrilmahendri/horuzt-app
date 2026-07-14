@@ -112,24 +112,63 @@ class DomainService
             return null;
         }
 
-        $ownerUserId = Setting::query()
-            ->whereRaw('LOWER(domain) = ?', [$normalizedDomain])
-            ->value('user_id');
+        $lookupValues = $this->lookupValuesForDomain($normalizedDomain);
+        $lookupColumns = ['domain', 'slug', 'nama_domain', 'invitation_slug'];
+
+        $ownerUserId = $this->lookupOwnerId(Setting::query(), 'settings', $lookupColumns, $lookupValues);
 
         if ($ownerUserId) {
             return (int) $ownerUserId;
         }
 
-        if (Schema::hasColumn('invitations', 'domain')) {
-            $ownerUserId = Invitation::query()
-                ->whereRaw('LOWER(domain) = ?', [$normalizedDomain])
-                ->value('user_id');
+        $ownerUserId = $this->lookupOwnerId(Invitation::query(), 'invitations', $lookupColumns, $lookupValues);
 
-            if ($ownerUserId) {
-                return (int) $ownerUserId;
-            }
+        if ($ownerUserId) {
+            return (int) $ownerUserId;
         }
 
         return null;
+    }
+
+    private function lookupOwnerId($query, string $table, array $columns, array $lookupValues): ?int
+    {
+        $availableColumns = array_values(array_filter(
+            $columns,
+            fn (string $column): bool => Schema::hasColumn($table, $column)
+        ));
+
+        if ($availableColumns === [] || $lookupValues === []) {
+            return null;
+        }
+
+        $ownerUserId = (clone $query)
+            ->where(function ($query) use ($availableColumns, $lookupValues) {
+                foreach ($availableColumns as $column) {
+                    $query->orWhereIn(
+                        $column,
+                        $lookupValues
+                    )->orWhereRaw('LOWER('.$column.') IN ('.implode(',', array_fill(0, count($lookupValues), '?')).')', $lookupValues);
+                }
+            })
+            ->value('user_id');
+
+        return $ownerUserId ? (int) $ownerUserId : null;
+    }
+
+    private function lookupValuesForDomain(string $normalizedDomain): array
+    {
+        $values = [
+            $normalizedDomain,
+            Str::slug($normalizedDomain, '-'),
+        ];
+
+        if (str_contains($normalizedDomain, '.')) {
+            $values[] = Str::before($normalizedDomain, '.');
+        }
+
+        return array_values(array_unique(array_filter(array_map(
+            fn (string $value): string => Str::lower(trim($value)),
+            $values
+        ))));
     }
 }

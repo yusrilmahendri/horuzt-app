@@ -59,14 +59,49 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
         $diamondGarden = $themes->firstWhere('slug', 'diamond-garden');
 
         $this->assertTrue($champagne['is_connected']);
+        $this->assertSame('Champagne Rose', $champagne['name']);
+        $this->assertSame('champagne-rose', $champagne['theme_slug']);
         $this->assertSame('champagne-rose', $champagne['master_theme_slug']);
+        $this->assertSame('elegant', $champagne['category_slug']);
         $this->assertSame('elegant', $champagne['category_user_slug']);
-        $this->assertSame('diamond', $champagne['package_required']['code']);
+        $this->assertSame('diamond', $champagne['package_required']);
+        $this->assertSame('diamond', $champagne['package_code']);
+        $this->assertSame('diamond', $champagne['package_required_detail']['code']);
 
         $this->assertTrue($diamondGarden['is_connected']);
+        $this->assertSame('Diamond Garden', $diamondGarden['name']);
+        $this->assertSame('diamond-garden', $diamondGarden['theme_slug']);
         $this->assertSame('diamond-garden', $diamondGarden['master_theme_slug']);
+        $this->assertSame('luxury', $diamondGarden['category_slug']);
         $this->assertSame('luxury', $diamondGarden['category_user_slug']);
-        $this->assertSame('diamond', $diamondGarden['package_required']['code']);
+        $this->assertSame('diamond', $diamondGarden['package_required']);
+        $this->assertSame('diamond', $diamondGarden['package_code']);
+        $this->assertSame('diamond', $diamondGarden['package_required_detail']['code']);
+    }
+
+    public function test_admin_themes_response_keeps_theme_slug_and_package_separate(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+
+        $response = $this->getJson('/api/admin/themes?type=website&per_page=10');
+
+        $response->assertOk()->assertJsonPath('status', true);
+
+        $themes = collect($response->json('data.data'));
+        $champagne = $themes->firstWhere('slug', 'champagne-rose');
+        $diamondGarden = $themes->firstWhere('slug', 'diamond-garden');
+
+        $this->assertSame('champagne-rose', $champagne['theme_slug']);
+        $this->assertSame('champagne-rose', $champagne['master_theme_slug']);
+        $this->assertSame('diamond', $champagne['package_required']);
+        $this->assertSame('elegant', $champagne['category_slug']);
+        $this->assertTrue($champagne['is_connected']);
+
+        $this->assertSame('diamond-garden', $diamondGarden['theme_slug']);
+        $this->assertSame('diamond-garden', $diamondGarden['master_theme_slug']);
+        $this->assertSame('diamond', $diamondGarden['package_required']);
+        $this->assertSame('luxury', $diamondGarden['category_slug']);
+        $this->assertTrue($diamondGarden['is_connected']);
     }
 
     public function test_admin_can_partial_update_status_without_nama_kategori(): void
