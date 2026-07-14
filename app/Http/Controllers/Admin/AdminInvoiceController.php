@@ -55,6 +55,10 @@ class AdminInvoiceController extends Controller
         $invoices = $query->latest('created_at')->paginate($perPage);
 
         $data = $invoices->map(function ($invitation) {
+            $invoiceCode = $invitation->kode_pemesanan
+                ?? $invitation->user?->kode_pemesanan
+                ?? null;
+
             $packageName = $invitation->package_features_snapshot['name_paket']
                 ?? $invitation->paketUndangan?->name_paket
                 ?? 'Unknown Package';
@@ -65,15 +69,17 @@ class AdminInvoiceController extends Controller
 
             return [
                 'id' => $invitation->id,
+                'invoice_id' => $invitation->id,
+                'user_id' => $invitation->user_id,
                 'email' => $invitation->user?->email ?? '-',
                 'phone' => $invitation->user?->phone ?? '-',
                 'domain' => $invitation->user?->settingOne?->domain ?? '-',
-                'kode_pemesanan' => $invitation->kode_pemesanan
-                    ?? $invitation->user?->kode_pemesanan
-                    ?? '-',
+                'kode_pemesanan' => $invoiceCode ?? '-',
+                'invoice_code' => $invoiceCode,
                 'midtrans_order_id' => $invitation->order_id ?? '-',
                 'paket' => $packageName,
                 'harga' => (float) $packagePrice,
+                'status' => $invitation->payment_status,
                 'payment_status' => $invitation->payment_status,
                 'payment_confirmed_at' => $invitation->payment_confirmed_at?->format('d/m/Y H:i:s') ?? '-',
                 'domain_expires_at' => $invitation->domain_expires_at?->format('d/m/Y') ?? '-',

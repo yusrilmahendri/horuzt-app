@@ -75,6 +75,10 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('data.has_invoice', true)
             ->assertJsonPath('data.has_pending_invoice', true)
             ->assertJsonPath('data.invoice_code', '#INV-PENDING')
+            ->assertJsonPath('data.kode_pemesanan', '#INV-PENDING')
+            ->assertJsonPath('data.package_name', 'Paket Ruby')
+            ->assertJsonPath('data.package_code', 'ruby')
+            ->assertJsonPath('data.feature_access.input_undangan', false)
             ->assertJsonPath('data.is_payment_confirmed', false);
     }
 
@@ -117,7 +121,7 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('code', 'PAYMENT_NOT_CONFIRMED');
     }
 
-    public function test_user_onboarding_tetap_bisa_akses_fitur_input_lama(): void
+    public function test_user_onboarding_tidak_bisa_akses_fitur_input(): void
     {
         $user = $this->makeUserWithoutInvoice(true);
         Mempelai::create(['user_id' => $user->id]);
@@ -127,7 +131,9 @@ class AccountStatusPaymentTest extends TestCase
         $this->postJson('/api/v1/user/update-mempelai', [
             'name_lengkap_pria' => 'Budi',
             'name_lengkap_wanita' => 'Sari',
-        ])->assertOk();
+        ])
+            ->assertForbidden()
+            ->assertJsonPath('code', 'PAYMENT_NOT_CONFIRMED');
     }
 
     public function test_user_expired_tidak_bisa_akses_fitur_input(): void

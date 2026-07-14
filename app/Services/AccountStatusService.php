@@ -53,7 +53,7 @@ class AccountStatusService
             $snapshot['name_paket'] ?? $package?->name_paket
         );
 
-        $canInputInvitation = in_array($accountStatus, [self::STATUS_ONBOARDING, self::STATUS_ACTIVE], true);
+        $canUseFeatures = $accountStatus === self::STATUS_ACTIVE;
 
         return [
             'is_verified' => $isVerified,
@@ -63,6 +63,7 @@ class AccountStatusService
             'has_pending_invoice' => $hasPendingInvoice,
             'invoice_id' => $invitation?->id,
             'invoice_code' => $invitation?->kode_pemesanan,
+            'kode_pemesanan' => $invitation?->kode_pemesanan ?? $user->kode_pemesanan,
             'package_name' => $packageName,
             'package_code' => $packageCode,
             'active_until' => $activeUntil,
@@ -70,15 +71,15 @@ class AccountStatusService
             'is_payment_confirmed' => $isPaymentConfirmed,
             'is_expired' => $isExpired,
             'feature_access' => [
-                'input_undangan' => $canInputInvitation,
-                'mempelai' => $canInputInvitation,
-                'acara' => $canInputInvitation,
-                'gallery' => $canInputInvitation,
-                'musik' => $canInputInvitation,
-                'rekening' => $canInputInvitation,
-                'cerita' => $canInputInvitation,
-                'quote' => $canInputInvitation,
-                'bagi_undangan' => $canInputInvitation,
+                'input_undangan' => $canUseFeatures,
+                'mempelai' => $canUseFeatures,
+                'acara' => $canUseFeatures,
+                'gallery' => $canUseFeatures,
+                'musik' => $canUseFeatures,
+                'rekening' => $canUseFeatures,
+                'cerita' => $canUseFeatures,
+                'quote' => $canUseFeatures,
+                'bagi_undangan' => $canUseFeatures,
             ],
         ];
     }

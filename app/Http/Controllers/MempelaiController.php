@@ -188,7 +188,7 @@ class MempelaiController extends Controller
     {
         try {
             $validated = $request->validate([
-                'user_id' => 'required|exists:users,id',
+                'user_id' => 'required|integer',
                 'kode_pemesanan' => 'nullable|string|required_without_all:kode_invoice,no_invoice,invoice_number,order_id,transaksi_id',
                 'kode_invoice' => 'nullable|string',
                 'no_invoice' => 'nullable|string',
@@ -205,12 +205,36 @@ class MempelaiController extends Controller
             }
 
             $invoiceCode = $this->extractInvoiceCode($validated);
+            if ($invoiceCode === '') {
+                return response()->json([
+                    'message' => 'Invoice/tagihan pengguna belum tersedia.',
+                ], 422);
+            }
+
+            if (! Invitation::where('user_id', $user->id)->exists()) {
+                return response()->json([
+                    'message' => 'Invoice/tagihan pengguna belum tersedia.',
+                ], 404);
+            }
+
+            if ($this->invoiceCodeExistsForAnotherUser((int) $user->id, $invoiceCode)) {
+                return response()->json([
+                    'message' => 'Kode pemesanan tidak sesuai dengan pengguna.',
+                ], 422);
+            }
+
             $invoice = $this->resolveInvoiceForUser((int) $user->id, $invoiceCode);
 
             if (!$invoice) {
                 return response()->json([
                     'message' => 'Kode pemesanan tidak ditemukan untuk pengguna ini.',
                 ], 404);
+            }
+
+            if (! in_array($invoice->payment_status, ['pending', 'failed', 'expired'], true) || $invoice->status === 'completed') {
+                return response()->json([
+                    'message' => 'Invoice/tagihan pengguna sudah selesai.',
+                ], 422);
             }
 
             // Use database transaction for data consistency
@@ -222,7 +246,7 @@ class MempelaiController extends Controller
                 $masaAktif = $invoice->package_duration_snapshot
                     ?? ($invoice->paketUndangan->masa_aktif ?? 30);
                 $activeDays = (int) $masaAktif;
-                $domainExpiresAt = $paymentConfirmedAt->copy()->addDays($activeDays);
+                $domainExpiresAt = $invoice->domain_expires_at ?: $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
                 $mempelai = Mempelai::where('user_id', $user->id)->first();
@@ -234,12 +258,22 @@ class MempelaiController extends Controller
                 }
 
                 // Update Invitation with payment confirmation and domain expiry
-                $invoice->update([
+                $invoiceUpdate = [
                     'status' => 'completed',
                     'payment_status' => 'paid',
-                    'payment_confirmed_at' => $paymentConfirmedAt,
+                    'payment_confirmed_at' => $invoice->payment_confirmed_at ?: $paymentConfirmedAt,
                     'domain_expires_at' => $domainExpiresAt,
-                ]);
+                ];
+
+                if (Schema::hasColumn('invitations', 'tanggal_mulai')) {
+                    $invoiceUpdate['tanggal_mulai'] = $invoice->tanggal_mulai ?: $paymentConfirmedAt;
+                }
+
+                if (Schema::hasColumn('invitations', 'tanggal_expired')) {
+                    $invoiceUpdate['tanggal_expired'] = $invoice->tanggal_expired ?: $domainExpiresAt;
+                }
+
+                $invoice->update($invoiceUpdate);
 
                 $invoice->refresh()->load('paketUndangan');
                 $accountStatus = app(AccountStatusService::class)->summary($user->fresh());
@@ -284,7 +318,7 @@ class MempelaiController extends Controller
         foreach (['kode_pemesanan', 'kode_invoice', 'no_invoice', 'invoice_number', 'order_id', 'transaksi_id'] as $field) {
             $value = trim((string) ($validated[$field] ?? ''));
             if ($value !== '') {
-                return $value;
+                return ltrim($value, '#');
             }
         }
 
@@ -301,6 +335,35 @@ class MempelaiController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function invoiceCodeExistsForAnotherUser(int $userId, string $code): bool
+    {
+        $variants = $this->invoiceCodeVariants($code);
+        $normalized = ltrim(trim($code), '#');
+
+        return Invitation::query()
+            ->where('user_id', '!=', $userId)
+            ->where(function ($invoiceQuery) use ($variants, $normalized) {
+                $hasCondition = false;
+
+                foreach (['kode_pemesanan', 'order_id', 'midtrans_transaction_id'] as $column) {
+                    if (Schema::hasColumn('invitations', $column)) {
+                        $method = $hasCondition ? 'orWhereIn' : 'whereIn';
+                        $invoiceQuery->{$method}($column, $variants);
+                        $hasCondition = true;
+                    }
+                }
+
+                if (is_numeric($normalized)) {
+                    $id = (int) ltrim($normalized, '0');
+                    if ($id > 0) {
+                        $method = $hasCondition ? 'orWhere' : 'where';
+                        $invoiceQuery->{$method}('id', $id);
+                    }
+                }
+            })
+            ->exists();
     }
 
     private function resolveInvoiceForUser(int $userId, string $code): ?Invitation

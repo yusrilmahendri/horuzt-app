@@ -92,8 +92,8 @@ class AdminPaymentConfirmationTest extends TestCase
             'user_id' => $other->id,
             'kode_pemesanan' => '#OWNER',
         ])
-            ->assertNotFound()
-            ->assertJsonPath('message', 'Kode pemesanan tidak ditemukan untuk pengguna ini.');
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Kode pemesanan tidak sesuai dengan pengguna.');
 
         $this->assertSame('pending', Invitation::where('user_id', $owner->id)->firstOrFail()->payment_status);
     }
