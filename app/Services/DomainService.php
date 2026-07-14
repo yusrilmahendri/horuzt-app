@@ -148,6 +148,10 @@ class DomainService
                         $column,
                         $lookupValues
                     )->orWhereRaw('LOWER('.$column.') IN ('.implode(',', array_fill(0, count($lookupValues), '?')).')', $lookupValues);
+
+                    foreach ($lookupValues as $lookupValue) {
+                        $query->orWhereRaw('LOWER('.$column.') LIKE ?', ['%/'.$lookupValue]);
+                    }
                 }
             })
             ->value('user_id');
