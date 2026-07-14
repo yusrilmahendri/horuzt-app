@@ -6,6 +6,7 @@ use App\Http\Resources\User\UserResource;
 use App\Models\User;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Schema;
 
 class UserController extends Controller
 {
@@ -19,12 +20,18 @@ class UserController extends Controller
         $user = auth()->user();
         if ($user->hasRole('user')) {
             $user->makeHidden(['roles']);
-            $dataUser = auth()->user()->load([
+            $relations = [
                 'invitation.paketUndangan',
                 'invitationOne.paketUndangan',
                 'settingOne',
                 'mempelaiOne',
-            ]);
+            ];
+
+            if (Schema::hasTable('result_themas') && Schema::hasTable('jenis_themas')) {
+                $relations[] = 'selectedTheme.jenisThema.category';
+            }
+
+            $dataUser = auth()->user()->load($relations);
             if ($dataUser) {
                 return response()->json(['data' => new UserResource($dataUser)], 200);
             } else {

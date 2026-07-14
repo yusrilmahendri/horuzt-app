@@ -223,16 +223,8 @@ class ThemeController extends Controller
             if ($accountSummary['account_status'] !== AccountStatusService::STATUS_ACTIVE) {
                 return response()->json([
                     'status' => false,
-                    'code' => match ($accountSummary['account_status']) {
-                        AccountStatusService::STATUS_UNVERIFIED => 'ACCOUNT_NOT_VERIFIED',
-                        AccountStatusService::STATUS_EXPIRED => 'ACCOUNT_EXPIRED',
-                        default => 'PAYMENT_NOT_CONFIRMED',
-                    },
-                    'message' => match ($accountSummary['account_status']) {
-                        AccountStatusService::STATUS_UNVERIFIED => 'Verifikasi akun terlebih dahulu.',
-                        AccountStatusService::STATUS_EXPIRED => 'Masa aktif akun sudah berakhir.',
-                        default => 'Pembayaran belum dikonfirmasi.',
-                    },
+                    'code' => 'PAYMENT_NOT_CONFIRMED',
+                    'message' => 'Pembayaran belum dikonfirmasi.',
                     'data' => $accountSummary,
                 ], 403);
             }
@@ -379,6 +371,7 @@ class ThemeController extends Controller
 
                 return response()->json([
                     'status' => false,
+                    'code' => 'THEME_UPGRADE_REQUIRED',
                     'message' => 'Tema ini membutuhkan upgrade paket.',
                     'data' => [
                         'theme' => $this->themeAccessPayload($theme, $package, null),
@@ -424,7 +417,7 @@ class ThemeController extends Controller
                 'status' => true,
                 'message' => 'Theme selected successfully',
                 'data' => [
-                    'theme' => $theme,
+                    'theme' => $this->themeAccessPayload($theme, $package, (int) $theme->id),
                     'selection' => $resultThema
                 ]
             ], 200);
@@ -818,51 +811,7 @@ class ThemeController extends Controller
             $theme->load('category');
         }
 
-        $targetPackage = $this->themeAccess->minimumPackageForTheme($theme);
-        $canUse = $package
-            ? $this->themeAccess->canPackageAccessTheme($package, $theme)
-            : false;
-
-        return [
-            'id' => $theme->id,
-            'name' => $theme->name,
-            'slug' => $theme->slug,
-            'category' => $theme->category ? [
-                'id' => $theme->category->id,
-                'name' => $theme->category->name,
-                'slug' => $theme->category->slug,
-                'type' => $theme->category->type,
-            ] : null,
-            'package_required' => $this->packagePayload($targetPackage),
-            'can_preview' => true,
-            'can_use' => $canUse,
-            'is_current_theme' => $selectedThemeId !== null && (int) $selectedThemeId === (int) $theme->id,
-            'upgrade_required' => $package !== null && ! $canUse,
-            'target_package' => $canUse ? null : $this->packagePayload($targetPackage),
-            'price' => $theme->price,
-            'preview' => $theme->preview,
-            'preview_image' => $theme->preview_image,
-            'thumbnail_image' => $theme->thumbnail_image,
-            'image' => $theme->image,
-            'demo_url' => $theme->demo_url,
-            'url_thema' => $theme->url_thema,
-            'features' => $theme->features,
-            'description' => $theme->description,
-            'sort_order' => $theme->sort_order,
-        ];
-    }
-
-    private function packagePayload(?PaketUndangan $package): ?array
-    {
-        if (! $package) {
-            return null;
-        }
-
-        return [
-            'id' => $package->id,
-            'code' => $package->code,
-            'name' => PaketUndangan::displayLabelFromCode($package->code, $package->name_paket),
-        ];
+        return $this->themeAccess->themeAccessPayload($theme, $package, $selectedThemeId);
     }
 
     private function selectedThemeId(Request $request): ?int

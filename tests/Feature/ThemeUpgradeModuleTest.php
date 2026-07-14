@@ -46,8 +46,9 @@ class ThemeUpgradeModuleTest extends TestCase
         $themes = collect($response->json('data.categories'))
             ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
 
-        $this->assertSame(['Soft Ivory', 'Blue Sapphire', 'Velvet Mauve'], $themes->pluck('name')->all());
+        $this->assertSame(['Soft Ivory', 'Garden Whisper', 'Blue Sapphire', 'Velvet Mauve'], $themes->pluck('name')->all());
         $this->assertTrue($themes->firstWhere('slug', 'soft-ivory')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['can_use']);
         $this->assertFalse($themes->firstWhere('slug', 'blue-sapphire')['can_use']);
         $this->assertTrue($themes->firstWhere('slug', 'blue-sapphire')['upgrade_required']);
         $this->assertSame('sapphire', $themes->firstWhere('slug', 'blue-sapphire')['target_package']['code']);
@@ -86,6 +87,7 @@ class ThemeUpgradeModuleTest extends TestCase
 
         $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
             ->assertForbidden()
+            ->assertJsonPath('code', 'THEME_UPGRADE_REQUIRED')
             ->assertJsonPath('message', 'Tema ini membutuhkan upgrade paket.');
     }
 
@@ -146,13 +148,65 @@ class ThemeUpgradeModuleTest extends TestCase
             ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
 
         $this->assertSame(
-            ['soft-ivory', 'blue-sapphire', 'velvet-mauve'],
+            ['soft-ivory', 'garden-whisper', 'blue-sapphire', 'velvet-mauve'],
             $themes->pluck('slug')->values()->all()
         );
         $this->assertTrue($themes->every(fn ($theme) => $theme['can_preview'] === true));
         $this->assertTrue($themes->every(fn ($theme) => $theme['can_use'] === true));
         $this->assertTrue($themes->every(fn ($theme) => $theme['upgrade_required'] === false));
-        $this->assertSame(['ruby', 'sapphire', 'diamond'], $themes->pluck('package_required.code')->values()->all());
+        $this->assertTrue($themes->every(fn ($theme) => $theme['locked'] === false));
+        $this->assertSame(['ruby', 'ruby', 'sapphire', 'diamond'], $themes->pluck('package_required.code')->values()->all());
+    }
+
+    public function test_user_diamond_bisa_pilih_garden_whisper_dan_profile_mengembalikan_selected_theme(): void
+    {
+        $user = $this->createUserWithPackage('diamond');
+        $theme = JenisThemas::where('slug', 'garden-whisper')->firstOrFail();
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.theme.slug', 'garden-whisper')
+            ->assertJsonPath('data.theme.can_use', true)
+            ->assertJsonPath('data.theme.locked', false);
+
+        $this->assertDatabaseHas('result_themas', [
+            'user_id' => $user->id,
+            'jenis_id' => $theme->id,
+        ]);
+
+        $this->getJson('/api/v1/user-profile')
+            ->assertOk()
+            ->assertJsonPath('data.package_code', 'diamond')
+            ->assertJsonPath('data.nama_paket', 'Paket Diamond')
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.selected_theme_id', $theme->id)
+            ->assertJsonPath('data.selected_theme_slug', 'garden-whisper');
+
+        $response = $this->getJson('/api/themes/categories');
+        $response->assertOk();
+
+        $themes = collect($response->json('data.categories'))
+            ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
+
+        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['is_current_theme']);
+    }
+
+    public function test_legacy_user_jenis_themas_mengirim_status_locked_untuk_diamond(): void
+    {
+        $user = $this->createUserWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        $response = $this->getJson('/api/v1/user/jenis-themas');
+
+        $response->assertOk();
+
+        $themes = collect($response->json('data'));
+
+        $this->assertTrue($themes->firstWhere('slug', 'garden-whisper')['can_use']);
+        $this->assertFalse($themes->firstWhere('slug', 'garden-whisper')['locked']);
     }
 
     public function test_user_pending_tidak_bisa_select_tema(): void
@@ -246,24 +300,31 @@ class ThemeUpgradeModuleTest extends TestCase
             'is_active' => true,
             'sort_order' => 1,
         ]);
+        $floral = CategoryThemas::create([
+            'name' => 'Floral',
+            'slug' => 'floral',
+            'type' => 'website',
+            'is_active' => true,
+            'sort_order' => 2,
+        ]);
         $luxury = CategoryThemas::create([
             'name' => 'Luxury',
             'slug' => 'luxury',
             'type' => 'website',
             'is_active' => true,
-            'sort_order' => 3,
+            'sort_order' => 4,
         ]);
         $modern = CategoryThemas::create([
             'name' => 'Modern',
             'slug' => 'modern',
             'type' => 'website',
             'is_active' => true,
-            'sort_order' => 2,
+            'sort_order' => 3,
         ]);
 
-        $ruby->accessibleCategories()->attach($minimalis->id);
-        $sapphire->accessibleCategories()->attach([$minimalis->id, $modern->id]);
-        $diamond->accessibleCategories()->attach([$minimalis->id, $modern->id, $luxury->id]);
+        $ruby->accessibleCategories()->attach([$minimalis->id, $floral->id]);
+        $sapphire->accessibleCategories()->attach([$minimalis->id, $floral->id, $modern->id]);
+        $diamond->accessibleCategories()->attach([$minimalis->id, $floral->id, $modern->id, $luxury->id]);
 
         JenisThemas::create([
             'category_id' => $minimalis->id,
@@ -287,6 +348,18 @@ class ThemeUpgradeModuleTest extends TestCase
             'demo_url' => 'https://example.test/velvet',
             'is_active' => true,
             'sort_order' => 2,
+        ]);
+
+        JenisThemas::create([
+            'category_id' => $floral->id,
+            'name' => 'Garden Whisper',
+            'slug' => 'garden-whisper',
+            'price' => 0,
+            'preview' => 'garden.jpg',
+            'url_thema' => 'garden-theme',
+            'demo_url' => 'https://example.test/garden',
+            'is_active' => true,
+            'sort_order' => 1,
         ]);
 
         JenisThemas::create([
@@ -408,6 +481,21 @@ class ThemeUpgradeModuleTest extends TestCase
             $table->unsignedBigInteger('jenis_id');
             $table->unsignedBigInteger('user_id');
             $table->timestamp('selected_at')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('settings', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('domain')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('mempelais', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('status')->nullable();
+            $table->string('kd_status')->nullable();
             $table->timestamps();
         });
     }

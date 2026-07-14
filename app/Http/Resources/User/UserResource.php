@@ -4,6 +4,7 @@ namespace App\Http\Resources\User;
 use App\Services\AccountStatusService;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
+use Illuminate\Support\Facades\Schema;
 
 class UserResource extends JsonResource
 {
@@ -28,6 +29,9 @@ class UserResource extends JsonResource
             $userAktif = 0;
         }
 
+        $accountSummary = app(AccountStatusService::class)->summary($this->resource);
+        $selectedTheme = $this->selectedThemeSummary();
+
         return [
             'id'                 => $this->id,
             'name'               => $this->name,
@@ -43,9 +47,43 @@ class UserResource extends JsonResource
             'domain_create_date' => $domainCreateDate,
             'domain_end_date'    => $domainEndDate,
             'paket_undangan_id'  => $this->invitationOne ? $this->invitationOne->paket_undangan_id : null,
-        ] + app(AccountStatusService::class)->summary($this->resource) + [
+            'package_code'        => $accountSummary['package_code'] ?? null,
+            'nama_paket'          => $accountSummary['package_name'] ?? null,
+            'selected_theme_id'   => $selectedTheme['id'] ?? null,
+            'selected_theme_slug' => $selectedTheme['slug'] ?? null,
+            'selected_theme'      => $selectedTheme,
+        ] + $accountSummary + [
 
             'invitations'        => $this->invitationPayload(),
+        ];
+    }
+
+    private function selectedThemeSummary(): ?array
+    {
+        if (! Schema::hasTable('result_themas') || ! Schema::hasTable('jenis_themas')) {
+            return null;
+        }
+
+        $selection = $this->resource->relationLoaded('selectedTheme')
+            ? $this->resource->getRelation('selectedTheme')
+            : $this->resource->selectedTheme()->first();
+
+        $theme = $selection?->jenisThema;
+
+        if (! $theme) {
+            return null;
+        }
+
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        return [
+            'id' => $theme->id,
+            'name' => $theme->name,
+            'slug' => $theme->slug,
+            'category_slug' => $theme->category?->slug,
+            'selected_at' => $selection->selected_at,
         ];
     }
 

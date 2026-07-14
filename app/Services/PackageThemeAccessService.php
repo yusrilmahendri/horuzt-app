@@ -405,6 +405,62 @@ class PackageThemeAccessService
         ];
     }
 
+    public function packageSummaryPayload(?PaketUndangan $package): ?array
+    {
+        if (! $package) {
+            return null;
+        }
+
+        $tier = $this->resolvePackageTier($package) ?? $package->code;
+
+        return [
+            'id' => $package->id,
+            'code' => $tier,
+            'name' => PaketUndangan::displayLabelFromCode($tier, $package->name_paket),
+        ];
+    }
+
+    public function themeAccessPayload(JenisThemas $theme, ?PaketUndangan $package, ?int $selectedThemeId = null): array
+    {
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        $targetPackage = $this->minimumPackageForTheme($theme);
+        $canUse = $package
+            ? $this->canPackageAccessTheme($package, $theme)
+            : false;
+
+        return [
+            'id' => $theme->id,
+            'name' => $theme->name,
+            'slug' => $theme->slug,
+            'category' => $theme->category ? [
+                'id' => $theme->category->id,
+                'name' => $theme->category->name,
+                'slug' => $theme->category->slug,
+                'type' => $theme->category->type,
+            ] : null,
+            'package_required' => $this->packageSummaryPayload($targetPackage),
+            'can_preview' => true,
+            'can_use' => $canUse,
+            'is_current_theme' => $selectedThemeId !== null && (int) $selectedThemeId === (int) $theme->id,
+            'upgrade_required' => $package !== null && ! $canUse,
+            'locked' => ! $canUse,
+            'target_package' => $canUse ? null : $this->packageSummaryPayload($targetPackage),
+            'price' => $theme->price,
+            'preview' => $theme->preview,
+            'preview_image' => $theme->preview_image,
+            'thumbnail_image' => $theme->thumbnail_image,
+            'image' => $theme->image,
+            'demo_url' => $theme->demo_url,
+            'url_thema' => $theme->url_thema,
+            'features' => $theme->features,
+            'description' => $theme->description,
+            'sort_order' => $theme->sort_order,
+        ];
+    }
+
     public function packageCollectionPayload(iterable $packages): array
     {
         return collect($packages)
