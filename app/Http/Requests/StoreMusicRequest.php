@@ -9,6 +9,10 @@ use Illuminate\Support\Facades\Log;
 
 class StoreMusicRequest extends FormRequest
 {
+    private const ALLOWED_EXTENSIONS = ['mp3', 'wav', 'm4a', 'aac', 'ogg'];
+    private const FORMAT_ERROR = 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.';
+    private const SIZE_ERROR = 'Ukuran file maksimal 20 MB.';
+
     /**
      * Determine if the user is authorized to make this request.
      */
@@ -25,8 +29,27 @@ class StoreMusicRequest extends FormRequest
     public function rules(): array
     {
         return [
-            'musik' => 'required|file|max:20480|extensions:mp3,wav,m4a,aac,ogg',
+            'musik' => 'required|file|max:20480',
         ];
+    }
+
+    public function withValidator(Validator $validator): void
+    {
+        $validator->after(function (Validator $validator): void {
+            if ($validator->errors()->has('musik')) {
+                return;
+            }
+
+            $file = $this->file('musik');
+            if (! $file instanceof \Illuminate\Http\UploadedFile) {
+                return;
+            }
+
+            $extension = strtolower((string) $file->getClientOriginalExtension());
+            if ($extension === '' || ! in_array($extension, self::ALLOWED_EXTENSIONS, true)) {
+                $validator->errors()->add('musik', self::FORMAT_ERROR);
+            }
+        });
     }
 
     /**
@@ -40,8 +63,7 @@ class StoreMusicRequest extends FormRequest
             'musik.required' => 'File musik wajib dipilih.',
             'musik.file' => 'Gagal menyimpan file musik.',
             'musik.uploaded' => 'Gagal menyimpan file musik.',
-            'musik.max' => 'Ukuran file musik maksimal 20 MB.',
-            'musik.extensions' => 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.',
+            'musik.max' => self::SIZE_ERROR,
         ];
     }
 
@@ -62,15 +84,15 @@ class StoreMusicRequest extends FormRequest
         $file = $this->file('musik');
         $errors = $validator->errors()->toArray();
         $musicMessages = isset($errors['musik']) ? collect($errors['musik']) : collect();
-        $hasFormatError = $musicMessages->contains(fn ($message) => str_contains($message, 'Format musik harus'));
-        $hasMaxSizeError = $musicMessages->contains(fn ($message) => str_contains($message, 'Ukuran file musik maksimal'));
+        $hasFormatError = $musicMessages->contains(fn ($message) => str_contains($message, 'Format file tidak didukung'));
+        $hasMaxSizeError = $musicMessages->contains(fn ($message) => str_contains($message, 'Ukuran file maksimal'));
         $hasRequiredError = $musicMessages->contains(fn ($message) => str_contains($message, 'File musik wajib dipilih'));
         $hasStoreError = $musicMessages->contains(fn ($message) => str_contains($message, 'Gagal menyimpan file musik'));
 
         $topLevelMessage = match (true) {
             $hasRequiredError => 'File musik wajib dipilih.',
-            $hasFormatError => 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.',
-            $hasMaxSizeError => 'Ukuran file musik maksimal 20 MB.',
+            $hasFormatError => self::FORMAT_ERROR,
+            $hasMaxSizeError => self::SIZE_ERROR,
             $hasStoreError => 'Gagal menyimpan file musik.',
             default => 'Gagal menyimpan file musik.',
         };

@@ -53,15 +53,17 @@ class AdminMusicTrackController extends Controller
      */
     public function store(Request $request)
     {
-        $maxMusicSize = config('upload.music_max_file_size', 10240);
-        $allowedExtensions = ['mp3', 'wav', 'ogg', 'm4a'];
+        $maxMusicSize = config('upload.music_max_file_size', 20480);
+        $allowedExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg'];
+        $formatErrorMessage = 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.';
+        $sizeErrorMessage = 'Ukuran file maksimal 20 MB.';
 
         $validated = $request->validate([
             'musik' => [
                 'required',
                 'file',
                 "max:{$maxMusicSize}",
-                function (string $attribute, mixed $value, \Closure $fail) use ($allowedExtensions): void {
+                function (string $attribute, mixed $value, \Closure $fail) use ($allowedExtensions, $formatErrorMessage): void {
                     if (! $value instanceof \Illuminate\Http\UploadedFile) {
                         $fail('File musik wajib dipilih.');
                         return;
@@ -74,7 +76,7 @@ class AdminMusicTrackController extends Controller
 
                     $extension = strtolower((string) $value->getClientOriginalExtension());
                     if ($extension === '' || ! in_array($extension, $allowedExtensions, true)) {
-                        $fail('Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
+                        $fail($formatErrorMessage);
                     }
                 },
             ],
@@ -89,7 +91,7 @@ class AdminMusicTrackController extends Controller
             'musik.required' => 'File musik wajib dipilih.',
             'musik.file' => 'Gagal menyimpan file musik.',
             'musik.uploaded' => 'Gagal menyimpan file musik.',
-            'musik.max' => 'Ukuran file musik melebihi batas maksimum 10 MB.',
+            'musik.max' => $sizeErrorMessage,
             'title.required' => 'Judul musik katalog wajib diisi.',
         ]);
 

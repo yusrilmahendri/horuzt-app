@@ -231,7 +231,7 @@ class MempelaiController extends Controller
                 ], 404);
             }
 
-            if (! in_array($invoice->payment_status, ['pending', 'failed', 'expired'], true) || $invoice->status === 'completed') {
+            if (! $this->isConfirmablePaymentStatus($invoice->payment_status, $invoice->status)) {
                 return response()->json([
                     'message' => 'Invoice/tagihan pengguna sudah selesai.',
                 ], 422);
@@ -246,7 +246,9 @@ class MempelaiController extends Controller
                 $masaAktif = $invoice->package_duration_snapshot
                     ?? ($invoice->paketUndangan->masa_aktif ?? 30);
                 $activeDays = (int) $masaAktif;
-                $domainExpiresAt = $invoice->domain_expires_at ?: $paymentConfirmedAt->copy()->addDays($activeDays);
+                $domainExpiresAt = ($invoice->domain_expires_at && $invoice->domain_expires_at->isFuture())
+                    ? $invoice->domain_expires_at
+                    : $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
                 $mempelai = Mempelai::where('user_id', $user->id)->first();
@@ -335,6 +337,20 @@ class MempelaiController extends Controller
             ->unique()
             ->values()
             ->all();
+    }
+
+    private function isConfirmablePaymentStatus(?string ...$statuses): bool
+    {
+        $confirmable = ['pending', 'belum selesai', 'unpaid', 'menunggu pembayaran'];
+
+        foreach ($statuses as $status) {
+            $normalized = strtolower(trim((string) $status));
+            if (in_array($normalized, $confirmable, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function invoiceCodeExistsForAnotherUser(int $userId, string $code): bool

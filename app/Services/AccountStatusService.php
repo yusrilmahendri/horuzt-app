@@ -22,7 +22,7 @@ class AccountStatusService
             ? $invitation->package_features_snapshot
             : [];
 
-        $paymentStatus = $invitation?->payment_status;
+        $paymentStatus = $this->normalizePaymentStatus($invitation?->payment_status ?? $invitation?->status);
         $isVerified = $user->isAccountVerified();
         $hasInvoice = $invitation !== null;
         $hasPendingInvoice = $hasInvoice && $paymentStatus === 'pending';
@@ -67,6 +67,9 @@ class AccountStatusService
             'package_name' => $packageName,
             'package_code' => $packageCode,
             'active_until' => $activeUntil,
+            'active_until_formatted' => $this->formatDate($activeUntil),
+            'expired_at_formatted' => $this->formatDate($activeUntil),
+            'tanggal_expired_formatted' => $this->formatDate($activeUntil),
             'remaining_days' => $activeUntil ? max(0, now()->diffInDays($activeUntil, false)) : null,
             'is_payment_confirmed' => $isPaymentConfirmed,
             'is_expired' => $isExpired,
@@ -84,6 +87,30 @@ class AccountStatusService
         ];
     }
 
+    private function formatDate($date): ?string
+    {
+        if (! $date) {
+            return null;
+        }
+
+        return $date instanceof \DateTimeInterface
+            ? $date->format('d/m/Y')
+            : date('d/m/Y', strtotime((string) $date));
+    }
+
+    private function normalizePaymentStatus(?string $status): ?string
+    {
+        if ($status === null || trim($status) === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim($status));
+
+        return in_array($normalized, ['pending', 'belum selesai', 'unpaid', 'menunggu pembayaran'], true)
+            ? 'pending'
+            : $normalized;
+    }
+
     private function resolveInvoiceForUser(User $user): ?Invitation
     {
         return Invitation::with('paketUndangan')
@@ -91,7 +118,7 @@ class AccountStatusService
             ->orderByRaw("
                 CASE
                     WHEN payment_status IN ('paid', 'confirmed') THEN 0
-                    WHEN payment_status = 'pending' THEN 1
+                    WHEN LOWER(COALESCE(payment_status, status, '')) IN ('pending', 'belum selesai', 'unpaid', 'menunggu pembayaran') THEN 1
                     WHEN payment_status = 'expired' THEN 2
                     ELSE 3
                 END

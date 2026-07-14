@@ -22,6 +22,7 @@ class MusicInvitationModuleTest extends TestCase
     protected function setUp(): void
     {
         parent::setUp();
+        $this->withoutMiddleware(\Illuminate\Routing\Middleware\ThrottleRequests::class);
 
         config([
             'database.default' => 'sqlite',
@@ -201,15 +202,22 @@ class MusicInvitationModuleTest extends TestCase
             'musik' => UploadedFile::fake()->create('song.txt', 64, 'text/plain'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.')
-            ->assertJsonPath('errors.musik.0', 'Format musik harus MP3, WAV, M4A, AAC, atau OGG.');
+            ->assertJsonPath('message', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.')
+            ->assertJsonPath('errors.musik.0', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.');
+
+        $this->postJson('/api/v1/user/custom-music', [
+            'musik' => UploadedFile::fake()->create('shell.php', 64, 'text/plain'),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.')
+            ->assertJsonPath('errors.musik.0', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.');
 
         $this->postJson('/api/v1/user/custom-music', [
             'musik' => UploadedFile::fake()->create('big-song.mp3', 21000, 'audio/mpeg'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Ukuran file musik maksimal 20 MB.')
-            ->assertJsonPath('errors.musik.0', 'Ukuran file musik maksimal 20 MB.');
+            ->assertJsonPath('message', 'Ukuran file maksimal 20 MB.')
+            ->assertJsonPath('errors.musik.0', 'Ukuran file maksimal 20 MB.');
     }
 
     public function test_upload_replaces_single_active_custom_music_and_delete_falls_back(): void
@@ -262,14 +270,14 @@ class MusicInvitationModuleTest extends TestCase
             'musik' => UploadedFile::fake()->create('catalog.txt', 256, 'text/plain'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Format file musik tidak didukung. Gunakan MP3, WAV, OGG, atau M4A.');
+            ->assertJsonPath('message', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.');
 
         $this->postJson('/api/v1/admin/music-tracks', [
             'title' => 'Too Big Song',
             'musik' => UploadedFile::fake()->create('catalog.mp3', 21000, 'application/octet-stream'),
         ])
             ->assertUnprocessable()
-            ->assertJsonPath('message', 'Ukuran file musik melebihi batas maksimum 10 MB.');
+            ->assertJsonPath('message', 'Ukuran file maksimal 20 MB.');
     }
 
     private function userWithPackage(string $code): User
@@ -279,6 +287,10 @@ class MusicInvitationModuleTest extends TestCase
             'email' => 'music-user-' . str()->random(8) . '@example.test',
             'password' => bcrypt('secret123'),
         ]);
+        $user->forceFill([
+            'email_verified_at' => now(),
+            'verification_channel' => 'email',
+        ])->save();
         $user->assignRole('user');
 
         $package = PaketUndangan::create([
@@ -310,6 +322,10 @@ class MusicInvitationModuleTest extends TestCase
             'email' => 'admin-music-' . str()->random(8) . '@example.test',
             'password' => bcrypt('secret123'),
         ]);
+        $user->forceFill([
+            'email_verified_at' => now(),
+            'verification_channel' => 'email',
+        ])->save();
         $user->assignRole('admin');
 
         return $user;
@@ -357,6 +373,9 @@ class MusicInvitationModuleTest extends TestCase
             $table->id();
             $table->string('name')->nullable();
             $table->string('email')->unique();
+            $table->timestamp('email_verified_at')->nullable();
+            $table->timestamp('whatsapp_verified_at')->nullable();
+            $table->string('verification_channel', 20)->nullable();
             $table->string('password');
             $table->timestamps();
         });

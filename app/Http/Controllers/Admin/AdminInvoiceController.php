@@ -76,13 +76,22 @@ class AdminInvoiceController extends Controller
                 'domain' => $invitation->user?->settingOne?->domain ?? '-',
                 'kode_pemesanan' => $invoiceCode ?? '-',
                 'invoice_code' => $invoiceCode,
+                'has_invoice' => true,
                 'midtrans_order_id' => $invitation->order_id ?? '-',
                 'paket' => $packageName,
+                'nama_paket' => $packageName,
                 'harga' => (float) $packagePrice,
-                'status' => $invitation->payment_status,
-                'payment_status' => $invitation->payment_status,
+                'status' => $this->normalizePaymentStatus($invitation->payment_status ?? $invitation->status),
+                'status_pembayaran' => $this->normalizePaymentStatus($invitation->payment_status ?? $invitation->status),
+                'payment_status' => $this->normalizePaymentStatus($invitation->payment_status ?? $invitation->status),
+                'raw_payment_status' => $invitation->payment_status,
+                'can_confirm_payment' => $invoiceCode !== null && $this->isConfirmablePaymentStatus($invitation->payment_status, $invitation->status),
                 'payment_confirmed_at' => $invitation->payment_confirmed_at?->format('d/m/Y H:i:s') ?? '-',
                 'domain_expires_at' => $invitation->domain_expires_at?->format('d/m/Y') ?? '-',
+                'active_until' => $invitation->domain_expires_at?->toISOString(),
+                'active_until_formatted' => $invitation->domain_expires_at?->format('d/m/Y'),
+                'expired_at_formatted' => $invitation->domain_expires_at?->format('d/m/Y'),
+                'tanggal_expired_formatted' => $invitation->domain_expires_at?->format('d/m/Y'),
                 'created_at' => $invitation->created_at->format('d/m/Y H:i:s'),
             ];
         });
@@ -97,5 +106,28 @@ class AdminInvoiceController extends Controller
                 'total' => $invoices->total(),
             ]
         ]);
+    }
+
+    private function normalizePaymentStatus(?string $status): ?string
+    {
+        if ($status === null || trim($status) === '') {
+            return null;
+        }
+
+        return $this->isConfirmablePaymentStatus($status) ? 'pending' : strtolower(trim($status));
+    }
+
+    private function isConfirmablePaymentStatus(?string ...$statuses): bool
+    {
+        $confirmable = ['pending', 'belum selesai', 'unpaid', 'menunggu pembayaran'];
+
+        foreach ($statuses as $status) {
+            $normalized = strtolower(trim((string) $status));
+            if (in_array($normalized, $confirmable, true)) {
+                return true;
+            }
+        }
+
+        return false;
     }
 }

@@ -220,10 +220,7 @@ class ThemeController extends Controller
             $user = Auth::user();
             $accountSummary = $this->accountStatus->summary($user);
 
-            if (! in_array($accountSummary['account_status'], [
-                AccountStatusService::STATUS_ONBOARDING,
-                AccountStatusService::STATUS_ACTIVE,
-            ], true)) {
+            if ($accountSummary['account_status'] !== AccountStatusService::STATUS_ACTIVE) {
                 return response()->json([
                     'status' => false,
                     'code' => match ($accountSummary['account_status']) {

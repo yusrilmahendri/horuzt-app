@@ -65,6 +65,22 @@ class AdminPaymentConfirmationTest extends TestCase
             ->assertJsonPath('account_status', 'active');
     }
 
+    public function test_status_belum_selesai_bisa_dikonfirmasi(): void
+    {
+        $admin = $this->admin();
+        $user = $this->userWithPendingInvoice('#BELUM-SELESAI', 'belum selesai');
+
+        Sanctum::actingAs($admin);
+
+        $this->putJson('/api/v1/update/status-bayar', [
+            'user_id' => $user->id,
+            'kode_pemesanan' => 'BELUM-SELESAI',
+        ])
+            ->assertOk()
+            ->assertJsonPath('invitation.payment_status', 'paid')
+            ->assertJsonPath('account_status', 'active');
+    }
+
     public function test_kode_salah_error_jelas(): void
     {
         $admin = $this->admin();
@@ -132,7 +148,7 @@ class AdminPaymentConfirmationTest extends TestCase
         return $admin;
     }
 
-    private function userWithPendingInvoice(string $kodePemesanan): User
+    private function userWithPendingInvoice(string $kodePemesanan, string $invoiceStatus = 'step1'): User
     {
         Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
@@ -160,7 +176,7 @@ class AdminPaymentConfirmationTest extends TestCase
             'user_id' => $user->id,
             'kode_pemesanan' => $kodePemesanan,
             'paket_undangan_id' => $package->id,
-            'status' => 'step1',
+            'status' => $invoiceStatus,
             'payment_status' => 'pending',
             'is_trial' => false,
             'domain_expires_at' => null,

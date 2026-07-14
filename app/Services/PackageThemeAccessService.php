@@ -36,7 +36,7 @@ class PackageThemeAccessService
     {
         $invitations = Invitation::with('paketUndangan')
             ->where('user_id', $user->id)
-            ->where('payment_status', 'paid')
+            ->whereIn('payment_status', ['paid', 'confirmed'])
             ->where(function ($query) {
                 $query->whereNull('domain_expires_at')
                     ->orWhere('domain_expires_at', '>', now());

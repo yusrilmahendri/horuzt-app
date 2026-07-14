@@ -95,7 +95,10 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('data.has_invoice', true)
             ->assertJsonPath('data.has_pending_invoice', false)
             ->assertJsonPath('data.is_payment_confirmed', true)
-            ->assertJsonPath('data.feature_access.input_undangan', true);
+            ->assertJsonPath('data.feature_access.input_undangan', true)
+            ->assertJsonPath('data.active_until_formatted', now()->addDays(10)->format('d/m/Y'))
+            ->assertJsonPath('data.expired_at_formatted', now()->addDays(10)->format('d/m/Y'))
+            ->assertJsonPath('data.tanggal_expired_formatted', now()->addDays(10)->format('d/m/Y'));
     }
 
     public function test_user_expired_menghasilkan_expired(): void

@@ -434,7 +434,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     Route::controller(PaketController::class)->group(function () {
         Route::get('/v1/user/paket-nikah', 'index');
     });
-    Route::controller(UserController::class)->group(function () {
+    Route::controller(UserController::class)->middleware('invitation.feature')->group(function () {
         Route::put('/v1/submission-update/user-profile', 'update');
     });
 
@@ -459,7 +459,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::delete('/v1/user/bank-accounts/{id}', 'destroy');
         Route::get('/v1/user/bank-accounts-statistics', 'statistics');
     });
-    Route::controller(BukuTamuController::class)->group(function () {
+    Route::controller(BukuTamuController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/result-bukutamu', 'index');
         Route::get('/v1/user/buku-tamu/statistics', 'statistics');
         Route::get('/v1/user/buku-tamu/export', 'export');
@@ -469,7 +469,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::patch('/v1/user/buku-tamu/{id}/approval', 'updateApproval')->where('id', '[0-9]+');
         Route::delete('/v1/user/buku-tamu/{id}', 'deleteById')->where('id', '[0-9]+');
     });
-    Route::controller(PengunjungController::class)->group(function () {
+    Route::controller(PengunjungController::class)->middleware('invitation.feature')->group(function () {
         Route::get('/v1/user/result-pengunjung', 'index');
         Route::delete('/v1/user/pengunjung/delete-all', 'deleteAll');
         Route::delete('/v1/user/pengunjung/{id}', 'deleteById');
@@ -512,7 +512,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     });
 
     // Attendance Scanning (QR Code)
-    Route::prefix('v1/user/attendance-scans')->group(function () {
+    Route::prefix('v1/user/attendance-scans')->middleware('invitation.feature')->group(function () {
         Route::get('/', [AttendanceScanController::class, 'index']);
         Route::post('/', [AttendanceScanController::class, 'scan']);
         Route::get('/statistics', [AttendanceScanController::class, 'statistics']);
@@ -606,7 +606,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     });
 
     // Guest Tracking endpoints (protected - requires authentication)
-    Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->group(function () {
+    Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->middleware('invitation.feature')->group(function () {
         Route::get('/', 'index');                         // Get guest list
         Route::post('/confirm-attendance', 'confirmAttendance'); // Confirm attendance from QR scan
     });
