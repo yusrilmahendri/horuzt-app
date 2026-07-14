@@ -15,7 +15,12 @@ class PhotoResource extends JsonResource
         return [
             'id' => $this->id,
             'photo_type' => $this->photo_type ?: 'gallery',
+            'photo' => $this->photo,
             'photo_url' => $path ? Storage::disk('public')->url($path) : null,
+            'image_url' => $path ? Storage::disk('public')->url($path) : null,
+            'preview_url' => $path ? Storage::disk('public')->url($path) : null,
+            'url_video' => $this->url_video,
+            'video_url' => $this->url_video,
             'description' => $this->description,
             'position' => $this->position ?: 'center',
             'display_mode' => $this->display_mode ?: 'cover',

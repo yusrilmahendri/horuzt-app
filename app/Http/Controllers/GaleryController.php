@@ -310,7 +310,10 @@ class GaleryController extends Controller
         $stored = null;
 
         try {
-            $stored = $this->photoImageService->compressAndStore($request->file('image'), $userId, $validated['photo_type']);
+            $imageFile = $this->photoUploadFile($request);
+            if ($imageFile) {
+                $stored = $this->photoImageService->compressAndStore($imageFile, $userId, $validated['photo_type']);
+            }
 
             $photo = DB::transaction(function () use ($validated, $stored, $userId) {
                 $photoType = $validated['photo_type'];
@@ -324,22 +327,23 @@ class GaleryController extends Controller
                 }
 
                 $photo = new Galery([
-                    'photo' => $stored['path'],
-                    'file_path' => $stored['path'],
+                    'photo' => $stored['path'] ?? null,
+                    'file_path' => $stored['path'] ?? null,
                     'photo_type' => $photoType,
                     'description' => $validated['description'] ?? null,
+                    'url_video' => $validated['url_video'] ?? null,
                     'position' => $validated['position'] ?? 'center',
                     'display_mode' => $validated['display_mode'] ?? 'cover',
                     'focal_point_x' => $validated['focal_point_x'] ?? null,
                     'focal_point_y' => $validated['focal_point_y'] ?? null,
                     'is_featured' => $isFeatured,
                     'sort_order' => $sortOrder,
-                    'original_name' => $stored['original_name'],
-                    'original_size' => $stored['original_size'],
-                    'compressed_size' => $stored['compressed_size'],
-                    'mime_type' => $stored['mime_type'],
-                    'quality' => $stored['quality'],
-                    'nama_foto' => $stored['original_name'],
+                    'original_name' => $stored['original_name'] ?? null,
+                    'original_size' => $stored['original_size'] ?? null,
+                    'compressed_size' => $stored['compressed_size'] ?? null,
+                    'mime_type' => $stored['mime_type'] ?? null,
+                    'quality' => $stored['quality'] ?? null,
+                    'nama_foto' => $stored['original_name'] ?? null,
                     'status' => 1,
                 ]);
                 $photo->user_id = $userId;
@@ -370,13 +374,14 @@ class GaleryController extends Controller
         $validated = $this->validatePhotoRequest($request, false);
         $userId = (int) $request->user()->id;
         $photo = Galery::ownedBy($userId)->where('id', $id)->firstOrFail();
-        $stored = null;
-        $oldPath = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
+            $stored = null;
+            $oldPath = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
 
         try {
-            if ($request->hasFile('image')) {
+            $imageFile = $this->photoUploadFile($request);
+            if ($imageFile) {
                 $stored = $this->photoImageService->compressAndStore(
-                    $request->file('image'),
+                    $imageFile,
                     $userId,
                     $photo->photo_type ?: 'gallery'
                 );
@@ -393,6 +398,7 @@ class GaleryController extends Controller
                     'focal_point_y',
                     'is_featured',
                     'sort_order',
+                    'url_video',
                 ] as $field) {
                     if (array_key_exists($field, $validated)) {
                         $updates[$field] = match ($field) {
@@ -522,16 +528,31 @@ class GaleryController extends Controller
     private function validatePhotoRequest(Request $request, bool $isCreate): array
     {
         $maxSizeKb = $this->maxPhotoSizeKb($request);
+        $videoUrl = $this->videoUrlFromRequest($request);
+        if ($videoUrl !== null) {
+            $request->merge(['url_video' => $videoUrl]);
+        }
+
+        if (! $request->hasFile('image') && $request->hasFile('photo')) {
+            $request->files->set('image', $request->file('photo'));
+        }
+
+        $imageIsRequired = $isCreate && $videoUrl === null;
         $rules = [
             'image' => [
-                $isCreate ? 'required' : 'nullable',
+                $imageIsRequired ? 'required' : 'nullable',
                 'file',
                 'image',
                 'mimes:jpg,jpeg,png,webp',
                 'max:' . $maxSizeKb,
             ],
+            'photo' => ['nullable'],
+            'url_video' => ['nullable', 'string', 'max:500'],
+            'video_url' => ['nullable', 'string', 'max:500'],
+            'link_video' => ['nullable', 'string', 'max:500'],
             'description' => ['nullable', 'string', 'max:1000'],
             'position' => ['nullable', 'in:center,top,bottom,left,right,top-left,top-right,bottom-left,bottom-right'],
+            'object_position' => ['nullable', 'string', 'max:100'],
             'display_mode' => ['nullable', 'in:cover,contain'],
             'focal_point_x' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_with:focal_point_y'],
             'focal_point_y' => ['nullable', 'numeric', 'min:0', 'max:100', 'required_with:focal_point_x'],
@@ -543,7 +564,27 @@ class GaleryController extends Controller
             $rules['photo_type'] = ['required', 'in:gallery,collage'];
         }
 
-        return Validator::make($request->all(), $rules)->validate();
+        $validated = Validator::make($request->all(), $rules)->validate();
+        $validated['url_video'] = $videoUrl;
+
+        return $validated;
+    }
+
+    private function videoUrlFromRequest(Request $request): ?string
+    {
+        foreach (['url_video', 'video_url', 'link_video'] as $field) {
+            $value = trim((string) $request->input($field, ''));
+            if ($value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
+    }
+
+    private function photoUploadFile(Request $request)
+    {
+        return $request->file('image') ?: $request->file('photo');
     }
 
     private function nextSortOrder(int $userId, string $photoType): int

@@ -45,24 +45,30 @@ class UserResource extends JsonResource
             'paket_undangan_id'  => $this->invitationOne ? $this->invitationOne->paket_undangan_id : null,
         ] + app(AccountStatusService::class)->summary($this->resource) + [
 
-            'invitations'        => $this->whenLoaded('invitation', function () {
-                return $this->invitations->map(function ($invitation) {
-                    return [
-                        'id'             => $invitation->id ?? null,
-                        'status'         => $invitation->status ?? null,
-                        'created_at'     => $invitation->created_at ?? null,
-                        'updated_at'     => $invitation->updated_at ?? null,
-
-
-                        'paket_undangan' => $invitation->paketUndangan ? [
-                            'id'         => $invitation->paketUndangan->id ?? null,
-                            'nama_paket' => $invitation->paketUndangan->nama_paket ?? null,
-                            'harga'      => $invitation->paketUndangan->harga ?? null,
-                        ] : null,
-                    ];
-                });
-            }),
+            'invitations'        => $this->invitationPayload(),
         ];
+    }
+
+    private function invitationPayload()
+    {
+        $invitation = $this->resource->relationLoaded('invitation')
+            ? $this->resource->getRelation('invitation')
+            : null;
+
+        return collect($invitation ? [$invitation] : [])->map(function ($invitation) {
+            return [
+                'id'             => $invitation->id ?? null,
+                'status'         => $invitation->status ?? null,
+                'created_at'     => $invitation->created_at ?? null,
+                'updated_at'     => $invitation->updated_at ?? null,
+
+                'paket_undangan' => $invitation->paketUndangan ? [
+                    'id'         => $invitation->paketUndangan->id ?? null,
+                    'nama_paket' => $invitation->paketUndangan->nama_paket ?? null,
+                    'harga'      => $invitation->paketUndangan->harga ?? null,
+                ] : null,
+            ];
+        })->values();
     }
 
 }

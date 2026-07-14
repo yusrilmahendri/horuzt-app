@@ -9,6 +9,7 @@ use App\Notifications\VerificationCodeNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
 use Illuminate\Support\Facades\Notification;
+use Illuminate\Support\Facades\Password;
 use Laravel\Sanctum\Sanctum;
 use Tests\TestCase;
 
@@ -73,13 +74,67 @@ class AccountVerificationTest extends TestCase
     {
         $user = User::factory()->create(['email' => 'reset@example.test', 'password' => Hash::make('old-password')]);
         $user->createToken('old');
-        $this->token($user, '654321', 'password_reset');
-        $payload = ['identifier' => $user->email, 'channel' => 'email', 'code' => '654321',
+        $token = Password::broker()->createToken($user);
+        $payload = ['email' => $user->email, 'token' => $token,
             'password' => 'new-password', 'password_confirmation' => 'new-password'];
-        $this->postJson('/api/v1/auth/reset-password', $payload)->assertOk();
+        $this->postJson('/api/v1/auth/reset-password', $payload)
+            ->assertOk()
+            ->assertJsonPath('message', 'Kata sandi berhasil diperbarui.');
         $this->assertTrue(Hash::check('new-password', $user->fresh()->password));
         $this->assertCount(0, $user->fresh()->tokens);
         $this->postJson('/api/v1/auth/reset-password', $payload)->assertStatus(422);
+    }
+
+    public function test_password_reset_rejects_wrong_token(): void
+    {
+        $user = User::factory()->create(['email' => 'wrong-token@example.test']);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $user->email,
+            'token' => 'wrong-token',
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'RESET_TOKEN_INVALID');
+    }
+
+    public function test_password_reset_rejects_confirmation_mismatch(): void
+    {
+        $user = User::factory()->create(['email' => 'mismatch@example.test']);
+        $token = Password::broker()->createToken($user);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $user->email,
+            'token' => $token,
+            'password' => 'new-password',
+            'password_confirmation' => 'different-password',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('password');
+    }
+
+    public function test_user_can_login_with_new_password_after_reset(): void
+    {
+        $user = User::factory()->create([
+            'email' => 'login-after-reset@example.test',
+            'password' => Hash::make('old-password'),
+        ]);
+        $token = Password::broker()->createToken($user);
+
+        $this->postJson('/api/v1/auth/reset-password', [
+            'email' => $user->email,
+            'token' => $token,
+            'password' => 'new-password',
+            'password_confirmation' => 'new-password',
+        ])->assertOk();
+
+        $this->postJson('/api/v1/login', [
+            'email' => $user->email,
+            'password' => 'new-password',
+        ])
+            ->assertOk()
+            ->assertJsonStructure(['access_token', 'token_type', 'role']);
     }
 
     private function token(User $user, string $code, string $purpose = 'account_verification'): AccountVerificationToken
