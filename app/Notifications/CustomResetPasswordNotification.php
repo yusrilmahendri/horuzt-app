@@ -34,7 +34,7 @@ class CustomResetPasswordNotification extends Notification
     public function toMail($notifiable): MailMessage
     {
         return (new MailMessage)
-            ->subject('Atur Ulang Kata Sandi Akun Sena Digital')
+            ->subject('Reset Kata Sandi - Sena Digital')
             ->view('emails.reset-password', [
                 'resetUrl' => $this->resetUrl($notifiable),
                 'user' => $notifiable,

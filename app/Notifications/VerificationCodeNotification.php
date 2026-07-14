@@ -20,15 +20,15 @@ class VerificationCodeNotification extends Notification
     public function toMail(object $notifiable): MailMessage
     {
         $reset = $this->purpose === 'password_reset';
+        $resetUrl = rtrim((string) config('verification.frontend_url'), '/').'/reset-password?token='.urlencode($this->code).'&email='.urlencode((string) $notifiable->email);
 
-        $message = (new MailMessage)->subject($reset ? 'Kode Reset Kata Sandi' : 'Kode Verifikasi Akun')
-            ->greeting('Halo!')->line($reset ? 'Gunakan kode berikut untuk mereset kata sandi Anda.' : 'Gunakan kode berikut untuk memverifikasi akun Anda.')
-            ->line($this->code)->line('Kode ini akan kedaluwarsa dan hanya dapat digunakan satu kali.');
-
-        if ($reset) {
-            $message->action('Reset Kata Sandi', rtrim((string) config('verification.frontend_url'), '/').'/reset-password?token='.urlencode($this->code).'&email='.urlencode((string) $notifiable->email));
-        }
-
-        return $message;
+        return (new MailMessage)
+            ->subject($reset ? 'Reset Kata Sandi - Sena Digital' : 'Kode Verifikasi Akun - Sena Digital')
+            ->view($reset ? 'emails.reset-password' : 'emails.verification-code', [
+                'code' => $this->code,
+                'email' => $notifiable->email,
+                'expireMinutes' => config('verification.email_token_ttl_minutes'),
+                'resetUrl' => $reset ? $resetUrl : null,
+            ]);
     }
 }
