@@ -8,14 +8,20 @@ use App\Models\WeddingGuest;
 use App\Models\Setting;
 use App\Models\BukuTamu;
 use App\Models\AttendanceScan;
+use App\Services\DomainService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
+use ZipArchive;
 
 class GuestTrackingController extends Controller
 {
+    public function __construct(private DomainService $domainService)
+    {
+    }
+
     /**
      * Track guest visit when opening invitation
      * POST /v1/wedding-guests/track
@@ -239,33 +245,460 @@ class GuestTrackingController extends Controller
     {
         try {
             $userId = auth()->id();
+            $domain = $this->normalizeDomain((string) $request->query('domain', ''));
+
+            if ($domain !== '') {
+                $ownerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+
+                if (! $ownerUserId) {
+                    return response()->json([
+                        'status' => false,
+                        'code' => 'INVITATION_NOT_FOUND',
+                        'message' => 'Undangan tidak ditemukan.',
+                    ], 404);
+                }
+
+                if ((int) $ownerUserId !== (int) $userId) {
+                    return response()->json([
+                        'status' => false,
+                        'message' => 'Anda tidak memiliki akses ke data tamu undangan ini.',
+                    ], 403);
+                }
+            }
 
             $guests = WeddingGuest::where('user_id', $userId)
+                ->when($domain !== '', function ($query) use ($domain) {
+                    $query->where(function ($query) use ($domain) {
+                        $query->whereRaw('LOWER(domain) = ?', [$domain])
+                            ->orWhereRaw('LOWER(domain) LIKE ?', ['%/'.$domain]);
+                    });
+                })
                 ->orderBy('first_visit_at', 'desc')
-                ->get();
+                ->orderByDesc('id')
+                ->get()
+                ->map(fn (WeddingGuest $guest): array => $this->guestPayload($guest));
 
             return response()->json([
-                'message' => 'Guest list retrieved successfully',
+                'status' => true,
+                'message' => 'Data tamu berhasil diambil.',
                 'data' => $guests,
+                'total' => $guests->count(),
             ], 200);
 
         } catch (\Exception $e) {
             return response()->json([
+                'status' => false,
                 'message' => 'Failed to retrieve guest list',
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
     }
 
-    private function uniqueGuestCode(int $userId, string $guestName): string
+    /**
+     * Create guest invitation link.
+     * POST /v1/wedding-guests
+     */
+    public function store(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:255'],
+            'guest_name' => ['required', 'string', 'max:255'],
+        ], [
+            'domain.required' => 'Domain undangan wajib diisi.',
+            'guest_name.required' => 'Nama tamu wajib diisi.',
+        ]);
+
+        $domain = $this->normalizeDomain($validated['domain']);
+        $ownerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+
+        if (! $ownerUserId) {
+            return response()->json([
+                'status' => false,
+                'code' => 'INVITATION_NOT_FOUND',
+                'message' => 'Undangan tidak ditemukan.',
+            ], 404);
+        }
+
+        if ((int) $ownerUserId !== (int) auth()->id()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Anda tidak memiliki akses ke undangan ini.',
+            ], 403);
+        }
+
+        $guestName = trim($validated['guest_name']);
+        $guestCode = $this->uniqueGuestCode((int) $ownerUserId, $guestName, $domain);
+        $invitationUrl = $this->invitationUrl($domain, $guestCode);
+
+        $guestData = [
+            'user_id' => (int) $ownerUserId,
+            'guest_name' => $guestName,
+            'guest_token' => WeddingGuest::generateUniqueToken($guestName, $domain),
+            'domain' => $domain,
+            'first_visit_at' => now(),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ];
+
+        if (Schema::hasColumn('wedding_guests', 'guest_code')) {
+            $guestData['guest_code'] = $guestCode;
+        }
+
+        if (Schema::hasColumn('wedding_guests', 'invitation_url')) {
+            $guestData['invitation_url'] = $invitationUrl;
+        }
+
+        $guest = WeddingGuest::create($guestData);
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Link tamu berhasil dibuat.',
+            'data' => $this->guestPayload($guest->refresh()),
+        ], 201);
+    }
+
+    /**
+     * Delete guest invitation.
+     * DELETE /v1/wedding-guests/{id}
+     */
+    public function destroy(int $id): JsonResponse
+    {
+        $guest = WeddingGuest::where('user_id', auth()->id())->whereKey($id)->first();
+
+        if (! $guest) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Data tamu tidak ditemukan.',
+            ], 404);
+        }
+
+        $guest->delete();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Data tamu berhasil dihapus.',
+        ]);
+    }
+
+    /**
+     * Import guest invitations from a CSV-like file or guests array.
+     * POST /v1/wedding-guests/import
+     */
+    public function import(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'domain' => ['required', 'string', 'max:255'],
+            'file' => ['nullable', 'file', 'max:10240'],
+            'guests' => ['nullable', 'array'],
+            'guests.*.guest_name' => ['nullable', 'string', 'max:255'],
+            'guests.*' => ['nullable'],
+        ]);
+
+        $domain = $this->normalizeDomain($validated['domain']);
+        $ownerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+
+        if (! $ownerUserId) {
+            return response()->json([
+                'status' => false,
+                'code' => 'INVITATION_NOT_FOUND',
+                'message' => 'Undangan tidak ditemukan.',
+            ], 404);
+        }
+
+        if ((int) $ownerUserId !== (int) auth()->id()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Anda tidak memiliki akses ke undangan ini.',
+            ], 403);
+        }
+
+        $guestNames = collect($validated['guests'] ?? [])
+            ->map(fn ($guest): string => is_array($guest)
+                ? trim((string) ($guest['guest_name'] ?? $guest['name'] ?? ''))
+                : trim((string) $guest))
+            ->filter()
+            ->values();
+
+        if ($request->hasFile('file')) {
+            $importedGuestNames = $this->guestNamesFromImportFile($request->file('file'));
+            if ($importedGuestNames instanceof JsonResponse) {
+                return $importedGuestNames;
+            }
+
+            $guestNames = $guestNames->merge($importedGuestNames);
+        }
+
+        if ($guestNames->isEmpty()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Data tamu import kosong.',
+            ], 422);
+        }
+
+        $created = $guestNames
+            ->unique()
+            ->map(fn (string $guestName): array => $this->guestPayload(
+                $this->createGuestForOwner((int) $ownerUserId, $domain, $guestName, $request)
+            ))
+            ->values();
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Data tamu berhasil diimport.',
+            'data' => $created,
+            'total' => $created->count(),
+        ], 201);
+    }
+
+    /**
+     * Export guest invitations as CSV payload.
+     * GET /v1/wedding-guests/export?domain=nova-yusril
+     */
+    public function export(Request $request): JsonResponse
+    {
+        $domain = $this->normalizeDomain((string) $request->query('domain', ''));
+        $userId = (int) auth()->id();
+
+        if ($domain !== '') {
+            $ownerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+
+            if (! $ownerUserId) {
+                return response()->json([
+                    'status' => false,
+                    'code' => 'INVITATION_NOT_FOUND',
+                    'message' => 'Undangan tidak ditemukan.',
+                ], 404);
+            }
+
+            if ((int) $ownerUserId !== $userId) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Anda tidak memiliki akses ke data tamu undangan ini.',
+                ], 403);
+            }
+        }
+
+        $guests = WeddingGuest::where('user_id', $userId)
+            ->when($domain !== '', function ($query) use ($domain) {
+                $query->where(function ($query) use ($domain) {
+                    $query->whereRaw('LOWER(domain) = ?', [$domain])
+                        ->orWhereRaw('LOWER(domain) LIKE ?', ['%/'.$domain]);
+                });
+            })
+            ->orderBy('guest_name')
+            ->get();
+
+        $csv = "No,Nama Tamu,Kode Tamu,Domain,Link Undangan\n";
+        foreach ($guests as $index => $guest) {
+            $payload = $this->guestPayload($guest);
+            $csv .= implode(',', [
+                $index + 1,
+                '"'.str_replace('"', '""', $payload['guest_name']).'"',
+                $payload['guest_code'],
+                $payload['domain'],
+                $payload['invitation_url'],
+            ])."\n";
+        }
+
+        return response()->json([
+            'status' => true,
+            'message' => 'Data tamu berhasil diekspor.',
+            'data' => [
+                'content' => base64_encode($csv),
+                'filename' => 'wedding_guests_'.($domain ?: 'undangan').'_'.now()->format('Y-m-d').'.csv',
+                'mime_type' => 'text/csv',
+            ],
+            'total' => $guests->count(),
+        ]);
+    }
+
+    private function createGuestForOwner(int $ownerUserId, string $domain, string $guestName, Request $request): WeddingGuest
+    {
+        $guestCode = $this->uniqueGuestCode($ownerUserId, $guestName, $domain);
+        $invitationUrl = $this->invitationUrl($domain, $guestCode);
+        $guestData = [
+            'user_id' => $ownerUserId,
+            'guest_name' => $guestName,
+            'guest_token' => WeddingGuest::generateUniqueToken($guestName, $domain),
+            'domain' => $domain,
+            'first_visit_at' => now(),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+        ];
+
+        if (Schema::hasColumn('wedding_guests', 'guest_code')) {
+            $guestData['guest_code'] = $guestCode;
+        }
+
+        if (Schema::hasColumn('wedding_guests', 'invitation_url')) {
+            $guestData['invitation_url'] = $invitationUrl;
+        }
+
+        return WeddingGuest::create($guestData);
+    }
+
+    private function guestPayload(WeddingGuest $guest): array
+    {
+        $guestCode = $this->guestCodeForPayload($guest);
+        $domain = $this->normalizeDomain((string) $guest->domain);
+
+        return [
+            'id' => $guest->id,
+            'guest_name' => $guest->guest_name,
+            'guest_code' => $guestCode,
+            'guest_token' => $guest->guest_token,
+            'domain' => $domain,
+            'invitation_url' => $guest->invitation_url ?: $this->invitationUrl($domain, $guestCode),
+            'attended' => (bool) $guest->attended,
+            'attended_at' => $guest->attended_at,
+        ];
+    }
+
+    private function guestCodeForPayload(WeddingGuest $guest): string
+    {
+        if (Schema::hasColumn('wedding_guests', 'guest_code') && $guest->guest_code) {
+            return (string) $guest->guest_code;
+        }
+
+        $slug = Str::slug((string) $guest->guest_name, '-');
+
+        return $slug !== '' ? $slug : (string) $guest->guest_token;
+    }
+
+    private function invitationUrl(string $domain, string $guestCode): string
+    {
+        $frontendUrl = rtrim((string) config('app.frontend_url', 'https://www.sena-digital.com'), '/');
+
+        return $frontendUrl.'/wedding/'.$domain.'?to='.$guestCode;
+    }
+
+    private function guestNamesFromImportFile($file): array|JsonResponse
+    {
+        $extension = strtolower((string) $file->getClientOriginalExtension());
+
+        if (in_array($extension, ['csv', 'txt'], true)) {
+            $rows = array_map('str_getcsv', file($file->getRealPath()) ?: []);
+
+            return $this->guestNamesFromRows($rows);
+        }
+
+        if ($extension === 'xlsx') {
+            return $this->guestNamesFromXlsx((string) $file->getRealPath());
+        }
+
+        return response()->json([
+            'status' => false,
+            'message' => 'Format import belum didukung. Gunakan XLSX, CSV, atau kirim array guests.',
+        ], 422);
+    }
+
+    private function guestNamesFromRows(array $rows): array
+    {
+        $guestNames = [];
+
+        foreach ($rows as $index => $row) {
+            $name = trim((string) ($row[0] ?? ''));
+            if ($index === 0 && in_array(Str::lower($name), ['guest_name', 'nama', 'nama tamu'], true)) {
+                continue;
+            }
+
+            if ($name !== '') {
+                $guestNames[] = $name;
+            }
+        }
+
+        return $guestNames;
+    }
+
+    private function guestNamesFromXlsx(string $path): array
+    {
+        $zip = new ZipArchive();
+        if ($zip->open($path) !== true) {
+            return [];
+        }
+
+        $sharedStrings = $this->xlsxSharedStrings($zip);
+        $sheetXml = $zip->getFromName('xl/worksheets/sheet1.xml') ?: '';
+        $zip->close();
+
+        if ($sheetXml === '') {
+            return [];
+        }
+
+        $sheet = simplexml_load_string($sheetXml);
+        if (! $sheet) {
+            return [];
+        }
+
+        $rows = [];
+        foreach ($sheet->sheetData->row ?? [] as $row) {
+            $firstCell = $row->c[0] ?? null;
+            if (! $firstCell) {
+                continue;
+            }
+
+            $type = (string) ($firstCell['t'] ?? '');
+            $value = (string) ($firstCell->v ?? '');
+            if ($type === 's') {
+                $value = $sharedStrings[(int) $value] ?? '';
+            } elseif ($type === 'inlineStr') {
+                $value = (string) ($firstCell->is->t ?? '');
+            }
+
+            $rows[] = [$value];
+        }
+
+        return $this->guestNamesFromRows($rows);
+    }
+
+    private function xlsxSharedStrings(ZipArchive $zip): array
+    {
+        $xml = $zip->getFromName('xl/sharedStrings.xml') ?: '';
+        if ($xml === '') {
+            return [];
+        }
+
+        $shared = simplexml_load_string($xml);
+        if (! $shared) {
+            return [];
+        }
+
+        $strings = [];
+        foreach ($shared->si ?? [] as $si) {
+            $parts = [];
+            if (isset($si->t)) {
+                $parts[] = (string) $si->t;
+            }
+
+            foreach ($si->r ?? [] as $run) {
+                $parts[] = (string) ($run->t ?? '');
+            }
+
+            $strings[] = trim(implode('', $parts));
+        }
+
+        return $strings;
+    }
+
+    private function normalizeDomain(string $domain): string
+    {
+        return $this->domainService->normalizeToSlug($domain);
+    }
+
+    private function uniqueGuestCode(int $userId, string $guestName, ?string $domain = null): string
     {
         $baseCode = Str::slug($guestName, '-');
         $baseCode = $baseCode !== '' ? $baseCode : 'tamu';
+        if (! Schema::hasColumn('wedding_guests', 'guest_code')) {
+            return $baseCode;
+        }
+
         $guestCode = $baseCode;
         $suffix = 2;
 
         while (WeddingGuest::query()
             ->where('user_id', $userId)
+            ->when($domain, fn ($query) => $query->whereRaw('LOWER(domain) = ?', [strtolower($domain)]))
             ->where('guest_code', $guestCode)
             ->exists()
         ) {

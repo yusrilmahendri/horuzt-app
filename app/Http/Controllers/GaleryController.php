@@ -13,6 +13,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Http\UploadedFile;
 
 class GaleryController extends Controller
 {
@@ -360,10 +361,15 @@ class GaleryController extends Controller
 
             Log::error('Photo upload failed', [
                 'user_id' => $userId,
+                'has_video' => ! empty($validated['url_video']),
+                'has_image_file' => $request->hasFile('image'),
+                'has_photo_file' => $request->hasFile('photo'),
+                'exception' => get_class($e),
                 'message' => $e->getMessage(),
             ]);
 
             return response()->json([
+                'status' => false,
                 'message' => 'Gagal memproses foto.',
             ], 500);
         }
@@ -529,6 +535,8 @@ class GaleryController extends Controller
     {
         $maxSizeKb = $this->maxPhotoSizeKb($request);
         $videoUrl = $this->videoUrlFromRequest($request);
+        $hasVideo = $videoUrl !== null;
+
         if ($videoUrl !== null) {
             $request->merge(['url_video' => $videoUrl]);
         }
@@ -537,15 +545,23 @@ class GaleryController extends Controller
             $request->files->set('image', $request->file('photo'));
         }
 
-        $imageIsRequired = $isCreate && $videoUrl === null;
-        $rules = [
-            'image' => [
+        if ($isCreate && ! $request->filled('photo_type')) {
+            $request->merge(['photo_type' => 'gallery']);
+        }
+
+        $imageIsRequired = $isCreate && ! $hasVideo;
+        $imageRules = $hasVideo
+            ? ['nullable', 'file', 'max:' . $maxSizeKb]
+            : [
                 $imageIsRequired ? 'required' : 'nullable',
                 'file',
                 'image',
                 'mimes:jpg,jpeg,png,webp',
                 'max:' . $maxSizeKb,
-            ],
+            ];
+
+        $rules = [
+            'image' => $imageRules,
             'photo' => ['nullable'],
             'url_video' => ['nullable', 'string', 'max:500'],
             'video_url' => ['nullable', 'string', 'max:500'],
@@ -584,7 +600,13 @@ class GaleryController extends Controller
 
     private function photoUploadFile(Request $request)
     {
-        return $request->file('image') ?: $request->file('photo');
+        $file = $request->file('image') ?: $request->file('photo');
+
+        if (! $file instanceof UploadedFile || ! $file->isValid()) {
+            return null;
+        }
+
+        return $file;
     }
 
     private function nextSortOrder(int $userId, string $photoType): int

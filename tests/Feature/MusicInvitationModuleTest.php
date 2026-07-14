@@ -257,7 +257,41 @@ class MusicInvitationModuleTest extends TestCase
             'musik' => UploadedFile::fake()->create('catalog-download.mp3', 256, 'application/octet-stream'),
         ])
             ->assertCreated()
-            ->assertJsonPath('message', 'Musik katalog berhasil diunggah.');
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik katalog berhasil diupload.');
+    }
+
+    public function test_admin_can_upload_catalog_music_through_legacy_music_upload_endpoint(): void
+    {
+        Storage::fake('public');
+        $admin = $this->adminUser();
+        Sanctum::actingAs($admin);
+
+        $this->postJson('/api/music/upload', [
+            'title' => 'Legacy Catalog Song',
+            'musik' => UploadedFile::fake()->create('legacy-song.mp3', 256, 'application/octet-stream'),
+        ])
+            ->assertCreated()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik katalog berhasil diupload.')
+            ->assertJsonPath('data.title', 'Legacy Catalog Song');
+
+        $this->getJson('/api/music/tracks')
+            ->assertOk()
+            ->assertJsonPath('data.0.title', 'Legacy Catalog Song');
+    }
+
+    public function test_regular_user_cannot_upload_catalog_music_through_legacy_endpoint(): void
+    {
+        $user = $this->userWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/music/upload', [
+            'title' => 'Blocked Catalog Song',
+            'musik' => UploadedFile::fake()->create('blocked.mp3', 256, 'application/octet-stream'),
+        ])
+            ->assertForbidden()
+            ->assertJsonPath('message', 'Anda tidak memiliki akses untuk mengupload katalog musik.');
     }
 
     public function test_admin_catalog_upload_still_rejects_invalid_extension_and_oversized_file(): void
@@ -274,6 +308,20 @@ class MusicInvitationModuleTest extends TestCase
 
         $this->postJson('/api/v1/admin/music-tracks', [
             'title' => 'Too Big Song',
+            'musik' => UploadedFile::fake()->create('catalog.mp3', 21000, 'application/octet-stream'),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Ukuran file maksimal 20 MB.');
+
+        $this->postJson('/api/music/upload', [
+            'title' => 'Legacy Invalid Extension Song',
+            'musik' => UploadedFile::fake()->create('catalog.txt', 256, 'text/plain'),
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.');
+
+        $this->postJson('/api/music/upload', [
+            'title' => 'Legacy Too Big Song',
             'musik' => UploadedFile::fake()->create('catalog.mp3', 21000, 'application/octet-stream'),
         ])
             ->assertUnprocessable()

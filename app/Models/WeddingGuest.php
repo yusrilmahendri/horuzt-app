@@ -18,6 +18,7 @@ class WeddingGuest extends Model
         'guest_token',
         'guest_code',
         'domain',
+        'invitation_url',
         'first_visit_at',
         'ip_address',
         'user_agent',

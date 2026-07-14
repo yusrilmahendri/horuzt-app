@@ -98,11 +98,18 @@ class ThemeUpgradeModuleTest extends TestCase
         $user = $this->createUserWithPackage('ruby');
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/v1/user/upgrade-package', ['target_package_code' => 'diamond'])
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
             ->assertCreated()
-            ->assertJsonPath('data.invoice.status', 'pending')
-            ->assertJsonPath('data.target_package.code', 'diamond')
-            ->assertJsonPath('data.current_package.code', 'ruby');
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Invoice upgrade paket berhasil dibuat.')
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.target_package', 'diamond')
+            ->assertJsonPath('data.current_package.code', 'ruby')
+            ->assertJsonPath('data.theme_slug', 'velvet-mauve')
+            ->assertJsonPath('data.redirect_url', '/dashboard/payment-pending');
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
         $this->assertDatabaseHas('invitations', [
@@ -112,12 +119,89 @@ class ThemeUpgradeModuleTest extends TestCase
         ]);
     }
 
+    public function test_user_ruby_upgrade_ke_sapphire_membuat_invoice_pending(): void
+    {
+        $user = $this->createUserWithPackage('ruby');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'sapphire',
+            'theme_slug' => 'blue-sapphire',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.target_package', 'sapphire')
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.theme_slug', 'blue-sapphire');
+
+        $this->assertDatabaseHas('invitations', [
+            'user_id' => $user->id,
+            'payment_status' => 'pending',
+            'paket_undangan_id' => PaketUndangan::where('code', 'sapphire')->value('id'),
+        ]);
+    }
+
+    public function test_user_sapphire_upgrade_ke_diamond_membuat_invoice_pending(): void
+    {
+        $user = $this->createUserWithPackage('sapphire');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.target_package', 'diamond')
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.current_package.code', 'sapphire');
+    }
+
+    public function test_user_diamond_tidak_dibuatkan_invoice_untuk_tema_diamond(): void
+    {
+        $user = $this->createUserWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('message', 'Paket Anda sudah mencakup tema ini.');
+
+        $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
+    }
+
+    public function test_invoice_upgrade_pending_target_sama_tidak_duplicate(): void
+    {
+        $user = $this->createUserWithPackage('ruby');
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
+            ->assertCreated()
+            ->json('data.invoice_id');
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.invoice_id', $first)
+            ->assertJsonPath('data.payment_status', 'pending');
+
+        $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+    }
+
     public function test_setelah_invoice_confirmed_user_bisa_pakai_tema_paket_baru(): void
     {
         $user = $this->createUserWithPackage('ruby');
         Sanctum::actingAs($user);
 
-        $this->postJson('/api/v1/user/upgrade-package', ['target_package_code' => 'diamond'])
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
             ->assertCreated();
 
         $invoice = Invitation::where('user_id', $user->id)

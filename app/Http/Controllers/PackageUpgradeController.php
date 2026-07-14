@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\User;
 use App\Models\Invitation;
+use App\Models\JenisThemas;
 use App\Models\Mempelai;
 use App\Models\PaketUndangan;
 use App\Services\AccountStatusService;
@@ -178,9 +179,11 @@ class PackageUpgradeController extends Controller
     public function initiateUpgrade(Request $request): JsonResponse
     {
         $validated = $request->validate([
-            'paket_undangan_id' => 'nullable|required_without_all:target_package_id,target_package_code|exists:paket_undangans,id',
-            'target_package_id' => 'nullable|required_without_all:paket_undangan_id,target_package_code|exists:paket_undangans,id',
-            'target_package_code' => 'nullable|required_without_all:paket_undangan_id,target_package_id|string',
+            'paket_undangan_id' => 'nullable|required_without_all:target_package_id,target_package_code,target_package,theme_slug|exists:paket_undangans,id',
+            'target_package_id' => 'nullable|required_without_all:paket_undangan_id,target_package_code,target_package,theme_slug|exists:paket_undangans,id',
+            'target_package_code' => 'nullable|required_without_all:paket_undangan_id,target_package_id,target_package,theme_slug|string',
+            'target_package' => 'nullable|required_without_all:paket_undangan_id,target_package_id,target_package_code,theme_slug|string|in:trial,ruby,sapphire,diamond',
+            'theme_slug' => 'nullable|string|exists:jenis_themas,slug',
         ]);
 
         return DB::transaction(function () use ($validated) {
@@ -194,9 +197,19 @@ class PackageUpgradeController extends Controller
                 ], 403);
             }
 
-            $targetIdentifier = $validated['target_package_code']
+            $theme = isset($validated['theme_slug'])
+                ? JenisThemas::query()->where('slug', $validated['theme_slug'])->first()
+                : null;
+
+            $targetPackageFromTheme = $theme
+                ? $this->themeAccess->requiredPackageCodeForTheme($theme)
+                : null;
+
+            $targetIdentifier = $validated['target_package']
+                ?? $validated['target_package_code']
                 ?? $validated['target_package_id']
-                ?? $validated['paket_undangan_id'];
+                ?? $validated['paket_undangan_id']
+                ?? $targetPackageFromTheme;
             $newPackage = $this->themeAccess->packageFromCodeOrId($targetIdentifier);
             $currentPackage = $this->themeAccess->packageForUser($user);
 
@@ -206,9 +219,15 @@ class PackageUpgradeController extends Controller
                 ], 404);
             }
 
+            if ($theme && $targetPackageFromTheme && $this->themeAccess->packageRank($newPackage) < $this->packageRankByCode($targetPackageFromTheme)) {
+                return response()->json([
+                    'message' => 'Target paket tidak sesuai dengan kebutuhan tema.',
+                ], 422);
+            }
+
             if (! $this->themeAccess->isHigherPackage($newPackage, $currentPackage)) {
                 return response()->json([
-                    'message' => 'Paket tujuan harus lebih tinggi dari paket aktif saat ini.',
+                    'message' => $theme ? 'Paket Anda sudah mencakup tema ini.' : 'Paket tujuan harus lebih tinggi dari paket aktif saat ini.',
                     'data' => [
                         'current_package' => $this->packagePayload($currentPackage),
                         'target_package' => $this->packagePayload($newPackage),
@@ -216,14 +235,13 @@ class PackageUpgradeController extends Controller
                 ], 422);
             }
 
-            $pendingUpgrade = $this->themeAccess->pendingUpgradeForUser($user);
+            $pendingUpgrade = $this->pendingUpgradeForUserAndTarget($user, $newPackage);
             if ($pendingUpgrade) {
                 return response()->json([
-                    'message' => 'Anda memiliki invoice upgrade yang masih pending.',
-                    'data' => [
-                        'invoice' => $this->invoicePayload($pendingUpgrade),
-                    ],
-                ], 409);
+                    'status' => true,
+                    'message' => 'Invoice upgrade paket berhasil dibuat.',
+                    'data' => $this->upgradeResponsePayload($pendingUpgrade, $newPackage),
+                ], 200);
             }
 
             $activeInvitation = Invitation::where('user_id', $user->id)
@@ -260,6 +278,9 @@ class PackageUpgradeController extends Controller
                     'kirim_hadiah' => $newPackage->kirim_hadiah,
                     'import_data' => $newPackage->import_data,
                     'upgrade_initiated_at' => now()->toISOString(),
+                    'theme_slug' => $validated['theme_slug'] ?? null,
+                    'target_package' => $newPackage->code,
+                    'target_package_code' => $newPackage->code,
                     'previous_invitation_id' => $activeInvitation->id,
                     'previous_package_id' => $currentPackage->id,
                     'previous_package_code' => $currentPackage->code,
@@ -276,14 +297,48 @@ class PackageUpgradeController extends Controller
             $invoice = Invitation::create($createData);
 
             return response()->json([
-                'message' => 'Invoice upgrade paket berhasil dibuat',
-                'data' => [
-                    'invoice' => $this->invoicePayload($invoice),
-                    'current_package' => $this->packagePayload($currentPackage),
-                    'target_package' => $this->packagePayload($newPackage),
-                ]
+                'status' => true,
+                'message' => 'Invoice upgrade paket berhasil dibuat.',
+                'data' => $this->upgradeResponsePayload($invoice, $newPackage, $currentPackage),
             ], 201);
         });
+    }
+
+    private function pendingUpgradeForUserAndTarget(User $user, PaketUndangan $targetPackage): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->where('paket_undangan_id', $targetPackage->id)
+            ->where('package_features_snapshot->invoice_type', 'package_upgrade')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function upgradeResponsePayload(
+        Invitation $invoice,
+        PaketUndangan $targetPackage,
+        ?PaketUndangan $currentPackage = null
+    ): array {
+        return [
+            'invoice_id' => $invoice->id,
+            'invoice_code' => $invoice->kode_pemesanan,
+            'target_package' => $targetPackage->code,
+            'target_package_detail' => $this->packagePayload($targetPackage),
+            'current_package' => $currentPackage ? $this->packagePayload($currentPackage) : null,
+            'theme_slug' => $invoice->package_features_snapshot['theme_slug'] ?? null,
+            'payment_status' => $invoice->payment_status,
+            'amount' => (float) ($invoice->package_price_snapshot ?? 0),
+            'redirect_url' => '/dashboard/payment-pending',
+            'invoice' => $this->invoicePayload($invoice),
+        ];
+    }
+
+    private function packageRankByCode(string $code): int
+    {
+        $package = $this->themeAccess->packageFromCodeOrId($code);
+
+        return $this->themeAccess->packageRank($package);
     }
 
     private function packagePayload(PaketUndangan $package): array

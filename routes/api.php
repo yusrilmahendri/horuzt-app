@@ -409,6 +409,10 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
     });
 });
 
+// Legacy admin music catalog upload endpoint used by the Angular dashboard.
+Route::post('/music/upload', [\App\Http\Controllers\Admin\AdminMusicTrackController::class, 'store'])
+    ->middleware(['auth:sanctum', 'large.files', 'bypass.post.size']);
+
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {
         Route::get('/', 'show')->name('profile.show');
@@ -452,6 +456,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     Route::controller(PackageUpgradeController::class)->group(function () {
         Route::get('/v1/user/eligible-packages', 'getEligiblePackages');
         Route::post('/v1/user/upgrade-package', 'initiateUpgrade');
+        Route::post('/v1/packages/upgrade', 'initiateUpgrade');
     });
     Route::controller(RekeningController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/send-rekening', 'store');
@@ -537,7 +542,6 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
 
     // Music Management endpoints (Enhanced streaming with Range header support)
     Route::controller(MusicController::class)->prefix('music')->middleware('invitation.feature')->group(function () {
-        Route::post('/upload', 'store');
         Route::get('/stream', 'stream');
         Route::get('/download', 'download');
         Route::delete('/delete', 'destroy');
@@ -618,6 +622,10 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     // Guest Tracking endpoints (protected - requires authentication)
     Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->middleware('invitation.feature')->group(function () {
         Route::get('/', 'index');                         // Get guest list
+        Route::post('/', 'store');                        // Create guest invitation link
+        Route::post('/import', 'import');                 // Import guest invitation links
+        Route::get('/export', 'export');                  // Export guest invitation links
+        Route::delete('/{id}', 'destroy');                // Delete guest invitation link
         Route::post('/confirm-attendance', 'confirmAttendance'); // Confirm attendance from QR scan
     });
 });

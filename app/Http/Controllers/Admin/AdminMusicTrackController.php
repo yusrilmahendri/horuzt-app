@@ -12,9 +12,12 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Spatie\Permission\Models\Role;
 
 class AdminMusicTrackController extends Controller
 {
+    private const ADMIN_CATALOG_ROLES = ['admin', 'super-admin', 'super_admin', 'administrator'];
+
     protected MusicStreamService $musicStreamService;
     protected GlobalMusicCatalogSyncService $globalCatalogSyncService;
 
@@ -53,6 +56,12 @@ class AdminMusicTrackController extends Controller
      */
     public function store(Request $request)
     {
+        if (! $this->canUploadCatalogMusic()) {
+            return response()->json([
+                'message' => 'Anda tidak memiliki akses untuk mengupload katalog musik.',
+            ], 403);
+        }
+
         $maxMusicSize = config('upload.music_max_file_size', 20480);
         $allowedExtensions = ['mp3', 'wav', 'm4a', 'aac', 'ogg'];
         $formatErrorMessage = 'Format file tidak didukung. Gunakan MP3, WAV, M4A, AAC, atau OGG.';
@@ -171,7 +180,8 @@ class AdminMusicTrackController extends Controller
                 ]);
 
                 return response()->json([
-                    'message' => 'Musik katalog berhasil diunggah.',
+                    'status' => true,
+                    'message' => 'Musik katalog berhasil diupload.',
                     'data' => $this->trackPayload($track->fresh()),
                 ], 201);
             });
@@ -503,5 +513,22 @@ class AdminMusicTrackController extends Controller
     private function makeSlug(string $title): string
     {
         return Str::slug($title) . '-' . Str::lower(Str::random(6));
+    }
+
+    private function canUploadCatalogMusic(): bool
+    {
+        $user = Auth::user();
+
+        if (! $user || ! method_exists($user, 'hasAnyRole')) {
+            return false;
+        }
+
+        $roles = Role::query()
+            ->where('guard_name', 'web')
+            ->whereIn('name', self::ADMIN_CATALOG_ROLES)
+            ->pluck('name')
+            ->all();
+
+        return $roles !== [] && $user->hasAnyRole($roles);
     }
 }
