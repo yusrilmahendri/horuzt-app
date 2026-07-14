@@ -76,7 +76,7 @@ class PaketUndangan extends Model
         return match (true) {
             str_contains($name, 'trial') => 'Trial',
             str_contains($name, 'diamond'), str_contains($name, 'platinum') => 'Diamond',
-            str_contains($name, 'sapphire'), str_contains($name, 'gold') => 'Sapphire',
+            str_contains($name, 'sapphire'), str_contains($name, 'saphier'), str_contains($name, 'gold') => 'Sapphire',
             str_contains($name, 'ruby'),
             str_contains($name, 'silver'),
             str_contains($name, 'standart'),

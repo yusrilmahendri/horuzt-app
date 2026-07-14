@@ -23,7 +23,7 @@ class PackageThemeAccessTest extends TestCase
     public function test_each_package_has_the_expected_cumulative_category_access(): void
     {
         $expected = [
-            'trial' => [],
+            'trial' => ['minimalis'],
             'ruby' => ['minimalis', 'floral'],
             'sapphire' => ['minimalis', 'floral', 'modern', 'elegant'],
             'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],
@@ -51,6 +51,29 @@ class PackageThemeAccessTest extends TestCase
         $this->assertSame(5, DB::table('category_themas')->count());
         $this->assertSame(6, DB::table('jenis_themas')->count());
         $this->assertSame(12, DB::table('paket_undangan_category_thema')->count());
+    }
+
+    public function test_package_endpoint_returns_four_distinct_tiers_with_trial_own_card(): void
+    {
+        $response = $this->getJson('/api/v1/paket-undangan');
+
+        $response->assertOk()
+            ->assertJsonPath('data.0.code', 'trial')
+            ->assertJsonPath('data.0.name', 'Paket Trial')
+            ->assertJsonPath('data.0.display_label', 'Trial')
+            ->assertJsonPath('data.0.theme_access.can_choose_theme', false)
+            ->assertJsonPath('data.0.theme_access.accessible_theme_count', 1)
+            ->assertJsonPath('data.1.code', 'ruby')
+            ->assertJsonPath('data.1.display_label', 'Ruby')
+            ->assertJsonPath('data.2.code', 'sapphire')
+            ->assertJsonPath('data.2.display_label', 'Sapphire')
+            ->assertJsonPath('data.3.code', 'diamond')
+            ->assertJsonPath('data.3.display_label', 'Diamond');
+
+        $packages = collect($response->json('data'));
+        $this->assertSame(['trial', 'ruby', 'sapphire', 'diamond'], $packages->pluck('code')->all());
+        $this->assertSame('soft-ivory', $packages->firstWhere('code', 'trial')['theme_access']['accessible_themes'][0]['slug']);
+        $this->assertNotSame($packages->firstWhere('code', 'trial')['id'], $packages->firstWhere('code', 'ruby')['id']);
     }
 
     public function test_trial_registration_is_paid_and_expires_after_three_days(): void
@@ -127,7 +150,7 @@ class PackageThemeAccessTest extends TestCase
         $this->assertTrue($themes->firstWhere('slug', 'velvet-mauve')['upgrade_required']);
     }
 
-    public function test_trial_package_can_preview_all_themes_but_cannot_use_them(): void
+    public function test_trial_package_can_only_use_one_ruby_theme(): void
     {
         $response = $this->getJson('/api/themes/categories?package_code=trial');
 
@@ -140,7 +163,9 @@ class PackageThemeAccessTest extends TestCase
             ->flatMap(fn ($category) => $category['jenis_themas'] ?? []);
 
         $this->assertTrue($themes->every(fn ($theme) => $theme['can_preview'] === true));
-        $this->assertTrue($themes->every(fn ($theme) => $theme['can_use'] === false));
+        $this->assertSame(['soft-ivory'], $themes->where('can_use', true)->pluck('slug')->values()->all());
+        $this->assertFalse($themes->firstWhere('slug', 'lavender-bloom')['can_use']);
+        $this->assertFalse($themes->firstWhere('slug', 'velvet-mauve')['can_use']);
     }
 
     public function test_public_catalog_without_package_code_preserves_legacy_contract(): void
@@ -283,6 +308,26 @@ class PackageThemeAccessTest extends TestCase
         ]);
     }
 
+    public function test_trial_user_cannot_select_theme_outside_configured_ruby_theme(): void
+    {
+        $user = $this->createUserWithPackage('trial');
+        $allowedTheme = JenisThemas::where('slug', 'soft-ivory')->firstOrFail();
+        $blockedTheme = JenisThemas::where('slug', 'lavender-bloom')->firstOrFail();
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/themes/select', ['theme_id' => $allowedTheme->id])
+            ->assertOk()
+            ->assertJsonPath('data.theme.slug', 'soft-ivory');
+
+        $this->postJson('/api/themes/select', ['theme_id' => $blockedTheme->id])
+            ->assertForbidden()
+            ->assertJson([
+                'status' => false,
+                'message' => 'Tema ini membutuhkan upgrade paket.',
+            ]);
+    }
+
     public function test_authenticated_user_can_only_read_their_own_dashboard_context(): void
     {
         $user = $this->createUserWithPackage('ruby');
@@ -300,6 +345,8 @@ class PackageThemeAccessTest extends TestCase
     {
         $user = User::factory()->create([
             'email' => $code.'-'.uniqid().'@example.test',
+            'email_verified_at' => now(),
+            'verification_channel' => 'email',
         ]);
 
         $role = Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);

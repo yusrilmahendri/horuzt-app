@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Schema;
 return new class extends Migration
 {
     private const ACCESS = [
+        'trial' => ['minimalis'],
         'ruby' => ['minimalis', 'floral'],
         'sapphire' => ['minimalis', 'floral', 'modern', 'elegant'],
         'diamond' => ['minimalis', 'floral', 'modern', 'elegant', 'luxury'],
@@ -26,12 +27,6 @@ return new class extends Migration
         $categoryIds = DB::table('category_themas')
             ->whereIn('slug', ['minimalis', 'floral', 'modern', 'elegant', 'luxury'])
             ->pluck('id', 'slug');
-
-        if (isset($packageIds['trial'])) {
-            DB::table('paket_undangan_category_thema')
-                ->where('paket_undangan_id', $packageIds['trial'])
-                ->delete();
-        }
 
         foreach (self::ACCESS as $code => $slugs) {
             if (! isset($packageIds[$code])) {

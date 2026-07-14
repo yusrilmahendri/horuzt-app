@@ -6,6 +6,7 @@ use App\Models\MidtransTransaction;
 use App\Models\PaketUndangan;
 use App\Models\Rekening;
 use App\Models\TripayTransaction;
+use App\Services\PackageThemeAccessService;
 use Illuminate\Http\Request;
 
 class MethodePembayaran extends Controller
@@ -38,7 +39,7 @@ public function getPaketUndangan(Request $request)
 
     return response()->json([
         'message' => 'Data Paket Undangan berhasil diambil',
-        'data' => $result
+        'data' => app(PackageThemeAccessService::class)->packageCollectionPayload($result),
     ], 200);
 }
 

@@ -2,21 +2,21 @@
 
 namespace App\Services;
 
+use App\Models\Invitation;
 use App\Models\PaketUndangan;
 use App\Models\User;
 
 class AccountStatusService
 {
     public const STATUS_UNVERIFIED = 'unverified';
+    public const STATUS_ONBOARDING = 'onboarding';
     public const STATUS_PENDING_PAYMENT = 'pending_payment';
     public const STATUS_ACTIVE = 'active';
     public const STATUS_EXPIRED = 'expired';
 
     public function summary(User $user): array
     {
-        $user->loadMissing('invitationOne.paketUndangan');
-
-        $invitation = $user->invitationOne;
+        $invitation = $this->resolveInvoiceForUser($user);
         $package = $invitation?->paketUndangan;
         $snapshot = is_array($invitation?->package_features_snapshot)
             ? $invitation->package_features_snapshot
@@ -24,17 +24,24 @@ class AccountStatusService
 
         $paymentStatus = $invitation?->payment_status;
         $isVerified = $user->isAccountVerified();
+        $hasInvoice = $invitation !== null;
+        $hasPendingInvoice = $hasInvoice && $paymentStatus === 'pending';
         $activeUntil = $invitation?->domain_expires_at;
-        $isExpired = $activeUntil ? now()->greaterThan($activeUntil) : false;
+        $isExpired = $hasInvoice && (
+            $paymentStatus === 'expired'
+            || ($activeUntil ? now()->greaterThan($activeUntil) : false)
+        );
         $isPaymentConfirmed = $invitation
-            ? ($paymentStatus === 'paid' || $paymentStatus === 'confirmed' || $invitation->payment_confirmed_at !== null)
+            ? (in_array($paymentStatus, ['paid', 'confirmed'], true) || $invitation->payment_confirmed_at !== null)
             : false;
 
         $accountStatus = match (true) {
             ! $isVerified => self::STATUS_UNVERIFIED,
-            $isExpired => self::STATUS_EXPIRED,
-            ! $isPaymentConfirmed => self::STATUS_PENDING_PAYMENT,
-            default => self::STATUS_ACTIVE,
+            ! $hasInvoice => self::STATUS_ONBOARDING,
+            $hasPendingInvoice => self::STATUS_PENDING_PAYMENT,
+            $isPaymentConfirmed && $isExpired => self::STATUS_EXPIRED,
+            $isPaymentConfirmed => self::STATUS_ACTIVE,
+            default => self::STATUS_ONBOARDING,
         };
 
         $packageCode = $package?->code
@@ -46,12 +53,16 @@ class AccountStatusService
             $snapshot['name_paket'] ?? $package?->name_paket
         );
 
-        $canInputInvitation = $accountStatus === self::STATUS_ACTIVE;
+        $canInputInvitation = in_array($accountStatus, [self::STATUS_ONBOARDING, self::STATUS_ACTIVE], true);
 
         return [
             'is_verified' => $isVerified,
             'account_status' => $accountStatus,
             'payment_status' => $paymentStatus,
+            'has_invoice' => $hasInvoice,
+            'has_pending_invoice' => $hasPendingInvoice,
+            'invoice_id' => $invitation?->id,
+            'invoice_code' => $invitation?->kode_pemesanan,
             'package_name' => $packageName,
             'package_code' => $packageCode,
             'active_until' => $activeUntil,
@@ -70,5 +81,21 @@ class AccountStatusService
                 'bagi_undangan' => $canInputInvitation,
             ],
         ];
+    }
+
+    private function resolveInvoiceForUser(User $user): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->orderByRaw("
+                CASE
+                    WHEN payment_status IN ('paid', 'confirmed') THEN 0
+                    WHEN payment_status = 'pending' THEN 1
+                    WHEN payment_status = 'expired' THEN 2
+                    ELSE 3
+                END
+            ")
+            ->orderByDesc('id')
+            ->first();
     }
 }

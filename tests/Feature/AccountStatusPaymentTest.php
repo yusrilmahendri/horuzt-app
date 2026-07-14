@@ -44,15 +44,37 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('data.is_verified', false);
     }
 
-    public function test_user_verified_tapi_belum_bayar_menghasilkan_pending_payment(): void
+    public function test_user_verified_tapi_belum_punya_invoice_menghasilkan_onboarding(): void
     {
-        $user = $this->makeUser(true, 'pending', now()->addDays(10));
+        $user = $this->makeUserWithoutInvoice(true);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'onboarding')
+            ->assertJsonPath('data.is_verified', true)
+            ->assertJsonPath('data.payment_status', null)
+            ->assertJsonPath('data.has_invoice', false)
+            ->assertJsonPath('data.has_pending_invoice', false)
+            ->assertJsonPath('data.invoice_id', null)
+            ->assertJsonPath('data.invoice_code', null)
+            ->assertJsonPath('data.is_payment_confirmed', false);
+    }
+
+    public function test_user_verified_dengan_invoice_pending_menghasilkan_pending_payment(): void
+    {
+        $user = $this->makeUser(true, 'pending', now()->addDays(10), null, '#INV-PENDING');
 
         Sanctum::actingAs($user);
 
         $this->getJson('/api/profile/status')
             ->assertOk()
             ->assertJsonPath('data.account_status', 'pending_payment')
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.has_invoice', true)
+            ->assertJsonPath('data.has_pending_invoice', true)
+            ->assertJsonPath('data.invoice_code', '#INV-PENDING')
             ->assertJsonPath('data.is_payment_confirmed', false);
     }
 
@@ -65,6 +87,10 @@ class AccountStatusPaymentTest extends TestCase
         $this->getJson('/api/profile/status')
             ->assertOk()
             ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.has_invoice', true)
+            ->assertJsonPath('data.has_pending_invoice', false)
+            ->assertJsonPath('data.is_payment_confirmed', true)
             ->assertJsonPath('data.feature_access.input_undangan', true);
     }
 
@@ -89,6 +115,19 @@ class AccountStatusPaymentTest extends TestCase
         $this->postJson('/api/v1/user/update-mempelai', [])
             ->assertForbidden()
             ->assertJsonPath('code', 'PAYMENT_NOT_CONFIRMED');
+    }
+
+    public function test_user_onboarding_tetap_bisa_akses_fitur_input_lama(): void
+    {
+        $user = $this->makeUserWithoutInvoice(true);
+        Mempelai::create(['user_id' => $user->id]);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/user/update-mempelai', [
+            'name_lengkap_pria' => 'Budi',
+            'name_lengkap_wanita' => 'Sari',
+        ])->assertOk();
     }
 
     public function test_user_expired_tidak_bisa_akses_fitur_input(): void
@@ -119,16 +158,10 @@ class AccountStatusPaymentTest extends TestCase
         bool $verified,
         string $paymentStatus,
         $activeUntil,
-        $paymentConfirmedAt = null
+        $paymentConfirmedAt = null,
+        ?string $invoiceCode = null
     ): User {
-        Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
-
-        $user = User::factory()->create([
-            'email' => fake()->unique()->safeEmail(),
-            'email_verified_at' => $verified ? now() : null,
-            'verification_channel' => 'email',
-        ]);
-        $user->assignRole('user');
+        $user = $this->makeUserWithoutInvoice($verified);
 
         $package = PaketUndangan::create([
             'code' => 'ruby',
@@ -146,6 +179,7 @@ class AccountStatusPaymentTest extends TestCase
         Invitation::create([
             'user_id' => $user->id,
             'paket_undangan_id' => $package->id,
+            'kode_pemesanan' => $invoiceCode,
             'status' => 'step1',
             'payment_status' => $paymentStatus,
             'domain_expires_at' => $activeUntil,
@@ -157,6 +191,20 @@ class AccountStatusPaymentTest extends TestCase
                 'name_paket' => $package->name_paket,
             ],
         ]);
+
+        return $user;
+    }
+
+    private function makeUserWithoutInvoice(bool $verified): User
+    {
+        Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
+
+        $user = User::factory()->create([
+            'email' => fake()->unique()->safeEmail(),
+            'email_verified_at' => $verified ? now() : null,
+            'verification_channel' => 'email',
+        ]);
+        $user->assignRole('user');
 
         return $user;
     }

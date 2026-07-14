@@ -10,6 +10,7 @@ use App\Models\User;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 
 class PackageThemeAccessService
 {
@@ -43,23 +44,15 @@ class PackageThemeAccessService
             ->orderByDesc('id')
             ->get();
 
-        $trialFallback = null;
-
         foreach ($invitations as $invitation) {
             $package = $this->resolvePackageFromInvitation($invitation);
 
-            if (! $package) {
-                continue;
-            }
-
-            if (! $this->usesLegacyThemeSelection($package)) {
+            if ($package) {
                 return $package;
             }
-
-            $trialFallback ??= $package;
         }
 
-        return $trialFallback;
+        return null;
     }
 
     public function pendingUpgradeForUser(User $user): ?Invitation
@@ -155,12 +148,6 @@ class PackageThemeAccessService
             return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
         }
 
-        if ($this->usesLegacyThemeSelection($package)) {
-            $reason = 'legacy_trial_package';
-
-            return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
-        }
-
         if (! $theme->relationLoaded('category') || $this->themeCategoryNeedsReload($theme)) {
             $theme->load('category');
         }
@@ -181,6 +168,20 @@ class PackageThemeAccessService
             $reason = 'non_website_theme_category';
 
             return $this->logThemeAccessDecision($package, $theme, $themeCategoryId, $pivotExists, false, $reason);
+        }
+
+        if ($this->resolvePackageTier($package) === 'trial') {
+            $trialTheme = $this->trialThemeForPackage($package);
+            $allowed = $trialTheme && (int) $trialTheme->id === (int) $theme->id;
+
+            return $this->logThemeAccessDecision(
+                $package,
+                $theme,
+                $themeCategoryId,
+                $pivotExists,
+                $allowed,
+                $allowed ? 'trial_theme_match' : 'trial_theme_only'
+            );
         }
 
         // Query the pivot table directly so access checks stay correct even if
@@ -275,6 +276,11 @@ class PackageThemeAccessService
         return self::CUMULATIVE_CATEGORY_ACCESS[$tier] ?? [];
     }
 
+    public function rubyCategorySlugs(): array
+    {
+        return self::CUMULATIVE_CATEGORY_ACCESS['ruby'];
+    }
+
     public function categoryAllowedByCumulativeMapping(?PaketUndangan $package, ?string $categorySlug): bool
     {
         $normalizedSlug = strtolower(trim((string) $categorySlug));
@@ -288,18 +294,134 @@ class PackageThemeAccessService
 
     public function packageUsesTierThemeCatalog(?PaketUndangan $package): bool
     {
-        if (! $package || $this->usesLegacyThemeSelection($package)) {
+        if (! $package) {
             return false;
         }
 
         return in_array($this->resolvePackageTier($package), ['ruby', 'sapphire', 'diamond'], true);
     }
 
+    public function trialThemeForPackage(?PaketUndangan $package): ?JenisThemas
+    {
+        if (! $package || $this->resolvePackageTier($package) !== 'trial') {
+            return null;
+        }
+
+        $categoryIds = $this->configuredCategoryIdsForPackage($package);
+
+        if (count($categoryIds) !== 1) {
+            return null;
+        }
+
+        $category = CategoryThemas::query()
+            ->active()
+            ->website()
+            ->whereKey($categoryIds[0])
+            ->whereIn('slug', $this->rubyCategorySlugs())
+            ->first();
+
+        if (! $category) {
+            return null;
+        }
+
+        return JenisThemas::query()
+            ->with('category')
+            ->active()
+            ->where('category_id', $category->id)
+            ->ordered()
+            ->orderBy('id')
+            ->first();
+    }
+
+    public function accessibleThemesForPackage(?PaketUndangan $package): Collection
+    {
+        if (! $package) {
+            return new Collection();
+        }
+
+        if ($this->resolvePackageTier($package) === 'trial') {
+            $trialTheme = $this->trialThemeForPackage($package);
+
+            return $trialTheme ? new Collection([$trialTheme]) : new Collection();
+        }
+
+        $categoryIds = $this->accessibleCategoryIdsForPackage($package);
+
+        if ($categoryIds === []) {
+            return new Collection();
+        }
+
+        return JenisThemas::with('category')
+            ->active()
+            ->whereHas('category', fn ($query) => $query->active()->website())
+            ->whereIn('category_id', $categoryIds)
+            ->ordered()
+            ->get();
+    }
+
+    public function packagePayload(PaketUndangan $package): array
+    {
+        $tier = $this->resolvePackageTier($package);
+        $themes = $this->accessibleThemesForPackage($package);
+        $isTrial = $tier === 'trial';
+
+        return [
+            'id' => $package->id,
+            'code' => $tier,
+            'name' => PaketUndangan::displayLabelFromCode($tier, $package->getRawOriginal('name_paket') ?? $package->name_paket),
+            'display_label' => PaketUndangan::shortNameFromCode($tier, $package->getRawOriginal('name_paket') ?? $package->name_paket),
+            'price' => number_format((float) $package->price, 2, '.', ''),
+            'active_days' => (int) $package->masa_aktif,
+            'is_active' => $this->packageIsActive($package),
+            'features' => [
+                'guest_book' => true,
+                'whatsapp_share' => (bool) $package->kirim_wa,
+                'gift' => (bool) $package->kirim_hadiah,
+                'guest_import' => (bool) $package->import_data,
+                'custom_music' => $tier === 'diamond',
+                'free_theme_choice' => ! $isTrial && (bool) $package->bebas_pilih_tema,
+                'google_maps' => true,
+                'religion_customization' => true,
+                'gallery_video' => true,
+                'active_days' => (int) $package->masa_aktif,
+            ],
+            'theme_access' => [
+                'can_choose_theme' => ! $isTrial,
+                'accessible_theme_count' => $themes->count(),
+                'configuration_complete' => ! $isTrial || $themes->count() === 1,
+                'accessible_themes' => $themes
+                    ->map(fn (JenisThemas $theme) => $this->themeSummaryPayload($theme))
+                    ->values()
+                    ->all(),
+            ],
+            'jenis_paket' => PaketUndangan::jenisPaketFromCode($tier, $package->getRawOriginal('jenis_paket') ?? $package->jenis_paket),
+            'name_paket' => PaketUndangan::displayLabelFromCode($tier, $package->getRawOriginal('name_paket') ?? $package->name_paket),
+            'masa_aktif' => (int) $package->masa_aktif,
+            'halaman_buku' => $package->halaman_buku,
+            'kirim_wa' => (bool) $package->kirim_wa,
+            'kirim_hadiah' => (bool) $package->kirim_hadiah,
+            'import_data' => (bool) $package->import_data,
+            'bebas_pilih_tema' => $isTrial ? false : (bool) $package->bebas_pilih_tema,
+        ];
+    }
+
+    public function packageCollectionPayload(iterable $packages): array
+    {
+        return collect($packages)
+            ->sortBy(fn (PaketUndangan $package) => $this->packageRank($package))
+            ->map(fn (PaketUndangan $package) => $this->packagePayload($package))
+            ->values()
+            ->all();
+    }
+
     private function baseCategoryQueryForPackage(PaketUndangan $package)
     {
-        if ($this->usesLegacyThemeSelection($package)) {
-            return CategoryThemas::query()
-                ->whereRaw('1 = 0');
+        if ($this->resolvePackageTier($package) === 'trial') {
+            $trialTheme = $this->trialThemeForPackage($package);
+
+            return $trialTheme
+                ? CategoryThemas::query()->whereKey($trialTheme->category_id)->active()->website()->ordered()
+                : CategoryThemas::query()->whereRaw('1 = 0');
         }
 
         $cumulativeSlugs = $this->cumulativeCategorySlugsForPackage($package);
@@ -338,6 +460,40 @@ class PackageThemeAccessService
         return DB::table('paket_undangan_category_thema')
             ->where('paket_undangan_id', (int) $package->id)
             ->exists();
+    }
+
+    private function configuredCategoryIdsForPackage(PaketUndangan $package): array
+    {
+        return DB::table('paket_undangan_category_thema')
+            ->where('paket_undangan_id', (int) $package->id)
+            ->pluck('category_thema_id')
+            ->map(fn ($id) => (int) $id)
+            ->values()
+            ->all();
+    }
+
+    private function packageIsActive(PaketUndangan $package): bool
+    {
+        return Schema::hasColumn('paket_undangans', 'is_active')
+            ? (bool) $package->getAttribute('is_active')
+            : true;
+    }
+
+    private function themeSummaryPayload(JenisThemas $theme): array
+    {
+        if (! $theme->relationLoaded('category')) {
+            $theme->load('category');
+        }
+
+        return [
+            'id' => $theme->id,
+            'name' => $theme->name,
+            'slug' => $theme->slug,
+            'category_id' => $theme->category_id,
+            'category_slug' => $theme->category?->slug,
+            'category_name' => $theme->category?->name,
+            'is_active' => (bool) $theme->is_active,
+        ];
     }
 
     private function packageHasThemeCategoryPivot(int $packageId, int $categoryId): bool
@@ -451,8 +607,4 @@ class PackageThemeAccessService
         return null;
     }
 
-    private function usesLegacyThemeSelection(PaketUndangan $package): bool
-    {
-        return ($package->code ?: $package->package_tier) === 'trial';
-    }
 }

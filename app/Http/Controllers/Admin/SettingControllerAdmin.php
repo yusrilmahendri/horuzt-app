@@ -10,6 +10,7 @@ use App\Models\PaketUndangan;
 use App\Models\Setting;
 use App\Models\TransactionTagihan;
 use App\Models\TripayTransaction;
+use App\Services\PackageThemeAccessService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -17,7 +18,7 @@ use Illuminate\Validation\Rule;
 
 class SettingControllerAdmin extends Controller
 {
-    public function __construct()
+    public function __construct(private PackageThemeAccessService $packageThemeAccess)
     {
         $this->middleware('auth:sanctum')->except(['indexPaket']);
     }
@@ -142,9 +143,10 @@ class SettingControllerAdmin extends Controller
         $pakets = PaketUndangan::with(['accessibleCategories' => function ($query) {
             $query->website()->ordered();
         }])->get();
+
         return response()->json([
             'message' => 'Data paket undangan yang tersedia saat ini.!',
-            'data'    => $pakets,
+            'data'    => $this->packageThemeAccess->packageCollectionPayload($pakets),
         ], 200);
     }
 
@@ -162,7 +164,8 @@ class SettingControllerAdmin extends Controller
         }
 
 
-        $request->validate([
+        $validated = $request->validate([
+            'code'             => ['sometimes', 'string', Rule::in(['trial', 'ruby', 'sapphire', 'diamond'])],
             'name_paket'       => 'required|string',
             'price'            => 'required|numeric',
             'masa_aktif'       => 'required|integer',
@@ -181,29 +184,72 @@ class SettingControllerAdmin extends Controller
             ],
         ]);
 
-        DB::transaction(function () use ($request, $paket) {
+        if (array_key_exists('code', $validated) && $validated['code'] !== $paket->code) {
+            return response()->json([
+                'message' => 'Kode paket tidak boleh diubah atau tertukar.',
+                'errors' => [
+                    'code' => ['Kode paket stabil dan harus tetap '.$paket->code.'.'],
+                ],
+            ], 422);
+        }
+
+        if ($paket->code === 'trial') {
+            $categoryIds = $validated['category_ids'] ?? [];
+
+            if (count($categoryIds) !== 1) {
+                return response()->json([
+                    'message' => 'Konfigurasi Trial tidak valid.',
+                    'errors' => [
+                        'category_ids' => ['Paket Trial wajib memiliki tepat satu kategori tema Ruby.'],
+                    ],
+                ], 422);
+            }
+
+            $trialCategory = \App\Models\CategoryThemas::query()
+                ->whereKey($categoryIds[0])
+                ->whereIn('slug', $this->packageThemeAccess->rubyCategorySlugs())
+                ->where('type', 'website')
+                ->where('is_active', true)
+                ->whereHas('jenisThemas', fn ($query) => $query->where('is_active', true))
+                ->first();
+
+            if (! $trialCategory) {
+                return response()->json([
+                    'message' => 'Konfigurasi Trial tidak valid.',
+                    'errors' => [
+                        'category_ids' => ['Tema Trial harus berasal dari kategori Ruby yang aktif dan memiliki tema aktif.'],
+                    ],
+                ], 422);
+            }
+
+            $validated['bebas_pilih_tema'] = false;
+        }
+
+        DB::transaction(function () use ($validated, $paket) {
             $paket->update([
-                'name_paket'       => \App\Models\PaketUndangan::displayLabelFromCode($paket->code, $request->name_paket),
+                'name_paket'       => $validated['name_paket'],
                 'jenis_paket'      => \App\Models\PaketUndangan::jenisPaketFromCode($paket->code, $paket->jenis_paket),
-                'price'            => $request->price,
-                'masa_aktif'       => $request->masa_aktif,
-                'halaman_buku'     => $request->halaman_buku,
-                'kirim_wa'         => $request->kirim_wa,
-                'bebas_pilih_tema' => $request->bebas_pilih_tema,
-                'kirim_hadiah'     => $request->kirim_hadiah,
-                'import_data'      => $request->import_data,
+                'price'            => $validated['price'],
+                'masa_aktif'       => $validated['masa_aktif'],
+                'halaman_buku'     => $validated['halaman_buku'] ?? $paket->halaman_buku,
+                'kirim_wa'         => $validated['kirim_wa'] ?? $paket->kirim_wa,
+                'bebas_pilih_tema' => $validated['bebas_pilih_tema'] ?? $paket->bebas_pilih_tema,
+                'kirim_hadiah'     => $validated['kirim_hadiah'] ?? $paket->kirim_hadiah,
+                'import_data'      => $validated['import_data'] ?? $paket->import_data,
             ]);
 
-            if ($request->has('category_ids')) {
-                $paket->accessibleCategories()->sync($request->input('category_ids'));
+            if (array_key_exists('category_ids', $validated)) {
+                $paket->accessibleCategories()->sync($validated['category_ids']);
             }
         });
 
+        $freshPaket = $paket->fresh()->load(['accessibleCategories' => function ($query) {
+            $query->website()->ordered();
+        }]);
+
         return response()->json([
             'message' => 'Paket berhasil diperbarui',
-            'data'    => $paket->fresh()->load(['accessibleCategories' => function ($query) {
-                $query->website()->ordered();
-            }]),
+            'data'    => $this->packageThemeAccess->packagePayload($freshPaket),
         ], 200);
     }
 

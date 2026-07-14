@@ -49,6 +49,10 @@ class EnsureInvitationFeatureAccess
             'data' => [
                 'account_status' => $summary['account_status'],
                 'payment_status' => $summary['payment_status'],
+                'has_invoice' => $summary['has_invoice'],
+                'has_pending_invoice' => $summary['has_pending_invoice'],
+                'invoice_id' => $summary['invoice_id'],
+                'invoice_code' => $summary['invoice_code'],
                 'active_until' => $summary['active_until'],
                 'remaining_days' => $summary['remaining_days'],
                 'is_payment_confirmed' => $summary['is_payment_confirmed'],
