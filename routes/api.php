@@ -173,6 +173,13 @@ Route::controller(AttendanceController::class)->group(function () {
     Route::get('/v1/attendance/user/{user_id}', 'getByUser');
 });
 
+// Public QR attendance scanner endpoints.
+Route::controller(AttendanceScanController::class)->prefix('v1/attendance')->group(function () {
+    Route::post('/scan', 'scanFromUrl');
+    Route::get('/list', 'publicList');
+    Route::get('/export', 'publicExport');
+});
+
 Route::controller(InvitationController::class)->group(function () {
     Route::get('/v1/master-tagihan', 'masterTagihan');
     Route::get('/v1/active-payment-method', 'getActivePaymentMethodForUser');

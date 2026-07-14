@@ -16,6 +16,7 @@ class WeddingGuest extends Model
         'user_id',
         'guest_name',
         'guest_token',
+        'guest_code',
         'domain',
         'first_visit_at',
         'ip_address',

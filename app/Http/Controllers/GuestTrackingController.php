@@ -10,6 +10,8 @@ use App\Models\BukuTamu;
 use App\Models\AttendanceScan;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
 
 class GuestTrackingController extends Controller
@@ -52,7 +54,7 @@ class GuestTrackingController extends Controller
 
             if (!$guest) {
                 // Create new guest record
-                $guest = WeddingGuest::create([
+                $guestData = [
                     'user_id' => $userId,
                     'guest_name' => $guestName,
                     'guest_token' => WeddingGuest::generateUniqueToken($guestName, $request->domain),
@@ -60,7 +62,13 @@ class GuestTrackingController extends Controller
                     'first_visit_at' => now(),
                     'ip_address' => $request->ip(),
                     'user_agent' => $request->userAgent(),
-                ]);
+                ];
+
+                if (Schema::hasColumn('wedding_guests', 'guest_code')) {
+                    $guestData['guest_code'] = $this->uniqueGuestCode($userId, $guestName);
+                }
+
+                $guest = WeddingGuest::create($guestData);
             } else {
                 // Update visit info if already exists
                 $guest->update([
@@ -247,5 +255,23 @@ class GuestTrackingController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
             ], 500);
         }
+    }
+
+    private function uniqueGuestCode(int $userId, string $guestName): string
+    {
+        $baseCode = Str::slug($guestName, '-');
+        $baseCode = $baseCode !== '' ? $baseCode : 'tamu';
+        $guestCode = $baseCode;
+        $suffix = 2;
+
+        while (WeddingGuest::query()
+            ->where('user_id', $userId)
+            ->where('guest_code', $guestCode)
+            ->exists()
+        ) {
+            $guestCode = $baseCode.'-'.$suffix++;
+        }
+
+        return $guestCode;
     }
 }
