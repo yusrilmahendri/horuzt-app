@@ -28,7 +28,7 @@ return [
     |
     */
 
-    'frontend_url' => env('FRONTEND_URL', 'https://sena-digital.com'),
+    'frontend_url' => env('FRONTEND_URL', 'https://www.sena-digital.com'),
 
     /*
     |--------------------------------------------------------------------------

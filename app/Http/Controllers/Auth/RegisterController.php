@@ -16,8 +16,14 @@ class RegisterController extends Controller
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'phone' => 'nullable|string|max:30',
-            'verification_channel' => 'nullable|in:email,whatsapp',
+            'verification_channel' => 'nullable|string',
         ]);
+        if (($validatedData['verification_channel'] ?? 'email') === 'whatsapp') {
+            return response()->json(['status' => 422, 'code' => 'WHATSAPP_UNAVAILABLE', 'message' => 'Verifikasi WhatsApp sementara tidak tersedia.', 'data' => []], 422);
+        }
+        if (($validatedData['verification_channel'] ?? 'email') !== 'email') {
+            return response()->json(['status' => 422, 'code' => 'VERIFICATION_CHANNEL_INVALID', 'message' => 'Channel verifikasi tidak valid.', 'data' => []], 422);
+        }
 
         try {
             $user = User::create([

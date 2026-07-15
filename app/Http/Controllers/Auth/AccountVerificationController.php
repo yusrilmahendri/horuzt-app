@@ -15,11 +15,15 @@ class AccountVerificationController extends Controller
 
     public function send(Request $request): JsonResponse
     {
-        $data = $request->validate(['channel' => ['required', 'in:email,whatsapp']]);
-        $user = $request->user();
-        if ($data['channel'] === 'whatsapp' && ! $user->phone) {
-            return $this->error(422, 'Nomor WhatsApp belum tersedia.', 'WHATSAPP_REQUIRED');
+        $data = $request->validate(['channel' => ['required', 'string']]);
+        if ($data['channel'] === 'whatsapp') {
+            return $this->error(422, 'Verifikasi WhatsApp sementara tidak tersedia.', 'WHATSAPP_UNAVAILABLE');
         }
+        if ($data['channel'] !== 'email') {
+            return $this->error(422, 'Channel verifikasi tidak valid.', 'VERIFICATION_CHANNEL_INVALID');
+        }
+
+        $user = $request->user();
         $user->forceFill(['verification_channel' => $data['channel']])->save();
         try {
             $this->codes->issue($user, $data['channel'], 'account_verification');
@@ -41,7 +45,14 @@ class AccountVerificationController extends Controller
 
     public function verify(Request $request): JsonResponse
     {
-        $data = $request->validate(['channel' => ['required', 'in:email,whatsapp'], 'code' => ['required', 'digits:6']]);
+        $data = $request->validate(['channel' => ['required', 'string'], 'code' => ['required', 'digits:6']]);
+        if ($data['channel'] === 'whatsapp') {
+            return $this->error(422, 'Verifikasi WhatsApp sementara tidak tersedia.', 'WHATSAPP_UNAVAILABLE');
+        }
+        if ($data['channel'] !== 'email') {
+            return $this->error(422, 'Channel verifikasi tidak valid.', 'VERIFICATION_CHANNEL_INVALID');
+        }
+
         $result = $this->codes->verify($request->user(), $data['channel'], 'account_verification', $data['code']);
         if ($result !== 'valid') {
             return $this->verificationError($result);
@@ -57,13 +68,13 @@ class AccountVerificationController extends Controller
     public function status(Request $request): JsonResponse
     {
         $user = $request->user();
-        $channel = $user->verification_channel ?: 'email';
+        $channel = 'email';
         $seconds = $this->codes->resendAvailableIn($user, $channel, 'account_verification');
 
         return response()->json(['status' => 200, 'message' => 'Status verifikasi berhasil diambil.', 'data' => [
-            'is_verified' => $user->isAccountVerified(), 'verification_channel' => $channel,
+            'is_verified' => $user->isEmailVerified(), 'verification_channel' => $channel,
             'email_verified' => $user->isEmailVerified(), 'whatsapp_verified' => $user->isWhatsappVerified(),
-            'masked_destination' => $channel === 'email' ? $this->maskEmail($user->email) : $this->maskPhone((string) $user->phone),
+            'masked_destination' => $this->maskEmail($user->email),
             'can_resend' => $seconds === 0, 'resend_available_in' => $seconds,
         ]]);
     }
@@ -89,8 +100,4 @@ class AccountVerificationController extends Controller
         return substr($name, 0, 2).str_repeat('*', max(3, strlen($name) - 2)).'@'.$domain;
     }
 
-    private function maskPhone(string $phone): string
-    {
-        return strlen($phone) < 5 ? '***' : substr($phone, 0, 2).str_repeat('*', max(4, strlen($phone) - 5)).substr($phone, -3);
-    }
 }

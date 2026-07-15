@@ -8,6 +8,7 @@ use App\Models\User;
 use App\Notifications\VerificationCodeNotification;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use RuntimeException;
 
 class VerificationCodeService
@@ -42,8 +43,19 @@ class VerificationCodeService
             throw new RuntimeException('DELIVERY_FAILED', 0, $e);
         }
         $token->update(['sent_at' => now()]);
+        $token = $token->fresh();
 
-        return $token->fresh();
+        if ($purpose === 'account_verification' && $channel === 'email') {
+            Log::debug('[VERIFICATION_SEND]', [
+                'user_id' => $user->id,
+                'email' => $user->email,
+                'token_id' => $token->id,
+                'created_at' => optional($token->created_at)->toDateTimeString(),
+                'expires_at' => optional($token->expires_at)->toDateTimeString(),
+            ]);
+        }
+
+        return $token;
     }
 
     public function verify(User $user, string $channel, string $purpose, string $plain): string

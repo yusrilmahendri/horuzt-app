@@ -3,9 +3,11 @@
 namespace Tests\Feature;
 
 use App\Models\User;
+use App\Notifications\CustomResetPasswordNotification;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Schema;
 use Spatie\Permission\PermissionRegistrar;
@@ -46,6 +48,40 @@ class PasswordResetApiTest extends TestCase
 
         $this->assertTrue(Hash::check('new-password', $user->fresh()->password));
         $this->assertDatabaseMissing('password_reset_tokens', ['email' => $user->email]);
+    }
+
+    public function test_forgot_password_mengirim_satu_email_dengan_token_hash_kompatibel(): void
+    {
+        Notification::fake();
+        config(['verification.frontend_url' => 'https://www.sena-digital.com']);
+        $user = $this->user('forgot-reset@example.test', 'old-password');
+
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => $user->email,
+            'channel' => 'email',
+        ])
+            ->assertOk()
+            ->assertJsonPath('message', 'Link reset kata sandi telah dikirim ke email Anda.');
+
+        $record = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+        $this->assertNotNull($record);
+        Notification::assertSentTo($user, CustomResetPasswordNotification::class, function ($notification) use ($record, $user) {
+            $mail = $notification->toMail($user);
+
+            return Hash::check($notification->token, $record->token)
+                && str_contains($mail->viewData['resetUrl'], 'https://www.sena-digital.com/reset-password?token=')
+                && str_contains($mail->viewData['resetUrl'], 'email='.urlencode($user->email));
+        });
+    }
+
+    public function test_forgot_password_whatsapp_ditolak_sementara(): void
+    {
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'identifier' => '08123456789',
+            'channel' => 'whatsapp',
+        ])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Verifikasi WhatsApp sementara tidak tersedia.');
     }
 
     public function test_token_salah_ditolak(): void

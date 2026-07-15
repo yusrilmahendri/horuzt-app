@@ -176,15 +176,21 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
             ->assertJsonPath('message', 'Preview tema berhasil diperbarui.')
             ->assertJsonPath('data.slug', 'lavender-bloom')
             ->assertJsonPath('data.nama_kategori', 'Lavender Bloom')
-            ->assertJsonPath('data.preview_image', fn ($url) => is_string($url) && str_contains($url, '/storage/website-categories/'))
-            ->assertJsonPath('data.image', fn ($url) => is_string($url) && str_contains($url, '/storage/website-categories/'));
+            ->assertJsonPath('data.preview_image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
+            ->assertJsonPath('data.thumbnail_image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
+            ->assertJsonPath('data.preview', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
+            ->assertJsonPath('data.image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'));
 
         $theme->refresh();
 
         $this->assertSame('Lavender Bloom', $theme->name);
         $this->assertSame($categoryId, $theme->category_id);
         $this->assertNotNull($theme->getRawOriginal('preview_image'));
+        $this->assertStringStartsWith('theme-images/previews/lavender-bloom-', $theme->getRawOriginal('preview_image'));
         Storage::disk('public')->assertExists($theme->getRawOriginal('preview_image'));
+        $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('image'));
+        $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('thumbnail_image'));
+        $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('preview'));
         $this->assertSame($themeCount, JenisThemas::count());
         $this->assertSame($categoryCount, CategoryThemas::count());
     }

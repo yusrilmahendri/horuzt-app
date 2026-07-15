@@ -236,18 +236,7 @@ class WebsiteInvitationCategoryController extends Controller
             $imageFile = $request->file('preview_image') ?: $request->file('image');
             $imagePath = null;
             if ($imageFile) {
-                $imagePath = $imageFile->store('website-categories', 'public');
-
-                // Delete old image
-                foreach (array_unique(array_filter([
-                    $theme->getRawOriginal('preview_image'),
-                    $theme->getRawOriginal('image'),
-                    $theme->getRawOriginal('preview'),
-                ])) as $oldImagePath) {
-                    if ($oldImagePath && Storage::disk('public')->exists($oldImagePath)) {
-                        Storage::disk('public')->delete($oldImagePath);
-                    }
-                }
+                $imagePath = $this->storeThemePreviewImage($imageFile, $theme->slug ?: Str::slug($theme->name));
             }
 
             $themePayload = [];
@@ -436,6 +425,12 @@ class WebsiteInvitationCategoryController extends Controller
                 ?: $theme?->getRawOriginal('image')
                 ?: $theme?->getRawOriginal('preview')
         );
+        $thumbnailImage = $this->assetUrl(
+            $theme?->getRawOriginal('thumbnail_image')
+                ?: $theme?->getRawOriginal('preview_image')
+                ?: $theme?->getRawOriginal('image')
+                ?: $theme?->getRawOriginal('preview')
+        );
         $isConnected = $theme !== null
             && $category !== null
             && $theme->slug === $slug
@@ -450,6 +445,8 @@ class WebsiteInvitationCategoryController extends Controller
             'urutan' => (int) ($theme?->sort_order ?? $definition['sort_order'] ?? 0),
             'is_active' => (bool) ($theme?->is_active ?? false),
             'preview_image' => $previewImage,
+            'thumbnail_image' => $thumbnailImage,
+            'preview' => $previewImage,
             'image' => $previewImage,
             'master_theme_id' => $theme?->id,
             'master_theme_slug' => $theme?->slug,
@@ -539,6 +536,18 @@ class WebsiteInvitationCategoryController extends Controller
         }
 
         return asset('storage/' . ltrim(preg_replace('#^/?storage/#', '', $path), '/'));
+    }
+
+    private function storeThemePreviewImage(\Illuminate\Http\UploadedFile $file, ?string $slug): string
+    {
+        $safeSlug = Str::slug($slug ?: 'theme-preview') ?: 'theme-preview';
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg');
+        $fileName = $safeSlug . '-' . now()->format('YmdHis') . '-' . Str::lower(Str::random(6)) . '.' . $extension;
+
+        $path = $file->storeAs('theme-images/previews', $fileName, 'public');
+        Storage::disk('public')->setVisibility($path, 'public');
+
+        return $path;
     }
 
     /**

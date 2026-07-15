@@ -56,7 +56,7 @@ class AppServiceProvider extends ServiceProvider
 
         // Point the password reset link in emails to the Angular frontend.
         ResetPassword::createUrlUsing(function ($user, string $token) {
-            return rtrim(config('app.frontend_url'), '/')
+            return rtrim((string) config('verification.frontend_url'), '/')
                 .'/reset-password?token='.$token
                 .'&email='.urlencode($user->getEmailForPasswordReset());
         });

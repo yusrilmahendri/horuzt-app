@@ -47,8 +47,8 @@ class CustomResetPasswordNotification extends Notification
      */
     private function resetUrl($notifiable): string
     {
-        return rtrim(config('app.frontend_url'), '/')
-            . '/reset-password?token=' . $this->token
+        return rtrim((string) config('verification.frontend_url'), '/')
+            . '/reset-password?token=' . urlencode($this->token)
             . '&email=' . urlencode($notifiable->getEmailForPasswordReset());
     }
 }

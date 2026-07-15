@@ -5,6 +5,7 @@ namespace Tests\Feature;
 use App\Contracts\WhatsAppGateway;
 use App\Models\AccountVerificationToken;
 use App\Models\User;
+use App\Notifications\CustomResetPasswordNotification;
 use App\Notifications\VerificationCodeNotification;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Hash;
@@ -35,13 +36,15 @@ class AccountVerificationTest extends TestCase
         $this->assertDatabaseCount('account_verification_tokens', 1);
     }
 
-    public function test_whatsapp_code_uses_gateway(): void
+    public function test_whatsapp_verification_is_temporarily_unavailable(): void
     {
         $gateway = $this->mock(WhatsAppGateway::class);
-        $gateway->shouldReceive('send')->once()->andReturnTrue();
+        $gateway->shouldNotReceive('send');
         $user = User::factory()->unverified()->create(['phone' => '08123456789', 'verification_channel' => 'whatsapp']);
         Sanctum::actingAs($user);
-        $this->postJson('/api/v1/auth/verification/send', ['channel' => 'whatsapp'])->assertOk();
+        $this->postJson('/api/v1/auth/verification/send', ['channel' => 'whatsapp'])
+            ->assertStatus(422)
+            ->assertJsonPath('message', 'Verifikasi WhatsApp sementara tidak tersedia.');
     }
 
     public function test_wrong_expired_and_used_codes_are_rejected(): void
@@ -63,11 +66,15 @@ class AccountVerificationTest extends TestCase
     public function test_forgot_password_response_does_not_disclose_account_existence(): void
     {
         Notification::fake();
+        $user = User::factory()->create(['email' => 'known@example.test']);
         $known = $this->postJson('/api/v1/auth/forgot-password', ['identifier' => 'known@example.test', 'channel' => 'email']);
         $unknown = $this->postJson('/api/v1/auth/forgot-password', ['identifier' => 'unknown@example.test', 'channel' => 'email']);
         $known->assertOk();
         $unknown->assertOk();
         $this->assertSame($known->json('message'), $unknown->json('message'));
+        $this->assertSame('Link reset kata sandi telah dikirim ke email Anda.', $known->json('message'));
+        Notification::assertSentTo($user, CustomResetPasswordNotification::class, 1);
+        $this->assertDatabaseCount('password_reset_tokens', 1);
     }
 
     public function test_password_reset_token_is_single_use_and_revokes_login_tokens(): void
