@@ -343,7 +343,6 @@ class AdminMusicTrackController extends Controller
 
         $track->update([
             'is_active' => $isActive,
-            'is_default' => $isActive ? $track->is_default : false,
         ]);
 
         return response()->json([
@@ -497,6 +496,8 @@ class AdminMusicTrackController extends Controller
             'is_active' => $track->is_active,
             'is_default' => $track->is_default,
             'sort_order' => $track->sort_order,
+            'created_at' => optional($track->created_at)->toISOString(),
+            'updated_at' => optional($track->updated_at)->toISOString(),
         ];
     }
 

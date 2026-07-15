@@ -14,6 +14,8 @@ use Illuminate\Support\Facades\Schema;
 
 class MusicTrackController extends Controller
 {
+    private const ADMIN_CATALOG_ROLES = ['admin', 'Admin', 'super-admin', 'super_admin', 'administrator'];
+
     protected MusicResolverService $resolver;
     protected ExternalMusicCatalogService $externalCatalogService;
 
@@ -29,7 +31,8 @@ class MusicTrackController extends Controller
      */
     public function index(Request $request)
     {
-        $tracks = $this->adminCatalogPayload();
+        $isAdminRequest = $this->isAdminCatalogRequest($request);
+        $tracks = $this->adminCatalogPayload($isAdminRequest);
         $globalCatalog = $this->globalCatalogPayload();
         $catalogSections = [
             'user_uploads' => [],
@@ -344,19 +347,58 @@ class MusicTrackController extends Controller
     /**
      * @return array<int,array<string,mixed>>
      */
-    private function adminCatalogPayload(): array
+    private function adminCatalogPayload(bool $includeInactive = false): array
     {
         if (! Schema::hasTable('music_tracks')) {
             return [];
         }
 
-        return MusicTrack::where('is_active', true)
-            ->orderBy('sort_order', 'asc')
-            ->orderBy('title', 'asc')
+        $query = MusicTrack::query();
+
+        if (! $includeInactive) {
+            $query->where('is_active', true);
+        }
+
+        return $query->orderBy('sort_order', 'asc')
+            ->orderBy('created_at', 'desc')
             ->get()
-            ->map(fn (MusicTrack $track) => $this->resolver->trackPayload($track))
+            ->map(fn (MusicTrack $track) => $this->trackPayload($track))
             ->values()
             ->all();
+    }
+
+    private function isAdminCatalogRequest(Request $request): bool
+    {
+        if (! $request->boolean('admin')) {
+            return false;
+        }
+
+        $user = $request->user() ?: Auth::guard('sanctum')->user();
+
+        return $user
+            && method_exists($user, 'hasAnyRole')
+            && $user->hasAnyRole(self::ADMIN_CATALOG_ROLES);
+    }
+
+    private function trackPayload(MusicTrack $track): array
+    {
+        return [
+            'id' => $track->id,
+            'title' => $track->title,
+            'artist' => $track->artist,
+            'subtitle' => $track->getAttribute('description') ?: $track->artist,
+            'description' => $track->getAttribute('description'),
+            'stream_url' => $track->url,
+            'audio_url' => $track->url,
+            'is_active' => $track->is_active,
+            'is_default' => $track->is_default,
+            'sort_order' => $track->sort_order,
+            'created_at' => optional($track->created_at)->toISOString(),
+            'updated_at' => optional($track->updated_at)->toISOString(),
+            'thumbnail_url' => null,
+            'source' => $track->source,
+            'duration_seconds' => $track->duration_seconds,
+        ];
     }
 
     /**

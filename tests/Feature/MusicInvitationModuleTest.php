@@ -358,6 +358,36 @@ class MusicInvitationModuleTest extends TestCase
             ->assertOk()
             ->assertJsonMissing(['id' => $second->id]);
 
+        $this->getJson('/api/music/tracks?admin=1')
+            ->assertOk()
+            ->assertJsonFragment([
+                'id' => $second->id,
+                'is_active' => false,
+            ])
+            ->assertJsonStructure([
+                'data' => [
+                    '*' => [
+                        'id',
+                        'title',
+                        'artist',
+                        'subtitle',
+                        'description',
+                        'stream_url',
+                        'audio_url',
+                        'is_active',
+                        'is_default',
+                        'sort_order',
+                        'created_at',
+                        'updated_at',
+                    ],
+                ],
+            ]);
+        $this->assertDatabaseHas('music_tracks', [
+            'id' => $second->id,
+            'is_active' => false,
+            'is_default' => false,
+        ]);
+
         $this->patchJson("/api/music/tracks/{$second->id}/status", [
             'is_active' => true,
         ])
@@ -388,7 +418,12 @@ class MusicInvitationModuleTest extends TestCase
     {
         $user = $this->userWithPackage('diamond');
         $track = $this->track('Blocked Admin Action', false);
+        $track->update(['is_active' => false]);
         Sanctum::actingAs($user);
+
+        $this->getJson('/api/music/tracks?admin=1')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $track->id]);
 
         $this->patchJson("/api/music/tracks/{$track->id}/status", [
             'is_active' => false,
