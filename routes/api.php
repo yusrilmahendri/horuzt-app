@@ -380,6 +380,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
     Route::controller(\App\Http\Controllers\Api\Admin\WebsiteInvitationCategoryController::class)->prefix('admin/website-categories')->group(function () {
         Route::get('/', 'index')->name('admin.website-categories.index');
         Route::post('/', 'store')->name('admin.website-categories.store');
+        Route::post('/{id}/preview', 'updatePreview')->name('admin.website-categories.preview');
         Route::get('/{id}', 'show')->name('admin.website-categories.show');
         Route::put('/{id}', 'update')->name('admin.website-categories.update');
         Route::delete('/{id}', 'destroy')->name('admin.website-categories.destroy');

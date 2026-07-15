@@ -326,6 +326,63 @@ class WebsiteInvitationCategoryController extends Controller
         }
     }
 
+    public function updatePreview(Request $request, $id)
+    {
+        try {
+            $request->validate([
+                'preview_image' => ['required', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+            ]);
+
+            $theme = $this->resolveWebsiteTheme($id);
+            $file = $request->file('preview_image');
+            $upload = $this->storeThemePreviewImage($file, $theme->slug ?: $theme->name);
+
+            $theme->forceFill([
+                'image' => $upload['url'],
+                'preview' => $upload['url'],
+                'preview_image' => $upload['url'],
+                'thumbnail_image' => $upload['url'],
+            ])->save();
+
+            if ($theme->category && $theme->category->image !== $upload['url']) {
+                $theme->category->update(['image' => $upload['url']]);
+            }
+
+            Log::info('[THEME_PREVIEW_UPLOAD]', [
+                'id' => $theme->id,
+                'slug' => $theme->slug,
+                'size' => $file->getSize(),
+                'path' => $upload['path'],
+                'url' => $upload['url'],
+            ]);
+
+            $theme->refresh();
+            $theme->load('category');
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Preview tema berhasil diperbarui.',
+                'data' => $this->previewPayload($theme),
+            ]);
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Validation failed',
+                'errors' => $e->errors(),
+            ], 422);
+        } catch (\Throwable $e) {
+            Log::error('[THEME_PREVIEW_UPLOAD_FAILED]', [
+                'id' => $id,
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Gagal memperbarui preview tema.',
+            ], 500);
+        }
+    }
+
     /**
      * Remove the specified website invitation category and its synchronized theme
      */
@@ -550,6 +607,22 @@ class WebsiteInvitationCategoryController extends Controller
         }
 
         return asset('storage/' . ltrim(preg_replace('#^/?storage/#', '', $path), '/'));
+    }
+
+    private function previewPayload(JenisThemas $theme): array
+    {
+        return [
+            'id' => $theme->id,
+            'name' => $theme->name,
+            'nama_kategori' => $theme->name,
+            'slug' => $theme->slug,
+            'theme_slug' => $theme->slug,
+            'image' => $theme->getRawOriginal('image'),
+            'preview' => $theme->getRawOriginal('preview'),
+            'preview_image' => $theme->getRawOriginal('preview_image'),
+            'thumbnail_image' => $theme->getRawOriginal('thumbnail_image'),
+            'updated_at' => $theme->updated_at,
+        ];
     }
 
     /**
