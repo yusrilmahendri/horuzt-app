@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Invitation;
+use App\Models\PaketUndangan;
 use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
@@ -29,6 +31,69 @@ class AdminUserManagementTest extends TestCase
             ->assertJsonPath('pagination.total', 1)
             ->assertJsonPath('data.0.status_akun', 'expiring_soon')
             ->assertJsonPath('data.0.domain', 'soon-domain');
+    }
+
+    public function test_admin_can_manually_upgrade_user_package_without_creating_new_invoice(): void
+    {
+        $admin = $this->createAdminUser();
+        Sanctum::actingAs($admin);
+
+        $ruby = $this->createPackageWithCode('ruby');
+        $diamond = $this->createPackageWithCode('diamond');
+        $user = User::create([
+            'name' => 'Manual Upgrade User',
+            'email' => 'manual-upgrade@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        $invitation = Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $ruby->id,
+            'kode_pemesanan' => 'INV-MANUAL-001',
+            'status' => 'step3',
+            'payment_status' => 'pending',
+            'domain_expires_at' => null,
+            'payment_confirmed_at' => null,
+            'package_features_snapshot' => [
+                'code' => 'ruby',
+                'name_paket' => 'Paket Ruby',
+            ],
+        ]);
+        $invoiceCount = Invitation::count();
+
+        $this->postJson("/api/v1/admin/users/{$user->id}/upgrade-package", [
+            'package_code' => 'diamond',
+            'expired_at' => '2026-07-30',
+            'note' => 'Upgrade manual oleh admin',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Paket pengguna berhasil diperbarui.')
+            ->assertJsonPath('data.user_id', $user->id)
+            ->assertJsonPath('data.package_code', 'diamond')
+            ->assertJsonPath('data.package_name', 'Paket Diamond')
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.payment_status', 'confirmed')
+            ->assertJsonPath('data.active_until', '2026-07-30')
+            ->assertJsonPath('data.active_until_formatted', '30/07/2026');
+
+        $invitation->refresh();
+
+        $this->assertSame($invoiceCount, Invitation::count());
+        $this->assertSame($diamond->id, $invitation->paket_undangan_id);
+        $this->assertSame('paid', $invitation->payment_status);
+        $this->assertSame('2026-07-30', $invitation->domain_expires_at->toDateString());
+        $this->assertNotNull($invitation->payment_confirmed_at);
+        $this->assertSame('diamond', $invitation->package_features_snapshot['code']);
+        $this->assertSame('Paket Diamond', $invitation->package_features_snapshot['name_paket']);
+        $this->assertSame('Upgrade manual oleh admin', $invitation->package_features_snapshot['manual_upgrade_note']);
+
+        $this->assertDatabaseHas('payment_logs', [
+            'user_id' => $user->id,
+            'invitation_id' => $invitation->id,
+            'payment_type' => 'manual_admin_upgrade',
+            'notes' => 'Upgrade manual oleh admin',
+        ]);
     }
 
     public function test_admin_can_soft_delete_user_data_without_deleting_account(): void
@@ -400,6 +465,24 @@ class AdminUserManagementTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function createPackageWithCode(string $code): PaketUndangan
+    {
+        return PaketUndangan::query()->updateOrCreate(
+            ['code' => $code],
+            [
+                'jenis_paket' => PaketUndangan::jenisPaketFromCode($code),
+                'name_paket' => PaketUndangan::displayLabelFromCode($code),
+                'price' => $code === 'diamond' ? 300000 : 100000,
+                'masa_aktif' => 30,
+                'halaman_buku' => 10,
+                'kirim_wa' => true,
+                'bebas_pilih_tema' => $code !== 'trial',
+                'kirim_hadiah' => $code === 'diamond',
+                'import_data' => true,
+            ]
+        );
     }
 
     private function createUserWithInvitationStatus(string $email, \Illuminate\Support\Carbon $expiryAt, string $domain): User

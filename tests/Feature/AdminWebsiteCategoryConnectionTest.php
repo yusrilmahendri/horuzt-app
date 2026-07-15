@@ -162,6 +162,9 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
         Storage::fake('public');
         Sanctum::actingAs($this->adminUser());
         $theme = JenisThemas::where('slug', 'lavender-bloom')->firstOrFail();
+        $categoryId = $theme->category_id;
+        $themeCount = JenisThemas::count();
+        $categoryCount = CategoryThemas::count();
 
         $this->put("/api/admin/website-categories/{$theme->id}", [
             'preview_image' => UploadedFile::fake()->image('preview.jpg', 300, 200),
@@ -169,14 +172,21 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
             'Accept' => 'application/json',
         ])
             ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Preview tema berhasil diperbarui.')
             ->assertJsonPath('data.slug', 'lavender-bloom')
-            ->assertJsonPath('data.nama_kategori', 'Lavender Bloom');
+            ->assertJsonPath('data.nama_kategori', 'Lavender Bloom')
+            ->assertJsonPath('data.preview_image', fn ($url) => is_string($url) && str_contains($url, '/storage/website-categories/'))
+            ->assertJsonPath('data.image', fn ($url) => is_string($url) && str_contains($url, '/storage/website-categories/'));
 
         $theme->refresh();
 
         $this->assertSame('Lavender Bloom', $theme->name);
+        $this->assertSame($categoryId, $theme->category_id);
         $this->assertNotNull($theme->getRawOriginal('preview_image'));
         Storage::disk('public')->assertExists($theme->getRawOriginal('preview_image'));
+        $this->assertSame($themeCount, JenisThemas::count());
+        $this->assertSame($categoryCount, CategoryThemas::count());
     }
 
     public function test_admin_rejects_empty_nama_kategori_when_field_is_sent(): void

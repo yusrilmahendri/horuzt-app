@@ -12,6 +12,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
 
 class WebsiteInvitationCategoryController extends Controller
 {
@@ -207,65 +208,82 @@ class WebsiteInvitationCategoryController extends Controller
     {
         try {
             $request->validate([
-                'nama_kategori' => 'sometimes|required|string|max:255',
-                'slug' => 'sometimes|nullable|string|max:255|unique:jenis_themas,slug,' . $id,
-                'image' => 'sometimes|nullable|file|image|mimes:jpeg,png,jpg,gif|max:2048',
-                'preview_image' => 'sometimes|nullable|file|image|mimes:jpeg,png,jpg,gif|max:4096',
                 'master_theme_id' => 'sometimes|nullable|integer|exists:jenis_themas,id',
-                'urutan' => 'sometimes|integer|min:0',
-                'is_active' => 'sometimes|boolean',
-                'status' => 'sometimes|nullable'
             ]);
-
-            DB::beginTransaction();
 
             $theme = $request->filled('master_theme_id')
                 ? JenisThemas::with('category')->findOrFail((int) $request->master_theme_id)
                 : $this->resolveWebsiteTheme($id);
+
+            $request->validate([
+                'nama_kategori' => ['sometimes', 'required', 'string'],
+                'slug' => ['sometimes', 'nullable', 'string', 'max:255', Rule::unique('jenis_themas', 'slug')->ignore($theme->id)],
+                'image' => ['sometimes', 'nullable', 'file', 'image'],
+                'preview_image' => ['sometimes', 'nullable', 'file', 'image'],
+                'urutan' => ['sometimes', 'integer'],
+                'is_active' => ['sometimes'],
+                'status' => ['sometimes'],
+            ]);
+
+            DB::beginTransaction();
 
             $category = $theme->category;
             if (! $category) {
                 throw (new \Illuminate\Database\Eloquent\ModelNotFoundException())->setModel(CategoryThemas::class);
             }
 
-            $name = $request->input('nama_kategori', $theme->name);
-            $slug = $request->input('slug', $theme->slug ?: Str::slug($name));
-
             // Handle image upload
-            $imagePath = $theme->getRawOriginal('image') ?: $category->image;
             $imageFile = $request->file('preview_image') ?: $request->file('image');
+            $imagePath = null;
             if ($imageFile) {
-                // Delete old image
-                if ($imagePath && Storage::disk('public')->exists($imagePath)) {
-                    Storage::disk('public')->delete($imagePath);
-                }
                 $imagePath = $imageFile->store('website-categories', 'public');
+
+                // Delete old image
+                foreach (array_unique(array_filter([
+                    $theme->getRawOriginal('preview_image'),
+                    $theme->getRawOriginal('image'),
+                    $theme->getRawOriginal('preview'),
+                ])) as $oldImagePath) {
+                    if ($oldImagePath && Storage::disk('public')->exists($oldImagePath)) {
+                        Storage::disk('public')->delete($oldImagePath);
+                    }
+                }
             }
 
-            $isActive = $this->resolveBooleanStatus($request, $theme->is_active);
-            $sortOrder = $request->has('urutan') ? (int) $request->urutan : $theme->sort_order;
+            $themePayload = [];
 
-            $themePayload = [
-                'name' => $name,
-                'slug' => $slug,
-                'image' => $imagePath,
-                'preview' => $imagePath ?: $theme->getRawOriginal('preview'),
-                'is_active' => $isActive,
-                'sort_order' => $sortOrder,
-            ];
+            if ($request->has('nama_kategori')) {
+                $themePayload['name'] = $request->input('nama_kategori');
+            }
+
+            if ($request->has('slug')) {
+                $themePayload['slug'] = $request->input('slug') ?: Str::slug($themePayload['name'] ?? $theme->name);
+            }
 
             if ($imagePath) {
+                $themePayload['image'] = $imagePath;
+                $themePayload['preview'] = $imagePath;
                 $themePayload['preview_image'] = $imagePath;
                 $themePayload['thumbnail_image'] = $imagePath;
             }
 
-            $theme->update($themePayload);
+            if ($request->has('is_active') || $request->has('status')) {
+                $themePayload['is_active'] = $this->resolveBooleanStatus($request, $theme->is_active);
+            }
+
+            if ($request->has('urutan')) {
+                $themePayload['sort_order'] = (int) $request->urutan;
+            }
+
+            if ($themePayload !== []) {
+                $theme->update($themePayload);
+            }
 
             DB::commit();
 
             return response()->json([
                 'status' => true,
-                'message' => 'Website category and theme updated successfully',
+                'message' => 'Preview tema berhasil diperbarui.',
                 'data' => $this->websiteThemePayload(
                     $theme->slug,
                     self::PRIMARY_WEBSITE_THEMES[$theme->slug] ?? [

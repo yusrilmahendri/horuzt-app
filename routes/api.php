@@ -5,6 +5,7 @@ use App\Http\Controllers\Admin\AdminBankAccountController;
 use App\Http\Controllers\Admin\AdminBukuTamuController;
 use App\Http\Controllers\Admin\AdminContactSettingController;
 use App\Http\Controllers\Admin\AdminInvoiceController;
+use App\Http\Controllers\Admin\AdminMusicTrackController;
 use App\Http\Controllers\Admin\AdminUserManagementController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
@@ -315,6 +316,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
 
     Route::controller(PackageUpgradeController::class)->group(function () {
         Route::post('/v1/admin/change-package', 'changePackage');
+        Route::post('/v1/admin/users/{user}/upgrade-package', 'upgradeUserPackage')->where('user', '[0-9]+');
     });
 
     Route::controller(ThemaController::class)->group(function () {
@@ -410,8 +412,8 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 });
 
 // Legacy admin music catalog upload endpoint used by the Angular dashboard.
-Route::post('/music/upload', [\App\Http\Controllers\Admin\AdminMusicTrackController::class, 'store'])
-    ->middleware(['auth:sanctum', 'large.files', 'bypass.post.size']);
+Route::post('/music/upload', [AdminMusicTrackController::class, 'store'])
+    ->middleware(['auth:sanctum', AdminMusicTrackController::ADMIN_CATALOG_ROLE_MIDDLEWARE, 'large.files', 'bypass.post.size']);
 
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {

@@ -16,7 +16,8 @@ use Spatie\Permission\Models\Role;
 
 class AdminMusicTrackController extends Controller
 {
-    private const ADMIN_CATALOG_ROLES = ['admin', 'super-admin', 'super_admin', 'administrator'];
+    public const ADMIN_CATALOG_ROLES = ['admin', 'Admin', 'super-admin', 'super_admin', 'administrator'];
+    public const ADMIN_CATALOG_ROLE_MIDDLEWARE = 'role:admin|Admin|super-admin|super_admin|administrator';
 
     protected MusicStreamService $musicStreamService;
     protected GlobalMusicCatalogSyncService $globalCatalogSyncService;

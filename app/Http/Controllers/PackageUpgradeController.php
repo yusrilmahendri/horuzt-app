@@ -7,6 +7,7 @@ use App\Models\Invitation;
 use App\Models\JenisThemas;
 use App\Models\Mempelai;
 use App\Models\PaketUndangan;
+use App\Models\PaymentLog;
 use App\Services\AccountStatusService;
 use App\Services\PackageThemeAccessService;
 use Carbon\Carbon;
@@ -99,6 +100,116 @@ class PackageUpgradeController extends Controller
                     'domain_expires_at' => $newExpiryAt->format('Y-m-d H:i:s'),
                     'active_days' => $newPackage->masa_aktif
                 ]
+            ], 200);
+        });
+    }
+
+    /**
+     * Admin manually activates or changes a user's package without creating a new invoice.
+     * POST /v1/admin/users/{user}/upgrade-package
+     */
+    public function upgradeUserPackage(Request $request, User $user): JsonResponse
+    {
+        $validated = $request->validate([
+            'package_code' => ['required', 'string', 'in:trial,ruby,sapphire,diamond'],
+            'expired_at' => ['required', 'date'],
+            'note' => ['nullable', 'string'],
+        ]);
+
+        return DB::transaction(function () use ($request, $user, $validated) {
+            $package = PaketUndangan::query()
+                ->where('code', $validated['package_code'])
+                ->first();
+
+            if (! $package) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Paket tidak ditemukan.',
+                ], 404);
+            }
+
+            $invitation = $this->manualUpgradeInvitationFor($user);
+
+            if (! $invitation) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Invoice pengguna tidak ditemukan.',
+                ], 404);
+            }
+
+            $expiredAt = Carbon::parse($validated['expired_at'])->endOfDay();
+            $previousSnapshot = is_array($invitation->package_features_snapshot)
+                ? $invitation->package_features_snapshot
+                : [];
+
+            $updateData = [
+                'paket_undangan_id' => $package->id,
+                'payment_status' => 'paid',
+                'domain_expires_at' => $expiredAt,
+                'payment_confirmed_at' => now(),
+                'package_features_snapshot' => array_merge($previousSnapshot, [
+                    'code' => $package->code,
+                    'jenis_paket' => PaketUndangan::jenisPaketFromCode($package->code, $package->jenis_paket),
+                    'name_paket' => PaketUndangan::displayLabelFromCode($package->code, $package->name_paket),
+                    'halaman_buku' => $package->halaman_buku,
+                    'kirim_wa' => $package->kirim_wa,
+                    'bebas_pilih_tema' => $package->bebas_pilih_tema,
+                    'kirim_hadiah' => $package->kirim_hadiah,
+                    'import_data' => $package->import_data,
+                    'manual_upgrade' => true,
+                    'manual_upgrade_note' => $validated['note'] ?? null,
+                    'manual_upgraded_at' => now()->toISOString(),
+                    'manual_upgraded_by' => $request->user()?->id,
+                    'previous_package_id' => $invitation->paket_undangan_id,
+                    'previous_package_code' => $invitation->paketUndangan?->code ?? ($previousSnapshot['code'] ?? null),
+                    'previous_payment_status' => $invitation->payment_status,
+                ]),
+            ];
+
+            foreach ([
+                'package_price_snapshot' => $package->price,
+                'package_duration_snapshot' => $package->masa_aktif,
+            ] as $column => $value) {
+                if (Schema::hasColumn('invitations', $column)) {
+                    $updateData[$column] = $value;
+                }
+            }
+
+            if ($this->hasIsTrialColumn()) {
+                $updateData['is_trial'] = false;
+            }
+
+            $invitation->update($updateData);
+
+            if (! $user->isAccountVerified()) {
+                $user->forceFill([
+                    'email_verified_at' => $user->email_verified_at ?? now(),
+                    'verification_channel' => $user->verification_channel ?: 'email',
+                ])->save();
+            }
+
+            Mempelai::where('user_id', $user->id)->update([
+                'status' => 'Sudah Bayar',
+                'kd_status' => 'SB',
+            ]);
+
+            $this->logManualPackageUpgrade($request, $user, $invitation->fresh(), $package, $validated['note'] ?? null);
+
+            $summary = $this->accountStatus->summary($user->fresh());
+
+            return response()->json([
+                'status' => true,
+                'message' => 'Paket pengguna berhasil diperbarui.',
+                'data' => [
+                    'user_id' => $user->id,
+                    'package_code' => $summary['package_code'],
+                    'package_name' => $summary['package_name'],
+                    'account_status' => $summary['account_status'],
+                    'payment_status' => 'confirmed',
+                    'active_until' => $expiredAt->toDateString(),
+                    'active_until_formatted' => $summary['active_until_formatted'],
+                    'profile_status' => $summary,
+                ],
             ], 200);
         });
     }
@@ -313,6 +424,56 @@ class PackageUpgradeController extends Controller
             ->where('package_features_snapshot->invoice_type', 'package_upgrade')
             ->orderByDesc('id')
             ->first();
+    }
+
+    private function manualUpgradeInvitationFor(User $user): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->orderByRaw("
+                CASE
+                    WHEN LOWER(COALESCE(payment_status, status, '')) IN ('pending', 'belum selesai', 'unpaid', 'menunggu pembayaran') THEN 0
+                    WHEN payment_status IN ('paid', 'confirmed') THEN 1
+                    ELSE 2
+                END
+            ")
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function logManualPackageUpgrade(
+        Request $request,
+        User $user,
+        Invitation $invitation,
+        PaketUndangan $package,
+        ?string $note
+    ): void {
+        if (! Schema::hasTable('payment_logs')) {
+            return;
+        }
+
+        PaymentLog::create([
+            'user_id' => $user->id,
+            'invitation_id' => $invitation->id,
+            'order_id' => $invitation->kode_pemesanan,
+            'event_type' => 'webhook_processed',
+            'transaction_status' => 'settlement',
+            'payment_type' => 'manual_admin_upgrade',
+            'gross_amount' => $invitation->package_price_snapshot,
+            'request_payload' => json_encode([
+                'package_code' => $package->code,
+                'expired_at' => $invitation->domain_expires_at?->toDateString(),
+                'note' => $note,
+            ]),
+            'response_payload' => json_encode([
+                'payment_status' => $invitation->payment_status,
+                'payment_confirmed_at' => $invitation->payment_confirmed_at?->toISOString(),
+                'domain_expires_at' => $invitation->domain_expires_at?->toDateString(),
+            ]),
+            'ip_address' => $request->ip(),
+            'user_agent' => $request->userAgent(),
+            'notes' => $note ?: 'Upgrade manual oleh admin',
+        ]);
     }
 
     private function upgradeResponsePayload(

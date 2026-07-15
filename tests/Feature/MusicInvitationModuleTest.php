@@ -290,8 +290,7 @@ class MusicInvitationModuleTest extends TestCase
             'title' => 'Blocked Catalog Song',
             'musik' => UploadedFile::fake()->create('blocked.mp3', 256, 'application/octet-stream'),
         ])
-            ->assertForbidden()
-            ->assertJsonPath('message', 'Anda tidak memiliki akses untuk mengupload katalog musik.');
+            ->assertForbidden();
     }
 
     public function test_admin_catalog_upload_still_rejects_invalid_extension_and_oversized_file(): void

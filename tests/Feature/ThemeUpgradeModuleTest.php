@@ -221,6 +221,49 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.theme.slug', 'velvet-mauve');
     }
 
+    public function test_admin_manual_upgrade_package_updates_existing_pending_invoice(): void
+    {
+        $admin = $this->createAdminUser();
+        $user = $this->createUserWithPackage('ruby', 'pending', null);
+        Sanctum::actingAs($admin);
+
+        $invitation = Invitation::where('user_id', $user->id)->firstOrFail();
+        $invoiceCount = Invitation::where('user_id', $user->id)->count();
+
+        $this->postJson("/api/v1/admin/users/{$user->id}/upgrade-package", [
+            'package_code' => 'diamond',
+            'expired_at' => '2026-07-30',
+            'note' => 'Upgrade manual oleh admin',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Paket pengguna berhasil diperbarui.')
+            ->assertJsonPath('data.user_id', $user->id)
+            ->assertJsonPath('data.package_code', 'diamond')
+            ->assertJsonPath('data.package_name', 'Paket Diamond')
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.payment_status', 'confirmed')
+            ->assertJsonPath('data.active_until', '2026-07-30')
+            ->assertJsonPath('data.active_until_formatted', '30/07/2026');
+
+        $invitation->refresh();
+
+        $this->assertSame($invoiceCount, Invitation::where('user_id', $user->id)->count());
+        $this->assertSame(PaketUndangan::where('code', 'diamond')->value('id'), $invitation->paket_undangan_id);
+        $this->assertSame('paid', $invitation->payment_status);
+        $this->assertSame('2026-07-30', $invitation->domain_expires_at->toDateString());
+        $this->assertNotNull($invitation->payment_confirmed_at);
+        $this->assertSame('diamond', $invitation->package_features_snapshot['code']);
+        $this->assertSame('Paket Diamond', $invitation->package_features_snapshot['name_paket']);
+        $this->assertSame('Upgrade manual oleh admin', $invitation->package_features_snapshot['manual_upgrade_note']);
+        $this->assertDatabaseHas('payment_logs', [
+            'user_id' => $user->id,
+            'invitation_id' => $invitation->id,
+            'payment_type' => 'manual_admin_upgrade',
+            'notes' => 'Upgrade manual oleh admin',
+        ]);
+    }
+
     public function test_user_diamond_can_use_semua_tema_ruby_sapphire_diamond(): void
     {
         $user = $this->createUserWithPackage('diamond');
@@ -381,6 +424,20 @@ class ThemeUpgradeModuleTest extends TestCase
                 'name_paket' => $package->name_paket,
             ],
         ]);
+
+        return $user;
+    }
+
+    private function createAdminUser(): User
+    {
+        Role::firstOrCreate(['name' => 'admin', 'guard_name' => 'web']);
+
+        $user = User::factory()->create([
+            'email' => fake()->unique()->safeEmail(),
+            'email_verified_at' => now(),
+            'verification_channel' => 'email',
+        ]);
+        $user->assignRole('admin');
 
         return $user;
     }
@@ -629,6 +686,27 @@ class ThemeUpgradeModuleTest extends TestCase
             $table->unsignedBigInteger('user_id');
             $table->string('status')->nullable();
             $table->string('kd_status')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('payment_logs', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->unsignedBigInteger('invitation_id')->nullable();
+            $table->string('order_id')->nullable();
+            $table->string('midtrans_transaction_id')->nullable();
+            $table->string('event_type')->default('token_request');
+            $table->string('transaction_status')->nullable();
+            $table->string('payment_type')->nullable();
+            $table->decimal('gross_amount', 15, 2)->nullable();
+            $table->text('request_payload')->nullable();
+            $table->text('response_payload')->nullable();
+            $table->string('signature_key')->nullable();
+            $table->boolean('signature_valid')->nullable();
+            $table->string('ip_address')->nullable();
+            $table->string('user_agent')->nullable();
+            $table->text('error_message')->nullable();
+            $table->text('notes')->nullable();
             $table->timestamps();
         });
     }
