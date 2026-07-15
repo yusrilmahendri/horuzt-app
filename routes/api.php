@@ -538,6 +538,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
         Route::put('/v1/user/update-countdown/{id}', 'updateCountDown');
         Route::put('/v1/user/update-acara', 'updateAcara');
         Route::delete('/v1/user/delete-acara', 'destroy');
+        Route::delete('/v1/user/delete-countdown', 'deleteCountdown');
     });
 
     // Attendance Scanning (QR Code)

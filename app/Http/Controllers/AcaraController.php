@@ -257,7 +257,7 @@ class AcaraController extends Controller
             $acara->delete();
 
             return response()->json([
-                'message' => 'Event "' . $jenisAcara . '" deleted successfully!',
+             'message' => 'Acara "' . $jenisAcara . '" berhasil dihapus.',
             ], 200);
 
         } catch (ValidationException $e) {
@@ -271,6 +271,36 @@ class AcaraController extends Controller
                 'error' => $e->getMessage(),
             ], 500);
         }
+    }
+
+    public function deleteCountdown(Request $request)
+    {
+        $userId = (int) $request->user()->id;
+        $namaAcara = trim((string) $request->query('nama_acara', ''));
+
+        $query = CountdownAcara::where('user_id', $userId);
+
+        if ($namaAcara !== '') {
+            $query->where('name_countdown', $namaAcara);
+        }
+
+        $countdown = $query->first();
+
+        if (! $countdown) {
+            return response()->json([
+                'message' => 'Countdown acara tidak ditemukan.',
+            ], 404);
+        }
+
+        Acara::where('user_id', $userId)
+            ->where('countdown_id', $countdown->id)
+            ->update(['countdown_id' => null]);
+
+        $countdown->delete();
+
+        return response()->json([
+            'message' => 'Countdown acara berhasil dihapus.',
+        ]);
     }
 
     public function updateCountDown(Request $request, $id)
