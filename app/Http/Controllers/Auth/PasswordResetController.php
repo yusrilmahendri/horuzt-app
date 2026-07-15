@@ -23,11 +23,9 @@ class PasswordResetController extends Controller
     public function forgotPassword(Request $request): JsonResponse
     {
         $data = $request->validate([
-            'identifier' => ['nullable', 'string', 'required_without:email'],
-            'email' => ['nullable', 'email', 'required_without:identifier'],
+            'email' => ['required', 'email'],
             'channel' => ['nullable', 'string'],
         ]);
-        $identifier = $data['identifier'] ?? $data['email'];
         $channel = $data['channel'] ?? 'email';
         if ($channel === 'whatsapp') {
             return response()->json(['status' => 422, 'code' => 'WHATSAPP_UNAVAILABLE', 'message' => 'Verifikasi WhatsApp sementara tidak tersedia.', 'data' => []], 422);
@@ -36,16 +34,38 @@ class PasswordResetController extends Controller
             return response()->json(['status' => 422, 'code' => 'RESET_CHANNEL_INVALID', 'message' => 'Channel reset kata sandi tidak valid.', 'data' => []], 422);
         }
 
-        $user = $this->findUser($identifier, $channel);
-        if ($user) {
-            try {
-                $this->sendEmailResetLink($user);
-            } catch (\Throwable $e) {
-                report($e);
-            }
+        $user = User::where('email', $data['email'])->first();
+        if (! $user) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Email tidak terdaftar.',
+                'errors' => [
+                    'email' => ['Email tidak terdaftar.'],
+                ],
+            ], 422);
         }
 
-        return response()->json(['status' => 200, 'message' => 'Link reset kata sandi telah dikirim ke email Anda.', 'data' => []]);
+        $latestReset = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+        if ($latestReset?->created_at && \Illuminate\Support\Carbon::parse($latestReset->created_at)->addSeconds(60)->isFuture()) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Tautan reset baru saja dikirim. Silakan tunggu sebentar.',
+            ], 429);
+        }
+
+        try {
+            $this->sendEmailResetLink($user, $request);
+        } catch (\Throwable $e) {
+            report($e);
+
+            return response()->json([
+                'status' => false,
+                'message' => 'Link reset kata sandi gagal dikirim. Silakan coba lagi.',
+                'errors' => [],
+            ], 500);
+        }
+
+        return response()->json(['status' => true, 'message' => 'Link reset kata sandi telah dikirim ke email Anda.']);
     }
 
     public function resend(Request $request): JsonResponse
@@ -101,7 +121,7 @@ class PasswordResetController extends Controller
         return response()->json(['status' => 200, 'message' => 'Kata sandi berhasil diperbarui.', 'data' => []]);
     }
 
-    private function sendEmailResetLink(User $user): void
+    private function sendEmailResetLink(User $user, Request $request): void
     {
         $plain = Str::random(64);
         DB::table('password_reset_tokens')->where('email', $user->email)->delete();
@@ -119,6 +139,14 @@ class PasswordResetController extends Controller
         ]);
 
         $user->notify(new CustomResetPasswordNotification($plain));
+
+        Log::info('[FORGOT_PASSWORD_SEND]', [
+            'email' => $user->email,
+            'user_id' => $user->id,
+            'request_id' => $request->header('X-Request-Id') ?? Str::uuid()->toString(),
+            'token_created' => true,
+            'notification_sent' => true,
+        ]);
     }
 
     private function resetTokenIsExpired(object $record): bool

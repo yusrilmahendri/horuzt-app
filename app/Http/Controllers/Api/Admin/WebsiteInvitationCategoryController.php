@@ -218,8 +218,8 @@ class WebsiteInvitationCategoryController extends Controller
             $request->validate([
                 'nama_kategori' => ['sometimes', 'required', 'string'],
                 'slug' => ['sometimes', 'nullable', 'string', 'max:255', Rule::unique('jenis_themas', 'slug')->ignore($theme->id)],
-                'image' => ['sometimes', 'nullable', 'file', 'image'],
-                'preview_image' => ['sometimes', 'nullable', 'file', 'image'],
+                'image' => ['sometimes', 'nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+                'preview_image' => ['sometimes', 'nullable', 'file', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
                 'urutan' => ['sometimes', 'integer'],
                 'is_active' => ['sometimes'],
                 'status' => ['sometimes'],
@@ -234,9 +234,17 @@ class WebsiteInvitationCategoryController extends Controller
 
             // Handle image upload
             $imageFile = $request->file('preview_image') ?: $request->file('image');
-            $imagePath = null;
+            $imageUpload = null;
             if ($imageFile) {
-                $imagePath = $this->storeThemePreviewImage($imageFile, $theme->slug ?: Str::slug($theme->name));
+                $imageUpload = $this->storeThemePreviewImage($imageFile, $theme->slug ?: Str::slug($theme->name));
+                Log::info('[THEME_PREVIEW_UPLOAD]', [
+                    'id' => $theme->id,
+                    'slug' => $theme->slug,
+                    'original_name' => $imageFile->getClientOriginalName(),
+                    'size' => $imageFile->getSize(),
+                    'path' => $imageUpload['path'],
+                    'url' => $imageUpload['url'],
+                ]);
             }
 
             $themePayload = [];
@@ -249,11 +257,11 @@ class WebsiteInvitationCategoryController extends Controller
                 $themePayload['slug'] = $request->input('slug') ?: Str::slug($themePayload['name'] ?? $theme->name);
             }
 
-            if ($imagePath) {
-                $themePayload['image'] = $imagePath;
-                $themePayload['preview'] = $imagePath;
-                $themePayload['preview_image'] = $imagePath;
-                $themePayload['thumbnail_image'] = $imagePath;
+            if ($imageUpload) {
+                $themePayload['image'] = $imageUpload['url'];
+                $themePayload['preview'] = $imageUpload['url'];
+                $themePayload['preview_image'] = $imageUpload['url'];
+                $themePayload['thumbnail_image'] = $imageUpload['url'];
             }
 
             if ($request->has('is_active') || $request->has('status')) {
@@ -268,7 +276,13 @@ class WebsiteInvitationCategoryController extends Controller
                 $theme->update($themePayload);
             }
 
+            if ($imageUpload && $category->image !== $imageUpload['url']) {
+                $category->update(['image' => $imageUpload['url']]);
+            }
+
             DB::commit();
+            $theme->refresh();
+            $theme->load('category');
 
             return response()->json([
                 'status' => true,
@@ -281,7 +295,7 @@ class WebsiteInvitationCategoryController extends Controller
                         'package' => $this->packageCodeForCategorySlug($theme->category?->slug),
                         'sort_order' => $theme->sort_order,
                     ],
-                    $theme->fresh('category')
+                    $theme
                 )
             ], 200);
 
@@ -538,7 +552,10 @@ class WebsiteInvitationCategoryController extends Controller
         return asset('storage/' . ltrim(preg_replace('#^/?storage/#', '', $path), '/'));
     }
 
-    private function storeThemePreviewImage(\Illuminate\Http\UploadedFile $file, ?string $slug): string
+    /**
+     * @return array{path:string,url:string}
+     */
+    private function storeThemePreviewImage(\Illuminate\Http\UploadedFile $file, ?string $slug): array
     {
         $safeSlug = Str::slug($slug ?: 'theme-preview') ?: 'theme-preview';
         $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg');
@@ -547,7 +564,12 @@ class WebsiteInvitationCategoryController extends Controller
         $path = $file->storeAs('theme-images/previews', $fileName, 'public');
         Storage::disk('public')->setVisibility($path, 'public');
 
-        return $path;
+        $url = Storage::disk('public')->url($path);
+        if (! Str::startsWith($url, ['http://', 'https://'])) {
+            $url = rtrim((string) config('app.url'), '/') . '/' . ltrim($url, '/');
+        }
+
+        return ['path' => $path, 'url' => $url];
     }
 
     /**

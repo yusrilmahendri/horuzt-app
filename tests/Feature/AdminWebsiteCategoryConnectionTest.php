@@ -179,20 +179,47 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
             ->assertJsonPath('data.preview_image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
             ->assertJsonPath('data.thumbnail_image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
             ->assertJsonPath('data.preview', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
-            ->assertJsonPath('data.image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'));
+            ->assertJsonPath('data.image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/lavender-bloom-'))
+            ->assertJsonPath('data.updated_at', fn ($value) => ! empty($value));
 
         $theme->refresh();
+        $storedUrl = $theme->getRawOriginal('preview_image');
+        $storedPath = ltrim((string) parse_url($storedUrl, PHP_URL_PATH), '/');
+        $storedPath = preg_replace('#^storage/#', '', $storedPath);
 
         $this->assertSame('Lavender Bloom', $theme->name);
         $this->assertSame($categoryId, $theme->category_id);
-        $this->assertNotNull($theme->getRawOriginal('preview_image'));
-        $this->assertStringStartsWith('theme-images/previews/lavender-bloom-', $theme->getRawOriginal('preview_image'));
-        Storage::disk('public')->assertExists($theme->getRawOriginal('preview_image'));
+        $this->assertNotNull($storedUrl);
+        $this->assertStringStartsWith(config('app.url') . '/storage/theme-images/previews/lavender-bloom-', $storedUrl);
+        $this->assertStringEndsNotWith('/storage/theme-images/previews/lavender-bloom.jpg', $storedUrl);
+        Storage::disk('public')->assertExists($storedPath);
         $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('image'));
         $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('thumbnail_image'));
         $this->assertSame($theme->getRawOriginal('preview_image'), $theme->getRawOriginal('preview'));
         $this->assertSame($themeCount, JenisThemas::count());
         $this->assertSame($categoryCount, CategoryThemas::count());
+    }
+
+    public function test_admin_preview_image_upload_validation_returns_json(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        $theme = JenisThemas::where('slug', 'soft-ivory')->firstOrFail();
+
+        $this->put("/api/admin/website-categories/{$theme->id}", [
+            'preview_image' => UploadedFile::fake()->create('preview.gif', 100, 'image/gif'),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('preview_image');
+
+        $this->put("/api/admin/website-categories/{$theme->id}", [
+            'image' => UploadedFile::fake()->image('large-preview.jpg')->size(5121),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('image');
     }
 
     public function test_admin_rejects_empty_nama_kategori_when_field_is_sent(): void

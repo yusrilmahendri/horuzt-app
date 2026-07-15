@@ -63,16 +63,21 @@ class AccountVerificationTest extends TestCase
             ->assertStatus(422)->assertJsonPath('code', 'VERIFICATION_CODE_INVALID');
     }
 
-    public function test_forgot_password_response_does_not_disclose_account_existence(): void
+    public function test_forgot_password_rejects_unknown_email_and_sends_for_known_email(): void
     {
         Notification::fake();
         $user = User::factory()->create(['email' => 'known@example.test']);
-        $known = $this->postJson('/api/v1/auth/forgot-password', ['identifier' => 'known@example.test', 'channel' => 'email']);
-        $unknown = $this->postJson('/api/v1/auth/forgot-password', ['identifier' => 'unknown@example.test', 'channel' => 'email']);
-        $known->assertOk();
-        $unknown->assertOk();
-        $this->assertSame($known->json('message'), $unknown->json('message'));
-        $this->assertSame('Link reset kata sandi telah dikirim ke email Anda.', $known->json('message'));
+
+        $unknown = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'unknown@example.test', 'channel' => 'email']);
+        $unknown->assertStatus(422)
+            ->assertJsonPath('message', 'Email tidak terdaftar.')
+            ->assertJsonValidationErrors('email');
+        $this->assertDatabaseMissing('password_reset_tokens', ['email' => 'unknown@example.test']);
+
+        $known = $this->postJson('/api/v1/auth/forgot-password', ['email' => 'known@example.test', 'channel' => 'email']);
+        $known->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Link reset kata sandi telah dikirim ke email Anda.');
         Notification::assertSentTo($user, CustomResetPasswordNotification::class, 1);
         $this->assertDatabaseCount('password_reset_tokens', 1);
     }

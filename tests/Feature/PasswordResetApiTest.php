@@ -7,6 +7,7 @@ use App\Notifications\CustomResetPasswordNotification;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Notification;
 use Illuminate\Support\Facades\Password;
 use Illuminate\Support\Facades\Schema;
@@ -53,6 +54,7 @@ class PasswordResetApiTest extends TestCase
     public function test_forgot_password_mengirim_satu_email_dengan_token_hash_kompatibel(): void
     {
         Notification::fake();
+        Log::spy();
         config(['verification.frontend_url' => 'https://www.sena-digital.com']);
         $user = $this->user('forgot-reset@example.test', 'old-password');
 
@@ -61,6 +63,7 @@ class PasswordResetApiTest extends TestCase
             'channel' => 'email',
         ])
             ->assertOk()
+            ->assertJsonPath('status', true)
             ->assertJsonPath('message', 'Link reset kata sandi telah dikirim ke email Anda.');
 
         $record = DB::table('password_reset_tokens')->where('email', $user->email)->first();
@@ -72,12 +75,70 @@ class PasswordResetApiTest extends TestCase
                 && str_contains($mail->viewData['resetUrl'], 'https://www.sena-digital.com/reset-password?token=')
                 && str_contains($mail->viewData['resetUrl'], 'email='.urlencode($user->email));
         });
+        Log::shouldHaveReceived('info')->once()->with('[FORGOT_PASSWORD_SEND]', \Mockery::on(function (array $context) use ($user) {
+            return $context['email'] === $user->email
+                && $context['user_id'] === $user->id
+                && $context['token_created'] === true
+                && $context['notification_sent'] === true
+                && is_string($context['request_id'])
+                && $context['request_id'] !== '';
+        }));
+    }
+
+    public function test_forgot_password_request_ulang_dalam_enam_puluh_detik_ditolak_tanpa_email_baru(): void
+    {
+        Notification::fake();
+        $user = $this->user('rate-limited-reset@example.test', 'old-password');
+
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => $user->email,
+        ])->assertOk();
+
+        $firstRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+        $this->assertNotNull($firstRecord);
+
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => $user->email,
+        ])
+            ->assertStatus(429)
+            ->assertJson([
+                'status' => false,
+                'message' => 'Tautan reset baru saja dikirim. Silakan tunggu sebentar.',
+            ]);
+
+        Notification::assertSentTo($user, CustomResetPasswordNotification::class, 1);
+        $secondRecord = DB::table('password_reset_tokens')->where('email', $user->email)->first();
+        $this->assertSame($firstRecord->token, $secondRecord->token);
+        $this->assertSame(1, DB::table('password_reset_tokens')->where('email', $user->email)->count());
+    }
+
+    public function test_forgot_password_email_tidak_terdaftar_ditolak_tanpa_token_dan_email(): void
+    {
+        Notification::fake();
+
+        $this->postJson('/api/v1/auth/forgot-password', [
+            'email' => 'unknown-reset@example.test',
+        ])
+            ->assertStatus(422)
+            ->assertJson([
+                'status' => false,
+                'message' => 'Email tidak terdaftar.',
+                'errors' => [
+                    'email' => ['Email tidak terdaftar.'],
+                ],
+            ]);
+
+        Notification::assertNothingSent();
+        $this->assertDatabaseMissing('password_reset_tokens', [
+            'email' => 'unknown-reset@example.test',
+        ]);
+        $this->assertSame(0, DB::table('password_reset_tokens')->count());
     }
 
     public function test_forgot_password_whatsapp_ditolak_sementara(): void
     {
         $this->postJson('/api/v1/auth/forgot-password', [
-            'identifier' => '08123456789',
+            'email' => 'wa-reset@example.test',
             'channel' => 'whatsapp',
         ])
             ->assertStatus(422)
