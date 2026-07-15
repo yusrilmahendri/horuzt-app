@@ -309,14 +309,21 @@ class GaleryController extends Controller
         $validated = $this->validatePhotoRequest($request, true);
         $userId = (int) $request->user()->id;
         $stored = null;
+        $imageFile = null;
+        $hasVideo = ! empty($validated['url_video']);
 
         try {
             $imageFile = $this->photoUploadFile($request);
+
             if ($imageFile) {
-                $stored = $this->photoImageService->compressAndStore($imageFile, $userId, $validated['photo_type']);
+                $stored = $this->photoImageService->compressAndStore(
+                    $imageFile,
+                    $userId,
+                    $validated['photo_type']
+                );
             }
 
-            $photo = DB::transaction(function () use ($validated, $stored, $userId) {
+            $photo = DB::transaction(function () use ($validated, $stored, $userId, $hasVideo) {
                 $photoType = $validated['photo_type'];
                 $isFeatured = (bool) ($validated['is_featured'] ?? false);
                 $sortOrder = array_key_exists('sort_order', $validated)
@@ -326,6 +333,8 @@ class GaleryController extends Controller
                 if ($isFeatured) {
                     $this->clearFeaturedPhotos($userId, $photoType);
                 }
+
+                $hasVideoOnly = $hasVideo && $stored === null;
 
                 $photo = new Galery([
                     'photo' => $stored['path'] ?? null,
@@ -339,21 +348,25 @@ class GaleryController extends Controller
                     'focal_point_y' => $validated['focal_point_y'] ?? null,
                     'is_featured' => $isFeatured,
                     'sort_order' => $sortOrder,
-                    'original_name' => $stored['original_name'] ?? null,
-                    'original_size' => $stored['original_size'] ?? null,
-                    'compressed_size' => $stored['compressed_size'] ?? null,
-                    'mime_type' => $stored['mime_type'] ?? null,
-                    'quality' => $stored['quality'] ?? null,
-                    'nama_foto' => $stored['original_name'] ?? null,
+
+                    // penting untuk video tanpa cover agar DB tidak error NOT NULL
+                    'original_name' => $stored['original_name'] ?? ($hasVideoOnly ? 'youtube-video' : null),
+                    'original_size' => $stored['original_size'] ?? 0,
+                    'compressed_size' => $stored['compressed_size'] ?? 0,
+                    'mime_type' => $stored['mime_type'] ?? ($hasVideoOnly ? 'video/youtube' : null),
+                    'quality' => $stored['quality'] ?? 0,
+                    'nama_foto' => $stored['original_name'] ?? ($hasVideoOnly ? ($validated['description'] ?? 'Video YouTube') : null),
+
                     'status' => 1,
                 ]);
+
                 $photo->user_id = $userId;
                 $photo->save();
 
                 return $photo;
             });
 
-            return (new PhotoResource($photo))->response()->setStatusCode(201);
+            return (new PhotoResource($photo->refresh()))->response()->setStatusCode(201);
         } catch (\Throwable $e) {
             if (isset($stored['path'])) {
                 Storage::disk('public')->delete($stored['path']);
@@ -361,16 +374,20 @@ class GaleryController extends Controller
 
             Log::error('Photo upload failed', [
                 'user_id' => $userId,
-                'has_video' => ! empty($validated['url_video']),
+                'has_video' => $hasVideo,
                 'has_image_file' => $request->hasFile('image'),
                 'has_photo_file' => $request->hasFile('photo'),
+                'uploaded_file_valid' => $imageFile instanceof UploadedFile ? $imageFile->isValid() : null,
+                'url_video' => $validated['url_video'] ?? null,
                 'exception' => get_class($e),
                 'message' => $e->getMessage(),
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
             ]);
 
             return response()->json([
                 'status' => false,
-                'message' => 'Gagal memproses foto.',
+                'message' => $hasVideo ? 'Gagal menyimpan video YouTube.' : 'Gagal memproses foto.',
             ], 500);
         }
     }
@@ -380,8 +397,8 @@ class GaleryController extends Controller
         $validated = $this->validatePhotoRequest($request, false);
         $userId = (int) $request->user()->id;
         $photo = Galery::ownedBy($userId)->where('id', $id)->firstOrFail();
-            $stored = null;
-            $oldPath = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
+        $stored = null;
+        $oldPath = $this->normalizeStoragePath($photo->file_path ?: $photo->photo);
 
         try {
             $imageFile = $this->photoUploadFile($request);
@@ -566,6 +583,7 @@ class GaleryController extends Controller
             'url_video' => ['nullable', 'string', 'max:500'],
             'video_url' => ['nullable', 'string', 'max:500'],
             'link_video' => ['nullable', 'string', 'max:500'],
+            'media_type' => ['nullable', 'in:image,video'],
             'description' => ['nullable', 'string', 'max:1000'],
             'position' => ['nullable', 'in:center,top,bottom,left,right,top-left,top-right,bottom-left,bottom-right'],
             'object_position' => ['nullable', 'string', 'max:100'],
@@ -582,6 +600,8 @@ class GaleryController extends Controller
 
         $validated = Validator::make($request->all(), $rules)->validate();
         $validated['url_video'] = $videoUrl;
+        $validated['media_type'] = $validated['media_type'] ?? ($videoUrl ? 'video' : 'image');
+        $validated['object_position'] = $validated['object_position'] ?? 'center center';
 
         return $validated;
     }
