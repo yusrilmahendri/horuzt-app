@@ -415,6 +415,17 @@ Route::group(['middleware' => ['auth:sanctum']], function () {
 Route::post('/music/upload', [AdminMusicTrackController::class, 'store'])
     ->middleware(['auth:sanctum', AdminMusicTrackController::ADMIN_CATALOG_ROLE_MIDDLEWARE, 'large.files', 'bypass.post.size']);
 
+// Legacy admin music catalog action endpoints used by the Angular dashboard.
+Route::controller(AdminMusicTrackController::class)
+    ->prefix('music/tracks')
+    ->middleware(['auth:sanctum', AdminMusicTrackController::ADMIN_CATALOG_ROLE_MIDDLEWARE])
+    ->group(function () {
+        Route::put('/{id}', 'update')->where('id', '[0-9]+');
+        Route::patch('/{id}/status', 'setStatus')->where('id', '[0-9]+');
+        Route::patch('/{id}/default', 'setDefault')->where('id', '[0-9]+');
+        Route::delete('/{id}', 'destroy')->where('id', '[0-9]+');
+    });
+
 Route::group(['middleware' => ['auth:sanctum', 'role:user']], function () {
     Route::controller(ProfileController::class)->prefix('profile')->group(function () {
         Route::get('/', 'show')->name('profile.show');

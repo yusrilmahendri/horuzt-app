@@ -327,6 +327,78 @@ class MusicInvitationModuleTest extends TestCase
             ->assertJsonPath('message', 'Ukuran file maksimal 20 MB.');
     }
 
+    public function test_admin_can_manage_catalog_tracks_through_legacy_admin_action_endpoints(): void
+    {
+        $admin = $this->adminUser();
+        $first = $this->track('First Song', true, 1);
+        $second = $this->track('Second Song', false, 2);
+        Sanctum::actingAs($admin);
+
+        $this->putJson("/api/music/tracks/{$second->id}", [
+            'title' => 'georgie',
+            'artist' => 'the drak',
+            'subtitle' => 'the drak subtitle',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik katalog berhasil diperbarui.')
+            ->assertJsonPath('data.title', 'georgie')
+            ->assertJsonPath('data.artist', 'the drak')
+            ->assertJsonPath('data.subtitle', 'the drak subtitle');
+
+        $this->patchJson("/api/music/tracks/{$second->id}/status", [
+            'is_active' => false,
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik katalog berhasil diperbarui.')
+            ->assertJsonPath('data.is_active', false);
+
+        $this->getJson('/api/music/tracks')
+            ->assertOk()
+            ->assertJsonMissing(['id' => $second->id]);
+
+        $this->patchJson("/api/music/tracks/{$second->id}/status", [
+            'is_active' => true,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.is_active', true);
+
+        $this->patchJson("/api/music/tracks/{$second->id}/default")
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik berhasil dijadikan default.')
+            ->assertJsonPath('data.is_default', true)
+            ->assertJsonPath('data.is_active', true);
+
+        $this->assertDatabaseHas('music_tracks', [
+            'id' => $first->id,
+            'is_default' => false,
+        ]);
+
+        $this->deleteJson("/api/music/tracks/{$second->id}")
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Musik katalog berhasil dihapus.');
+
+        $this->assertDatabaseMissing('music_tracks', ['id' => $second->id]);
+    }
+
+    public function test_regular_user_cannot_manage_catalog_tracks_through_admin_action_endpoints(): void
+    {
+        $user = $this->userWithPackage('diamond');
+        $track = $this->track('Blocked Admin Action', false);
+        Sanctum::actingAs($user);
+
+        $this->patchJson("/api/music/tracks/{$track->id}/status", [
+            'is_active' => false,
+        ])->assertForbidden();
+
+        $this->patchJson("/api/music/tracks/{$track->id}/default")->assertForbidden();
+
+        $this->deleteJson("/api/music/tracks/{$track->id}")->assertForbidden();
+    }
+
     private function userWithPackage(string $code): User
     {
         $user = User::create([
@@ -490,6 +562,7 @@ class MusicInvitationModuleTest extends TestCase
             $table->unsignedInteger('duration_seconds')->nullable();
             $table->string('mime_type')->nullable();
             $table->unsignedBigInteger('file_size')->nullable();
+            $table->text('description')->nullable();
             $table->boolean('is_active')->default(true);
             $table->boolean('is_default')->default(false);
             $table->integer('sort_order')->default(0);

@@ -10,6 +10,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Spatie\Permission\Models\Role;
@@ -219,12 +220,9 @@ class AdminMusicTrackController extends Controller
 
         $validated = $request->validate([
             'title' => ['sometimes', 'required', 'string', 'max:255'],
-            'artist' => ['nullable', 'string', 'max:255'],
-            'is_active' => ['nullable', 'boolean'],
-            'is_default' => ['nullable', 'boolean'],
-            'sort_order' => ['nullable', 'integer'],
-            'source' => ['nullable', 'string', 'max:50'],
-            'external_id' => ['nullable', 'string', 'max:100'],
+            'artist' => ['sometimes', 'nullable', 'string', 'max:255'],
+            'subtitle' => ['sometimes', 'nullable', 'string', 'max:1000'],
+            'description' => ['sometimes', 'nullable', 'string', 'max:1000'],
         ], [
             'title.required' => 'Judul musik katalog wajib diisi.',
         ]);
@@ -233,34 +231,23 @@ class AdminMusicTrackController extends Controller
             return DB::transaction(function () use ($request, $validated, $track) {
                 $data = [];
 
-                foreach (['title', 'artist', 'sort_order', 'source', 'external_id'] as $field) {
+                foreach (['title', 'artist'] as $field) {
                     if (array_key_exists($field, $validated)) {
                         $data[$field] = $validated[$field];
                     }
                 }
 
-                if ($request->has('is_active')) {
-                    $data['is_active'] = $request->boolean('is_active');
-                }
-
-                $makeDefault = $request->has('is_default') ? $request->boolean('is_default') : null;
-
-                if ($makeDefault === true) {
-                    // A default track must be active.
-                    $data['is_default'] = true;
-                    $data['is_active'] = true;
-                } elseif ($makeDefault === false) {
-                    $data['is_default'] = false;
+                if (array_key_exists('description', $validated)) {
+                    $data['description'] = $validated['description'];
+                } elseif (array_key_exists('subtitle', $validated)) {
+                    $data['description'] = $validated['subtitle'];
                 }
 
                 $track->update($data);
 
-                if ($makeDefault === true) {
-                    $this->promoteDefault($track->fresh());
-                }
-
                 return response()->json([
-                    'message' => 'Metadata musik katalog berhasil diperbarui.',
+                    'status' => true,
+                    'message' => 'Musik katalog berhasil diperbarui.',
                     'data' => $this->trackPayload($track->fresh()),
                 ], 200);
             });
@@ -295,7 +282,8 @@ class AdminMusicTrackController extends Controller
                 $this->promoteDefault($track->fresh());
 
                 return response()->json([
-                    'message' => 'Musik default berhasil diperbarui.',
+                    'status' => true,
+                    'message' => 'Musik berhasil dijadikan default.',
                     'data' => $this->trackPayload($track->fresh()),
                 ], 200);
             });
@@ -323,18 +311,14 @@ class AdminMusicTrackController extends Controller
             return response()->json(['message' => 'Musik katalog tidak ditemukan.'], 404);
         }
 
-        // Guard: never let the active default track be deactivated, otherwise
-        // it would leave is_default=true + is_active=false (confusing state the
-        // resolver ignores). Admin must set another default first.
-        if ($track->is_default && $track->is_active) {
-            return response()->json([
-                'message' => 'Musik default tidak bisa dinonaktifkan. Tetapkan musik default lain terlebih dahulu.'
-            ], 422);
-        }
-
-        $track->update(['is_active' => !$track->is_active]);
+        $isActive = ! $track->is_active;
+        $track->update([
+            'is_active' => $isActive,
+            'is_default' => $isActive ? $track->is_default : false,
+        ]);
 
         return response()->json([
+            'status' => true,
             'message' => 'Status musik katalog berhasil diperbarui.',
             'data' => $this->trackPayload($track->fresh()),
         ], 200);
@@ -355,16 +339,16 @@ class AdminMusicTrackController extends Controller
             'is_active' => ['required', 'boolean'],
         ]);
 
-        if ($track->is_default && $track->is_active && $validated['is_active'] === false) {
-            return response()->json([
-                'message' => 'Musik default tidak bisa dinonaktifkan. Tetapkan musik default lain terlebih dahulu.'
-            ], 422);
-        }
+        $isActive = (bool) $validated['is_active'];
 
-        $track->update(['is_active' => (bool) $validated['is_active']]);
+        $track->update([
+            'is_active' => $isActive,
+            'is_default' => $isActive ? $track->is_default : false,
+        ]);
 
         return response()->json([
-            'message' => 'Status musik katalog berhasil diperbarui.',
+            'status' => true,
+            'message' => 'Musik katalog berhasil diperbarui.',
             'data' => $this->trackPayload($track->fresh()),
         ], 200);
     }
@@ -433,9 +417,16 @@ class AdminMusicTrackController extends Controller
                 Storage::delete($track->file_path);
             }
 
+            if (Schema::hasTable('settings') && Schema::hasColumn('settings', 'music_track_id')) {
+                DB::table('settings')
+                    ->where('music_track_id', $track->id)
+                    ->update(['music_track_id' => null]);
+            }
+
             $track->delete();
 
             return response()->json([
+                'status' => true,
                 'message' => 'Musik katalog berhasil dihapus.',
             ], 200);
         } catch (\Exception $e) {
@@ -494,7 +485,8 @@ class AdminMusicTrackController extends Controller
             'id' => $track->id,
             'title' => $track->title,
             'artist' => $track->artist,
-            'subtitle' => $track->artist,
+            'subtitle' => $track->getAttribute('description') ?: $track->artist,
+            'description' => $track->getAttribute('description'),
             'audio_url' => $track->url,
             'stream_url' => $track->url,
             'file_path' => $track->file_path,

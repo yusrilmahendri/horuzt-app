@@ -17,6 +17,7 @@ class MusicTrack extends Model
         'duration_seconds',
         'mime_type',
         'file_size',
+        'description',
         'is_active',
         'is_default',
         'sort_order',
