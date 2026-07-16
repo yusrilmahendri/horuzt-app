@@ -77,6 +77,32 @@ class MidtransCustomerDetailsTest extends TestCase
         $this->assertDatabaseCount('payment_logs', 0);
     }
 
+    public function test_midtrans_profile_validation_uses_fresh_database_name(): void
+    {
+        $staleUser = $this->verifiedUser(null, 'fresh-name@example.test');
+        $invitation = $this->invitationFor($staleUser);
+        User::whereKey($staleUser->id)->update(['name' => 'Nama Dari Database']);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->with(Mockery::on(function (array $params): bool {
+                return ($params['customer_details']['first_name'] ?? null) === 'Nama'
+                    && ($params['customer_details']['last_name'] ?? null) === 'Dari Database';
+            }))
+            ->andReturn('snap-token-fresh-name');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($staleUser);
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invitation_id' => $invitation->id,
+            'amount' => (float) $invitation->paketUndangan->price,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.snap_token', 'snap-token-fresh-name');
+    }
+
     private function verifiedUser(?string $name, string $email = 'midtrans-user@example.test'): User
     {
         Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);

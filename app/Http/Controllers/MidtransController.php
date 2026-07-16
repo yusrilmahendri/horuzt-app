@@ -25,7 +25,7 @@ class MidtransController extends Controller
     public function createSnapToken(CreateSnapTokenRequest $request): JsonResponse
     {
         try {
-            $user = Auth::user();
+            $user = Auth::user()?->fresh();
 
             if (!$user) {
                 return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);

@@ -31,7 +31,7 @@ class ProfileController extends Controller
     public function show(): JsonResponse
     {
         try {
-            $user = Auth::user()->load([
+            $user = Auth::user()->fresh()->load([
                 'invitationOne.paketUndangan.accessibleCategories',
                 'settingOne',
                 'mempelaiOne'
@@ -71,7 +71,7 @@ class ProfileController extends Controller
     public function status(): JsonResponse
     {
         try {
-            $user = Auth::user()->load([
+            $user = Auth::user()->fresh()->load([
                 'invitationOne.paketUndangan',
             ]);
 

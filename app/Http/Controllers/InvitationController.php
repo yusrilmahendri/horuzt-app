@@ -67,6 +67,7 @@ class InvitationController extends Controller
 
             $validated = $request->validate([
                 'kode_pemesanan'     => 'nullable|string',
+                'name'               => 'nullable|string|min:3|max:100',
                 'email'              => 'required|email',
                 'password'           => 'required|min:6',
                 'phone'              => 'required|string',
@@ -164,11 +165,16 @@ class InvitationController extends Controller
                         ], 422);
                     }
 
-                    $user->update([
+                    $userUpdate = [
                         'email'    => $validated['email'],
                         'password' => Hash::make($validated['password']),
                         'phone'    => $validated['phone'],
-                    ]);
+                    ];
+                    if (trim((string) ($validated['name'] ?? '')) !== '') {
+                        $userUpdate['name'] = trim($validated['name']);
+                    }
+                    $user->update($userUpdate);
+                    $user = $user->fresh();
 
                     $domain = Setting::updateOrCreate(
                         ['user_id' => $user->id],
@@ -239,12 +245,17 @@ class InvitationController extends Controller
                         }
 
                         // Update existing authenticated user
-                        $user = $authUser;
-                        $user->update([
+                        $user = $authUser->fresh();
+                        $userUpdate = [
                             'email'    => $validated['email'],
                             'password' => Hash::make($validated['password']),
                             'phone'    => $validated['phone'],
-                        ]);
+                        ];
+                        if (trim((string) ($validated['name'] ?? '')) !== '') {
+                            $userUpdate['name'] = trim($validated['name']);
+                        }
+                        $user->update($userUpdate);
+                        $user = $user->fresh();
 
                         // Update or create domain
                         $domain = Setting::updateOrCreate(
@@ -287,6 +298,11 @@ class InvitationController extends Controller
                     $request->validate([
                         'email'  => 'unique:users,email',
                     ]);
+                    if (trim((string) ($validated['name'] ?? '')) === '') {
+                        throw ValidationException::withMessages([
+                            'name' => ['Nama pengguna wajib diisi.'],
+                        ]);
+                    }
 
                     $domainUsage = $this->domainService->checkDomainUsage($validated['domain'], null);
                     $this->domainService->logValidation(
@@ -308,6 +324,7 @@ class InvitationController extends Controller
                     }
 
                     $user = User::create([
+                        'name'           => trim((string) ($validated['name'] ?? '')),
                         'email'          => $validated['email'],
                         'password'       => Hash::make($validated['password']),
                         'phone'          => $validated['phone'],
@@ -315,6 +332,7 @@ class InvitationController extends Controller
                     ]);
 
                     if (method_exists($user, 'assignRole')) {
+                        \Spatie\Permission\Models\Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
                         $user->assignRole('user');
                     }
 

@@ -474,7 +474,7 @@ class DashboardController extends Controller
 
     private function resolveDashboardUser(Request $request): array
     {
-        $authenticatedUser = $request->user();
+        $authenticatedUser = $request->user()?->fresh();
 
         if (! $authenticatedUser) {
             abort(403, 'Access denied. You can only view your own dashboard.');

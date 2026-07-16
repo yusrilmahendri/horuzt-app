@@ -17,6 +17,7 @@ class AccountStatusService
 
     public function summary(User $user): array
     {
+        $user = $user->fresh() ?? $user;
         $invitation = $this->resolveInvoiceForUser($user);
         $package = $invitation?->paketUndangan;
         $snapshot = is_array($invitation?->package_features_snapshot)
@@ -58,6 +59,7 @@ class AccountStatusService
         $canUseFeatures = $accountStatus === self::STATUS_ACTIVE;
 
         return [
+            'name' => $user->name,
             'is_verified' => $isVerified,
             'account_status' => $accountStatus,
             'payment_status' => $paymentStatus,

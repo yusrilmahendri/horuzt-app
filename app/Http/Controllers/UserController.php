@@ -31,7 +31,7 @@ class UserController extends Controller
                 $relations[] = 'selectedTheme.jenisThema.category';
             }
 
-            $dataUser = auth()->user()->load($relations);
+            $dataUser = auth()->user()->fresh()->load($relations);
             if ($dataUser) {
                 return response()->json(['data' => new UserResource($dataUser)], 200);
             } else {

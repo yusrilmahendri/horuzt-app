@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Contracts\WhatsAppGateway;
 use App\Models\AccountVerificationToken;
+use App\Models\PaketUndangan;
 use App\Models\User;
 use App\Notifications\CustomResetPasswordNotification;
 use App\Notifications\VerificationCodeNotification;
@@ -43,6 +44,63 @@ class AccountVerificationTest extends TestCase
             ->assertStatus(422)
             ->assertJsonValidationErrors('name')
             ->assertJsonPath('errors.name.0', 'Nama pengguna wajib diisi.');
+    }
+
+    public function test_registered_name_is_returned_by_profile_and_account_status(): void
+    {
+        $this->postJson('/api/v1/register', [
+            'name' => 'Nama Pengguna',
+            'email' => 'profile-name@example.test',
+            'password' => 'password123',
+        ])->assertCreated();
+
+        $user = User::whereEmail('profile-name@example.test')->firstOrFail();
+        $this->assertSame('Nama Pengguna', $user->name);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/profile')
+            ->assertOk()
+            ->assertJsonPath('data.id', $user->id)
+            ->assertJsonPath('data.name', 'Nama Pengguna')
+            ->assertJsonPath('data.email', 'profile-name@example.test');
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.name', 'Nama Pengguna')
+            ->assertJsonPath('data.is_profile_complete', true)
+            ->assertJsonPath('data.profile_completion_required', false);
+    }
+
+    public function test_package_selection_preserves_registered_name_when_name_is_not_resent(): void
+    {
+        $this->postJson('/api/v1/register', [
+            'name' => 'Nama Paket',
+            'email' => 'package-name@example.test',
+            'password' => 'password123',
+            'phone' => '081234567890',
+        ])->assertCreated();
+
+        $user = User::whereEmail('package-name@example.test')->firstOrFail();
+        $package = PaketUndangan::create([
+            'code' => 'ruby',
+            'jenis_paket' => 'Paket Ruby',
+            'name_paket' => 'Paket Ruby',
+            'price' => 100000,
+            'masa_aktif' => 30,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/one-step', [
+            'email' => 'package-name@example.test',
+            'password' => 'password123',
+            'phone' => '081234567890',
+            'paket_undangan_id' => $package->id,
+            'domain' => 'package-name-test',
+        ])->assertOk();
+
+        $this->assertSame('Nama Paket', $user->fresh()->name);
     }
 
     public function test_email_code_is_sent_without_being_exposed(): void

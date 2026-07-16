@@ -73,6 +73,7 @@ class AccountVerificationController extends Controller
             'message' => 'Email berhasil diverifikasi. Silakan pilih paket dan metode pembayaran.',
             'data' => [
                 'is_verified' => true,
+                'name' => $summary['name'],
                 'account_status' => $summary['account_status'],
                 'next_step' => $summary['next_step'],
                 'redirect_url' => $summary['redirect_url'],
