@@ -9,9 +9,9 @@ return [
     'is_sanitized' => env('MIDTRANS_IS_SANITIZED', true),
     'is_3ds' => env('MIDTRANS_IS_3DS', true),
 
-    'frontend_finish_url' => env('MIDTRANS_FINISH_URL', $frontendUrl . '/buat-undangan?payment=finish'),
-    'frontend_error_url' => env('MIDTRANS_ERROR_URL', $frontendUrl . '/buat-undangan?payment=error'),
-    'frontend_pending_url' => env('MIDTRANS_PENDING_URL', $frontendUrl . '/buat-undangan?payment=unfinish'),
+    'frontend_finish_url' => env('MIDTRANS_FINISH_URL', $frontendUrl . '/dashboard?payment=finish'),
+    'frontend_error_url' => env('MIDTRANS_ERROR_URL', $frontendUrl . '/pilih-paket?payment=error'),
+    'frontend_pending_url' => env('MIDTRANS_PENDING_URL', $frontendUrl . '/dashboard/payment-pending?payment=unfinish'),
 
     'payment_limits' => [
         'min_amount' => env('MIDTRANS_MIN_AMOUNT', 10000),

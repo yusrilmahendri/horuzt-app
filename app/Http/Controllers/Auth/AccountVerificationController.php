@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\Auth;
 
 use App\Http\Controllers\Controller;
+use App\Services\AccountStatusService;
 use App\Services\VerificationCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -11,7 +12,10 @@ use RuntimeException;
 
 class AccountVerificationController extends Controller
 {
-    public function __construct(private readonly VerificationCodeService $codes) {}
+    public function __construct(
+        private readonly VerificationCodeService $codes,
+        private readonly AccountStatusService $accountStatusService
+    ) {}
 
     public function send(Request $request): JsonResponse
     {
@@ -62,7 +66,18 @@ class AccountVerificationController extends Controller
             $request->user()->forceFill([$field => now(), 'verification_channel' => $data['channel']])->save();
         });
 
-        return response()->json(['status' => 200, 'message' => 'Akun berhasil diverifikasi.', 'data' => ['is_verified' => true]]);
+        $summary = $this->accountStatusService->summary($request->user()->fresh());
+
+        return response()->json([
+            'status' => 200,
+            'message' => 'Email berhasil diverifikasi. Silakan pilih paket dan metode pembayaran.',
+            'data' => [
+                'is_verified' => true,
+                'account_status' => $summary['account_status'],
+                'next_step' => $summary['next_step'],
+                'redirect_url' => $summary['redirect_url'],
+            ],
+        ]);
     }
 
     public function status(Request $request): JsonResponse

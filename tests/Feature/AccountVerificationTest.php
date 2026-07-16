@@ -63,6 +63,20 @@ class AccountVerificationTest extends TestCase
             ->assertStatus(422)->assertJsonPath('code', 'VERIFICATION_CODE_INVALID');
     }
 
+    public function test_verified_email_redirects_to_package_payment_selection(): void
+    {
+        $user = User::factory()->unverified()->create(['verification_channel' => 'email']);
+        Sanctum::actingAs($user);
+        $this->token($user, '123456');
+
+        $this->postJson('/api/v1/auth/verification/verify', ['channel' => 'email', 'code' => '123456'])
+            ->assertOk()
+            ->assertJsonPath('data.is_verified', true)
+            ->assertJsonPath('data.account_status', 'verified_no_invoice')
+            ->assertJsonPath('data.next_step', 'select-package-payment-method')
+            ->assertJsonPath('data.redirect_url', '/pilih-paket');
+    }
+
     public function test_forgot_password_rejects_unknown_email_and_sends_for_known_email(): void
     {
         Notification::fake();

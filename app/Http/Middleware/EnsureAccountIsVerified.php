@@ -14,7 +14,7 @@ class EnsureAccountIsVerified
         }
 
         return response()->json(['status' => 403, 'code' => 'ACCOUNT_NOT_VERIFIED',
-            'message' => 'Verifikasi akun terlebih dahulu sebelum mengisi data undangan.',
+            'message' => 'Verifikasi email terlebih dahulu sebelum memilih paket dan metode pembayaran.',
             'data' => ['verification_required' => true]], 403);
     }
 

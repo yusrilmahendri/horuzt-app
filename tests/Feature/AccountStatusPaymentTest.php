@@ -44,7 +44,7 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('data.is_verified', false);
     }
 
-    public function test_user_verified_tapi_belum_punya_invoice_menghasilkan_onboarding(): void
+    public function test_user_verified_tapi_belum_punya_invoice_menghasilkan_pilihan_pembayaran(): void
     {
         $user = $this->makeUserWithoutInvoice(true);
 
@@ -52,14 +52,16 @@ class AccountStatusPaymentTest extends TestCase
 
         $this->getJson('/api/profile/status')
             ->assertOk()
-            ->assertJsonPath('data.account_status', 'onboarding')
+            ->assertJsonPath('data.account_status', 'verified_no_invoice')
             ->assertJsonPath('data.is_verified', true)
             ->assertJsonPath('data.payment_status', null)
             ->assertJsonPath('data.has_invoice', false)
             ->assertJsonPath('data.has_pending_invoice', false)
             ->assertJsonPath('data.invoice_id', null)
             ->assertJsonPath('data.invoice_code', null)
-            ->assertJsonPath('data.is_payment_confirmed', false);
+            ->assertJsonPath('data.is_payment_confirmed', false)
+            ->assertJsonPath('data.next_step', 'select-package-payment-method')
+            ->assertJsonPath('data.redirect_url', '/pilih-paket');
     }
 
     public function test_user_verified_dengan_invoice_pending_menghasilkan_pending_payment(): void
@@ -124,7 +126,7 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('code', 'PAYMENT_NOT_CONFIRMED');
     }
 
-    public function test_user_onboarding_tidak_bisa_akses_fitur_input(): void
+    public function test_user_verified_tanpa_invoice_tidak_bisa_akses_fitur_input(): void
     {
         $user = $this->makeUserWithoutInvoice(true);
         Mempelai::create(['user_id' => $user->id]);

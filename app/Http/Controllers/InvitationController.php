@@ -4,7 +4,6 @@ namespace App\Http\Controllers;
 use App\Http\Resources\TagihanTransaction\TagihanTransactionCollection;
 use App\Models\ActivePaymentMethod;
 use App\Models\Cerita;
-use App\Models\Galery;
 use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\MetodeTransaction;
@@ -391,61 +390,20 @@ class InvitationController extends Controller
             }
 
             return DB::transaction(function () use ($validated, $request, $user) {
-                // Store photos in Gallery table with active status (requirement)
-                $galleryPhotos = [];
                 $mempelaiPhotos = [];
 
                 if ($request->hasFile('photo_pria')) {
                     $photoPath = $request->file('photo_pria')->store('photos', 'public');
-
-                    // Store in Gallery with status 1 (active)
-                    $galleryPhoto = new Galery([
-                        'photo' => $photoPath,
-                        'file_path' => $photoPath,
-                        'photo_type' => 'gallery',
-                        'nama_foto' => 'Photo Pria',
-                        'status' => 1 // Active status for frontend filtering
-                    ]);
-                    $galleryPhoto->user_id = $user->id;
-                    $galleryPhoto->save();
-
-                    $galleryPhotos['photo_pria'] = $galleryPhoto;
                     $mempelaiPhotos['photo_pria'] = $photoPath;
                 }
 
                 if ($request->hasFile('photo_wanita')) {
                     $photoPath = $request->file('photo_wanita')->store('photos', 'public');
-
-                    // Store in Gallery with status 1 (active)
-                    $galleryPhoto = new Galery([
-                        'photo' => $photoPath,
-                        'file_path' => $photoPath,
-                        'photo_type' => 'gallery',
-                        'nama_foto' => 'Photo Wanita',
-                        'status' => 1 // Active status for frontend filtering
-                    ]);
-                    $galleryPhoto->user_id = $user->id;
-                    $galleryPhoto->save();
-
-                    $galleryPhotos['photo_wanita'] = $galleryPhoto;
                     $mempelaiPhotos['photo_wanita'] = $photoPath;
                 }
 
                 if ($request->hasFile('cover_photo')) {
                     $photoPath = $request->file('cover_photo')->store('photos', 'public');
-
-                    // Store in Gallery with status 1 (active)
-                    $galleryPhoto = new Galery([
-                        'photo' => $photoPath,
-                        'file_path' => $photoPath,
-                        'photo_type' => 'gallery',
-                        'nama_foto' => 'Cover Photo',
-                        'status' => 1 // Active status for frontend filtering
-                    ]);
-                    $galleryPhoto->user_id = $user->id;
-                    $galleryPhoto->save();
-
-                    $galleryPhotos['cover_photo'] = $galleryPhoto;
                     $mempelaiPhotos['cover_photo'] = $photoPath;
                 }
 
@@ -480,7 +438,8 @@ class InvitationController extends Controller
                 return response()->json([
                     'message'           => 'Step 2 berhasil disimpan.',
                     'mempelai'          => $mempelai,
-                    'gallery_photos'    => $galleryPhotos,
+                    'gallery_photos'    => [],
+                    'gallery_message'   => 'Galeri dikelola melalui Dashboard → Website → Gallery.',
                     'invitation_status' => 'step2',
                 ], 200);
             });
@@ -515,30 +474,12 @@ class InvitationController extends Controller
                 return response()->json(['error' => 'User tidak ditemukan.'], 404);
             }
 
-            $galery = null;
-
-            // Only create gallery entry if photo is provided
-            if ($request->hasFile('photo')) {
-                $galeryPhoto = $request->file('photo')->store('photos', 'public');
-
-                // Create new gallery entry (not update) to allow multiple photos
-                $galery = new Galery([
-                    'photo'   => $galeryPhoto,
-                    'file_path' => $galeryPhoto,
-                    'photo_type' => 'gallery',
-                    'nama_foto' => 'Gallery Upload Step 3',
-                    'status'  => $validated['status'] ?? 1,
-                ]);
-                $galery->user_id = $user->id;
-                $galery->save();
-            }
-
             // Update invitation status
             Invitation::where('user_id', $user->id)->update(['status' => 'step3']);
 
             return response()->json([
-                'message'           => 'Step 3 berhasil disimpan',
-                'galery'            => $galery,
+                'message'           => 'Step gallery pendaftaran dilewati. Galeri dikelola melalui Dashboard → Website → Gallery.',
+                'galery'            => null,
                 'invitation_status' => 'step3',
             ], 200);
 

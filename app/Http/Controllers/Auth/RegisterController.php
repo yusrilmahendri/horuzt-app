@@ -35,6 +35,7 @@ class RegisterController extends Controller
 
             // Assign role to user (optional)
             if (method_exists($user, 'assignRole')) {
+                Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
                 $user->assignRole('user');
             }
 

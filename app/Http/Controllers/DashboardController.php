@@ -3,6 +3,7 @@
 namespace App\Http\Controllers;
 
 use App\Models\Invitation;
+use App\Models\Galery;
 use App\Models\Ucapan;
 use App\Models\User;
 use App\Services\AccountStatusService;
@@ -60,6 +61,7 @@ class DashboardController extends Controller
             // Get comparison data (previous period)
             $previousPeriodData = $this->getPreviousPeriodComparison((string) $dashboardUserId, $dateRange);
             $invitation = $this->resolveInvitationForUser($dashboardUserId);
+            $galleryCount = Galery::where('user_id', $dashboardUserId)->count();
 
             $response = [
                 'user_id' => $dashboardUserId,
@@ -113,7 +115,14 @@ class DashboardController extends Controller
                         'tidak_hadir_percentage' => $totalResponses > 0 ? round(($metrics->tidak_hadir / $totalResponses) * 100, 1) : 0,
                         'mungkin_percentage' => $totalResponses > 0 ? round(($metrics->mungkin_hadir / $totalResponses) * 100, 1) : 0
                     ]
-                ]
+                ],
+                'gallery' => [
+                    'total_items' => $galleryCount,
+                    'is_empty' => $galleryCount === 0,
+                    'empty_message' => $galleryCount === 0
+                        ? 'Galeri belum diisi. Tambahkan foto melalui Website → Gallery.'
+                        : null,
+                ],
             ] + $this->accountStatusService->summary($user);
 
             return response()->json(['data' => $response], 200);

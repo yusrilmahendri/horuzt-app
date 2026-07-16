@@ -9,7 +9,8 @@ use App\Models\User;
 class AccountStatusService
 {
     public const STATUS_UNVERIFIED = 'unverified';
-    public const STATUS_ONBOARDING = 'onboarding';
+    public const STATUS_PAYMENT_SELECTION = 'verified_no_invoice';
+    public const STATUS_ONBOARDING = self::STATUS_PAYMENT_SELECTION;
     public const STATUS_PENDING_PAYMENT = 'pending_payment';
     public const STATUS_ACTIVE = 'active';
     public const STATUS_EXPIRED = 'expired';
@@ -37,11 +38,11 @@ class AccountStatusService
 
         $accountStatus = match (true) {
             ! $isVerified => self::STATUS_UNVERIFIED,
-            ! $hasInvoice => self::STATUS_ONBOARDING,
+            ! $hasInvoice => self::STATUS_PAYMENT_SELECTION,
             $hasPendingInvoice => self::STATUS_PENDING_PAYMENT,
             $isPaymentConfirmed && $isExpired => self::STATUS_EXPIRED,
             $isPaymentConfirmed => self::STATUS_ACTIVE,
-            default => self::STATUS_ONBOARDING,
+            default => self::STATUS_PAYMENT_SELECTION,
         };
 
         $packageCode = $package?->code
@@ -73,6 +74,8 @@ class AccountStatusService
             'remaining_days' => $activeUntil ? max(0, now()->diffInDays($activeUntil, false)) : null,
             'is_payment_confirmed' => $isPaymentConfirmed,
             'is_expired' => $isExpired,
+            'next_step' => $this->nextStep($accountStatus),
+            'redirect_url' => $this->redirectUrl($accountStatus),
             'feature_access' => [
                 'input_undangan' => $canUseFeatures,
                 'mempelai' => $canUseFeatures,
@@ -85,6 +88,30 @@ class AccountStatusService
                 'bagi_undangan' => $canUseFeatures,
             ],
         ];
+    }
+
+    private function nextStep(string $accountStatus): string
+    {
+        return match ($accountStatus) {
+            self::STATUS_UNVERIFIED => 'verify-account',
+            self::STATUS_PAYMENT_SELECTION => 'select-package-payment-method',
+            self::STATUS_PENDING_PAYMENT => 'payment-pending',
+            self::STATUS_ACTIVE => 'dashboard',
+            self::STATUS_EXPIRED => 'account-expired-renewal',
+            default => 'select-package-payment-method',
+        };
+    }
+
+    private function redirectUrl(string $accountStatus): string
+    {
+        return match ($accountStatus) {
+            self::STATUS_UNVERIFIED => '/verify-account',
+            self::STATUS_PAYMENT_SELECTION => '/pilih-paket',
+            self::STATUS_PENDING_PAYMENT => '/dashboard/payment-pending',
+            self::STATUS_ACTIVE => '/dashboard',
+            self::STATUS_EXPIRED => '/account-expired/renewal',
+            default => '/pilih-paket',
+        };
     }
 
     private function formatDate($date): ?string

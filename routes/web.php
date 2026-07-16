@@ -32,15 +32,15 @@ $frontendBaseUrl = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'https:/
 
 Route::get('/payment/success', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
     $query = array_merge($request->query(), ['payment' => 'finish']);
-    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+    return redirect()->away($frontendBaseUrl . '/dashboard?' . http_build_query($query), 302);
 });
 
 Route::get('/payment/pending', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
     $query = array_merge($request->query(), ['payment' => 'unfinish']);
-    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+    return redirect()->away($frontendBaseUrl . '/dashboard/payment-pending?' . http_build_query($query), 302);
 });
 
 Route::get('/payment/error', function (\Illuminate\Http\Request $request) use ($frontendBaseUrl) {
     $query = array_merge($request->query(), ['payment' => 'error']);
-    return redirect()->away($frontendBaseUrl . '/buat-undangan?' . http_build_query($query), 302);
+    return redirect()->away($frontendBaseUrl . '/pilih-paket?' . http_build_query($query), 302);
 });

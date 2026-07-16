@@ -39,7 +39,8 @@ class UserProfileResourceTest extends TestCase
         $this->getJson('/api/v1/user-profile')
             ->assertOk()
             ->assertJsonPath('data.id', $user->id)
-            ->assertJsonPath('data.account_status', 'onboarding')
+            ->assertJsonPath('data.account_status', 'verified_no_invoice')
+            ->assertJsonPath('data.next_step', 'select-package-payment-method')
             ->assertJsonPath('data.invitations', []);
     }
 
