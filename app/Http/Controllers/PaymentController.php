@@ -9,13 +9,18 @@ class PaymentController extends Controller
 {
     public function create(Request $request, MidtransService $midtrans)
     {
+        $customerName = trim((string) $request->name);
+        if ($customerName === '') {
+            $customerName = trim((string) strtok((string) $request->email, '@')) ?: 'Pelanggan Sena Digital';
+        }
+
         $params = [
             'transaction_details' => [
                 'order_id' => 'ORDER-' . uniqid(),
                 'gross_amount' => $request->amount,
             ],
             'customer_details' => [
-                'first_name' => $request->name,
+                'first_name' => $customerName,
                 'email' => $request->email,
             ],
         ];

@@ -13,10 +13,16 @@ class RegisterController extends Controller
     public function index(Request $request)
     {
         $validatedData = $request->validate([
+            'name' => 'required|string|min:3|max:100',
             'email' => 'required|string|email|max:255|unique:users',
             'password' => 'required|string|min:8',
             'phone' => 'nullable|string|max:30',
             'verification_channel' => 'nullable|string',
+        ], [
+            'name.required' => 'Nama pengguna wajib diisi.',
+            'name.min' => 'Nama pengguna minimal 3 karakter.',
+            'name.max' => 'Nama pengguna maksimal 100 karakter.',
+            'name.string' => 'Nama pengguna harus berupa teks.',
         ]);
         if (($validatedData['verification_channel'] ?? 'email') === 'whatsapp') {
             return response()->json(['status' => 422, 'code' => 'WHATSAPP_UNAVAILABLE', 'message' => 'Verifikasi WhatsApp sementara tidak tersedia.', 'data' => []], 422);
@@ -27,6 +33,7 @@ class RegisterController extends Controller
 
         try {
             $user = User::create([
+                'name' => trim($validatedData['name']),
                 'email' => $validatedData['email'],
                 'password' => Hash::make($validatedData['password']),
                 'phone' => $validatedData['phone'] ?? null,

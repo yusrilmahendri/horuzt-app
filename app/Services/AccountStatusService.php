@@ -25,6 +25,7 @@ class AccountStatusService
 
         $paymentStatus = $this->normalizePaymentStatus($invitation?->payment_status ?? $invitation?->status);
         $isVerified = $user->isAccountVerified();
+        $isProfileComplete = trim((string) $user->name) !== '';
         $hasInvoice = $invitation !== null;
         $hasPendingInvoice = $hasInvoice && $paymentStatus === 'pending';
         $activeUntil = $invitation?->domain_expires_at;
@@ -74,6 +75,9 @@ class AccountStatusService
             'remaining_days' => $activeUntil ? max(0, now()->diffInDays($activeUntil, false)) : null,
             'is_payment_confirmed' => $isPaymentConfirmed,
             'is_expired' => $isExpired,
+            'is_profile_complete' => $isProfileComplete,
+            'profile_incomplete' => ! $isProfileComplete,
+            'profile_completion_required' => ! $isProfileComplete,
             'next_step' => $this->nextStep($accountStatus),
             'redirect_url' => $this->redirectUrl($accountStatus),
             'feature_access' => [

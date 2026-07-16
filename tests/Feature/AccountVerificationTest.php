@@ -20,9 +20,29 @@ class AccountVerificationTest extends TestCase
 
     public function test_registration_creates_an_unverified_account(): void
     {
-        $response = $this->postJson('/api/v1/register', ['email' => 'new@example.test', 'password' => 'password123']);
-        $response->assertCreated()->assertJsonPath('data.user.email_verified_at', null);
-        $this->assertFalse(User::whereEmail('new@example.test')->firstOrFail()->isAccountVerified());
+        $response = $this->postJson('/api/v1/register', [
+            'name' => 'Pengguna Baru',
+            'email' => 'new@example.test',
+            'password' => 'password123',
+        ]);
+
+        $response->assertCreated()
+            ->assertJsonPath('data.user.email_verified_at', null)
+            ->assertJsonPath('data.user.name', 'Pengguna Baru');
+        $user = User::whereEmail('new@example.test')->firstOrFail();
+        $this->assertSame('Pengguna Baru', $user->name);
+        $this->assertFalse($user->isAccountVerified());
+    }
+
+    public function test_registration_requires_name(): void
+    {
+        $this->postJson('/api/v1/register', [
+            'email' => 'noname@example.test',
+            'password' => 'password123',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('name')
+            ->assertJsonPath('errors.name.0', 'Nama pengguna wajib diisi.');
     }
 
     public function test_email_code_is_sent_without_being_exposed(): void

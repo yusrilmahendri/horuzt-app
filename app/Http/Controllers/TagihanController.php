@@ -66,6 +66,18 @@ class TagihanController extends Controller
                 return response()->json(['message' => 'User tidak ditemukan'], 404);
             }
 
+            if (trim((string) $user->name) === '') {
+                return response()->json([
+                    'code' => 'PROFILE_INCOMPLETE',
+                    'message' => 'Profil belum lengkap. Nama pengguna wajib diisi sebelum membuat invoice pembayaran.',
+                    'data' => [
+                        'profile_incomplete' => true,
+                        'profile_completion_required' => true,
+                        'missing_fields' => ['name'],
+                    ],
+                ], 422);
+            }
+
             // Get invitation with package data
             $invitation = Invitation::where('user_id', $user->id)->first();
 

@@ -12,7 +12,6 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
-use Illuminate\Support\Str;
 
 class MidtransController extends Controller
 {
@@ -35,6 +34,9 @@ class MidtransController extends Controller
             $validated = $request->validated();
 
             $invitation = Invitation::with(['paketUndangan', 'user.settingOne'])->findOrFail($validated['invitation_id']);
+            if ($this->profileNameMissing($user)) {
+                return $this->profileIncompleteResponse();
+            }
 
             // Use kode_pemesanan as order_id for Midtrans (matches user's invoice)
             $orderId = $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '#INV-' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
@@ -42,16 +44,7 @@ class MidtransController extends Controller
 
             // Always send a usable email to Midtrans so payment notifications can be delivered.
             $userDomain = $invitation->user->settingOne->domain ?? '-';
-            $defaultCustomerDetails = [
-                'first_name' => $user->name ?? 'Guest',
-                'last_name' => '',
-                'email' => $user->email ?? $invitation->user->email,
-                'phone' => $user->phone ?? '',
-            ];
-            $customerDetails = array_merge(
-                $defaultCustomerDetails,
-                is_array($validated['customer_details'] ?? null) ? $validated['customer_details'] : []
-            );
+            $customerDetails = $this->buildCustomerDetails($user, $invitation, $validated['customer_details'] ?? []);
 
             if (empty($customerDetails['email'])) {
                 Log::warning('Midtrans snap token blocked because customer email is empty', [
@@ -100,7 +93,7 @@ class MidtransController extends Controller
                 'custom_field3' => $packageCode,
             ];
 
-            $midtransService = new MidtransService($user->id);
+            $midtransService = $this->midtransServiceForUser($user->id);
             $snapToken = $midtransService->createTransaction($params);
 
             DB::transaction(function () use ($invitation, $orderId, $grossAmount, $user, $params, $snapToken) {
@@ -171,6 +164,74 @@ class MidtransController extends Controller
                 'message' => 'An unexpected error occurred. Please try again later.',
             ], 500);
         }
+    }
+
+    protected function midtransServiceForUser(int $userId): MidtransService
+    {
+        if (app()->bound(MidtransService::class)) {
+            return app(MidtransService::class);
+        }
+
+        return new MidtransService($userId);
+    }
+
+    private function buildCustomerDetails($user, Invitation $invitation, mixed $requestCustomerDetails = []): array
+    {
+        $requestCustomerDetails = is_array($requestCustomerDetails) ? $requestCustomerDetails : [];
+        [$firstName, $lastName] = $this->splitCustomerName($this->resolveCustomerName($user, $invitation));
+
+        return [
+            'first_name' => $firstName,
+            'last_name' => $lastName,
+            'email' => $user->email ?? $invitation->user->email,
+            'phone' => $requestCustomerDetails['phone'] ?? $user->phone ?? '',
+        ];
+    }
+
+    private function resolveCustomerName($user, Invitation $invitation): string
+    {
+        foreach ([
+            $user->name ?? null,
+            $invitation->getAttribute('customer_name'),
+            isset($user->email) ? strtok($user->email, '@') : null,
+            'Pelanggan Sena Digital',
+        ] as $candidate) {
+            $name = trim((string) $candidate);
+            if ($name !== '') {
+                return $name;
+            }
+        }
+
+        return 'Pelanggan Sena Digital';
+    }
+
+    private function splitCustomerName(string $customerName): array
+    {
+        $parts = preg_split('/\s+/', trim($customerName), 2) ?: [];
+
+        return [
+            $parts[0] ?? 'Pelanggan',
+            $parts[1] ?? '',
+        ];
+    }
+
+    private function profileNameMissing($user): bool
+    {
+        return trim((string) $user->name) === '';
+    }
+
+    private function profileIncompleteResponse(): JsonResponse
+    {
+        return response()->json([
+            'success' => false,
+            'code' => 'PROFILE_INCOMPLETE',
+            'message' => 'Profil belum lengkap. Nama pengguna wajib diisi sebelum membuat invoice pembayaran.',
+            'data' => [
+                'profile_incomplete' => true,
+                'profile_completion_required' => true,
+                'missing_fields' => ['name'],
+            ],
+        ], 422);
     }
 
     public function checkPaymentStatus(Request $request): JsonResponse
