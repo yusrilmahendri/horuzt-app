@@ -54,17 +54,9 @@ class CreateSnapTokenRequest extends FormRequest
                 $invitation = Invitation::find($this->invitation_id);
 
                 if ($invitation) {
-                    if ($invitation->payment_status === 'paid') {
-                        $validator->errors()->add('invitation_id', 'This invitation has already been paid.');
-                    }
-
-                    if ($invitation->order_id) {
-                        $validator->errors()->add('invitation_id', 'Payment already initiated for this invitation.');
-                    }
-
                     $package = $invitation->paketUndangan;
                     if ($package && $this->amount != $package->price) {
-                        $validator->errors()->add('amount', 'Amount does not match package price.');
+                        $validator->errors()->add('amount', 'Nominal pembayaran tidak sesuai dengan harga paket.');
                     }
                 }
             }
@@ -74,11 +66,11 @@ class CreateSnapTokenRequest extends FormRequest
     public function messages(): array
     {
         return [
-            'invitation_id.required' => 'Invitation ID is required.',
-            'invitation_id.exists' => 'Invalid invitation or you do not have permission to access this invitation.',
-            'amount.required' => 'Payment amount is required.',
-            'amount.min' => 'Minimum payment amount is Rp 10,000.',
-            'amount.max' => 'Maximum payment amount is Rp 100,000,000.',
+            'invitation_id.required' => 'Invoice wajib dipilih.',
+            'invitation_id.exists' => 'Invoice tidak valid atau bukan milik Anda.',
+            'amount.required' => 'Nominal pembayaran wajib diisi.',
+            'amount.min' => 'Minimal pembayaran adalah Rp 10.000.',
+            'amount.max' => 'Maksimal pembayaran adalah Rp 100.000.000.',
         ];
     }
 }

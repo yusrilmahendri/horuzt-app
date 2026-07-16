@@ -6,6 +6,7 @@ use App\Http\Requests\CreateSnapTokenRequest;
 use App\Models\Invitation;
 use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
+use App\Notifications\MidtransPaymentStatusNotification;
 use App\Services\MidtransService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -28,7 +29,7 @@ class MidtransController extends Controller
             $user = Auth::user()?->fresh();
 
             if (!$user) {
-                return response()->json(['success' => false, 'message' => 'Unauthenticated'], 401);
+                return response()->json(['success' => false, 'message' => 'Sesi login tidak valid. Silakan masuk kembali.'], 401);
             }
 
             $validated = $request->validated();
@@ -38,8 +39,40 @@ class MidtransController extends Controller
                 return $this->profileIncompleteResponse();
             }
 
-            // Use kode_pemesanan as order_id for Midtrans (matches user's invoice)
-            $orderId = $invitation->kode_pemesanan ?? $invitation->user->kode_pemesanan ?? '#INV-' . str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
+            if ($this->isPaidStatus($invitation->payment_status) || $invitation->payment_confirmed_at !== null) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_ALREADY_PAID',
+                    'message' => 'Pembayaran untuk invoice ini sudah selesai.',
+                    'redirect_url' => '/dashboard/overview',
+                    'data' => [
+                        'invoice_id' => $invitation->id,
+                        'order_id' => $invitation->order_id,
+                        'payment_status' => $invitation->payment_status,
+                    ],
+                ], 409);
+            }
+
+            if ($existingTransaction = $this->activeMidtransTransactionFor($invitation)) {
+                return response()->json([
+                    'success' => true,
+                    'message' => 'Transaksi Midtrans sebelumnya ditemukan. Silakan lanjutkan pembayaran.',
+                    'data' => [
+                        'reused' => true,
+                        'invoice_id' => $invitation->id,
+                        'invitation_id' => $invitation->id,
+                        'order_id' => $existingTransaction['order_id'],
+                        'snap_token' => $existingTransaction['snap_token'],
+                        'redirect_url' => $existingTransaction['redirect_url'],
+                        'payment_status' => $invitation->payment_status ?? 'pending',
+                        'expires_at' => $existingTransaction['expires_at'],
+                    ],
+                ], 200);
+            }
+
+            $this->expireStaleMidtransTransactions($invitation);
+
+            $orderId = $this->orderIdForNewMidtransTransaction($invitation);
             $grossAmount = $validated['amount'];
 
             // Always send a usable email to Midtrans so payment notifications can be delivered.
@@ -95,8 +128,9 @@ class MidtransController extends Controller
 
             $midtransService = $this->midtransServiceForUser($user->id);
             $snapToken = $midtransService->createTransaction($params);
+            $expiresAt = now()->addHours((int) config('midtrans.token_expiry_hours', 24));
 
-            DB::transaction(function () use ($invitation, $orderId, $grossAmount, $user, $params, $snapToken) {
+            DB::transaction(function () use ($invitation, $orderId, $grossAmount, $user, $params, $snapToken, $expiresAt) {
                 $invitation->update([
                     'order_id' => $orderId,
                     'payment_status' => 'pending',
@@ -110,7 +144,10 @@ class MidtransController extends Controller
                     'transaction_status' => 'pending',
                     'gross_amount' => $grossAmount,
                     'request_payload' => json_encode($params),
-                    'response_payload' => json_encode(['snap_token' => $snapToken]),
+                    'response_payload' => json_encode([
+                        'snap_token' => $snapToken,
+                        'expires_at' => $expiresAt->toIso8601String(),
+                    ]),
                     'ip_address' => request()->ip(),
                     'user_agent' => request()->userAgent(),
                 ]);
@@ -129,15 +166,18 @@ class MidtransController extends Controller
                     'order_id' => $orderId,
                     'gross_amount' => $grossAmount,
                     'invitation_id' => $invitation->id,
-                    'expires_at' => now()->addHours(24)->toIso8601String(),
+                    'reused' => false,
+                    'redirect_url' => null,
+                    'payment_status' => 'pending',
+                    'expires_at' => $expiresAt->toIso8601String(),
                 ],
-                'message' => 'Snap token created successfully',
+                'message' => 'Transaksi Midtrans berhasil dibuat. Silakan lanjutkan pembayaran.',
             ], 201);
 
         } catch (\Illuminate\Validation\ValidationException $e) {
             return response()->json([
                 'success' => false,
-                'message' => 'Validation failed',
+                'message' => 'Validasi gagal.',
                 'errors' => $e->errors(),
             ], 422);
 
@@ -161,7 +201,7 @@ class MidtransController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => 'An unexpected error occurred. Please try again later.',
+                'message' => 'Terjadi kesalahan saat membuat transaksi Midtrans. Silakan coba lagi.',
             ], 500);
         }
     }
@@ -173,6 +213,98 @@ class MidtransController extends Controller
         }
 
         return new MidtransService($userId);
+    }
+
+    private function activeMidtransTransactionFor(Invitation $invitation): ?array
+    {
+        if (! $invitation->order_id || $this->isTerminalStatus($invitation->payment_status)) {
+            return null;
+        }
+
+        $log = PaymentLog::query()
+            ->where('invitation_id', $invitation->id)
+            ->where('order_id', $invitation->order_id)
+            ->where('event_type', 'token_request')
+            ->latest('id')
+            ->first();
+
+        if (! $log || $this->isTerminalStatus($log->transaction_status)) {
+            return null;
+        }
+
+        $payload = json_decode((string) $log->response_payload, true);
+        $snapToken = is_array($payload) ? trim((string) ($payload['snap_token'] ?? '')) : '';
+        if ($snapToken === '') {
+            return null;
+        }
+
+        $expiresAt = $this->snapTokenExpiresAt($log, is_array($payload) ? $payload : []);
+        if ($expiresAt->isPast()) {
+            return null;
+        }
+
+        return [
+            'order_id' => $log->order_id,
+            'snap_token' => $snapToken,
+            'expires_at' => $expiresAt->toIso8601String(),
+            'redirect_url' => null,
+        ];
+    }
+
+    private function expireStaleMidtransTransactions(Invitation $invitation): void
+    {
+        PaymentLog::query()
+            ->where('invitation_id', $invitation->id)
+            ->where('event_type', 'token_request')
+            ->whereNotIn('transaction_status', ['capture', 'settlement', 'deny', 'cancel', 'expire', 'refund'])
+            ->get()
+            ->each(function (PaymentLog $log) {
+                $payload = json_decode((string) $log->response_payload, true);
+                $snapToken = is_array($payload) ? trim((string) ($payload['snap_token'] ?? '')) : '';
+                $expiresAt = $this->snapTokenExpiresAt($log, is_array($payload) ? $payload : []);
+
+                if ($snapToken === '' || $expiresAt->isPast()) {
+                    $log->update([
+                        'transaction_status' => 'expire',
+                        'notes' => trim(($log->notes ? $log->notes."\n" : '').'Transaksi Midtrans lama dinonaktifkan secara lokal karena token kosong atau kedaluwarsa.'),
+                    ]);
+                }
+            });
+    }
+
+    private function snapTokenExpiresAt(PaymentLog $log, array $payload)
+    {
+        if (! empty($payload['expires_at'])) {
+            return \Carbon\Carbon::parse($payload['expires_at']);
+        }
+
+        return $log->created_at->copy()->addHours((int) config('midtrans.token_expiry_hours', 24));
+    }
+
+    private function orderIdForNewMidtransTransaction(Invitation $invitation): string
+    {
+        if (! $invitation->order_id) {
+            return $this->baseOrderIdFor($invitation);
+        }
+
+        return $this->baseOrderIdFor($invitation).'-'.now()->format('YmdHis');
+    }
+
+    private function baseOrderIdFor(Invitation $invitation): string
+    {
+        return $invitation->kode_pemesanan
+            ?? $invitation->user->kode_pemesanan
+            ?? 'INV-'.str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
+    }
+
+    private function isPaidStatus(?string $status): bool
+    {
+        return in_array(strtolower((string) $status), ['paid', 'confirmed', 'success', 'settlement', 'capture'], true);
+    }
+
+    private function isTerminalStatus(?string $status): bool
+    {
+        return in_array(strtolower((string) $status), ['paid', 'confirmed', 'success', 'settlement', 'capture', 'failed', 'deny', 'cancel', 'expire', 'expired', 'refund', 'refunded'], true);
     }
 
     private function buildCustomerDetails($user, Invitation $invitation, mixed $requestCustomerDetails = []): array
@@ -232,6 +364,161 @@ class MidtransController extends Controller
                 'missing_fields' => ['name'],
             ],
         ], 422);
+    }
+
+    private function extractPaymentDetails(Request $request): array
+    {
+        $paymentType = $request->input('payment_type');
+        $details = [
+            'payment_type' => $paymentType,
+            'transaction_time' => $request->input('transaction_time'),
+            'expiry_time' => $request->input('expiry_time'),
+        ];
+
+        if ($paymentType === 'qris') {
+            $details['acquirer'] = $request->input('acquirer');
+            $details['actions'] = $this->safeMidtransActions($request->input('actions', []));
+        }
+
+        if ($paymentType === 'bank_transfer') {
+            $vaNumbers = $request->input('va_numbers', []);
+            $firstVa = is_array($vaNumbers) ? ($vaNumbers[0] ?? []) : [];
+            $details['bank'] = $firstVa['bank'] ?? $request->input('bank');
+            $details['va_number'] = $firstVa['va_number'] ?? null;
+            $details['permata_va_number'] = $request->input('permata_va_number');
+        }
+
+        if ($paymentType === 'echannel') {
+            $details['bill_key'] = $request->input('bill_key');
+            $details['biller_code'] = $request->input('biller_code');
+        }
+
+        if (in_array($paymentType, ['gopay', 'shopeepay'], true)) {
+            $details['actions'] = $this->safeMidtransActions($request->input('actions', []));
+            $details['deeplink_redirect'] = $this->actionUrl($details['actions'], 'deeplink-redirect');
+            $details['generate_qr_code'] = $this->actionUrl($details['actions'], 'generate-qr-code');
+        }
+
+        if ($paymentType === 'cstore') {
+            $details['store'] = $request->input('store');
+            $details['payment_code'] = $request->input('payment_code');
+        }
+
+        return array_filter($details, fn ($value) => $value !== null && $value !== '');
+    }
+
+    private function safeMidtransActions($actions): array
+    {
+        if (! is_array($actions)) {
+            return [];
+        }
+
+        return collect($actions)
+            ->filter(fn ($action) => is_array($action))
+            ->map(fn ($action) => [
+                'name' => $action['name'] ?? null,
+                'method' => $action['method'] ?? null,
+                'url' => $action['url'] ?? null,
+            ])
+            ->values()
+            ->all();
+    }
+
+    private function actionUrl(array $actions, string $name): ?string
+    {
+        foreach ($actions as $action) {
+            if (($action['name'] ?? null) === $name && ! empty($action['url'])) {
+                return $action['url'];
+            }
+        }
+
+        return null;
+    }
+
+    private function sendWebhookPaymentNotification(PaymentLog $log, Request $request): void
+    {
+        $notificationStatus = $this->notificationStatusFor($log->transaction_status);
+        if ($notificationStatus === null || $this->notificationAlreadySent($log, $notificationStatus)) {
+            return;
+        }
+
+        try {
+            $invitation = Invitation::with(['user', 'paketUndangan'])->find($log->invitation_id);
+            $user = $invitation?->user;
+
+            if (! $invitation || ! $user || empty($user->email)) {
+                Log::warning('Midtrans payment notification skipped because user or email is missing', [
+                    'payment_log_id' => $log->id,
+                    'invitation_id' => $log->invitation_id,
+                    'order_id' => $log->order_id,
+                ]);
+
+                return;
+            }
+
+            $payload = json_decode((string) $log->response_payload, true) ?: [];
+            $paymentDetails = is_array($payload['payment_details'] ?? null) ? $payload['payment_details'] : [];
+            $continueUrl = $this->continuePaymentUrl($log);
+
+            $user->notify(new MidtransPaymentStatusNotification($notificationStatus, [
+                'invoice_code' => $invitation->kode_pemesanan ?? $log->order_id,
+                'package_name' => PaketUndangan::displayLabelFromCode(
+                    $invitation->paketUndangan?->code,
+                    $invitation->paketUndangan?->name_paket ?? ($invitation->package_features_snapshot['name_paket'] ?? null)
+                ),
+                'gross_amount' => $log->gross_amount,
+                'payment_type' => $log->payment_type,
+                'expiry_time' => $payload['expiry_time'] ?? $request->input('expiry_time'),
+                'payment_details' => $paymentDetails,
+                'continue_url' => $continueUrl,
+            ]));
+
+            $log->update([
+                'notes' => trim(($log->notes ? $log->notes."\n" : '')."notification:{$notificationStatus}_sent"),
+            ]);
+        } catch (\Throwable $e) {
+            Log::error('Failed to send Midtrans payment notification email', [
+                'payment_log_id' => $log->id,
+                'order_id' => $log->order_id,
+                'transaction_status' => $log->transaction_status,
+                'error' => $e->getMessage(),
+            ]);
+        }
+    }
+
+    private function notificationStatusFor(?string $transactionStatus): ?string
+    {
+        return match ($transactionStatus) {
+            'pending' => 'pending',
+            'capture', 'settlement' => 'paid',
+            'deny', 'cancel', 'expire' => 'expired',
+            default => null,
+        };
+    }
+
+    private function notificationAlreadySent(PaymentLog $log, string $notificationStatus): bool
+    {
+        return PaymentLog::query()
+            ->where('order_id', $log->order_id)
+            ->where('midtrans_transaction_id', $log->midtrans_transaction_id)
+            ->where('event_type', 'webhook_processed')
+            ->where('notes', 'like', "%notification:{$notificationStatus}_sent%")
+            ->exists();
+    }
+
+    private function continuePaymentUrl(PaymentLog $log): string
+    {
+        $frontendUrl = rtrim(config('app.frontend_url', env('FRONTEND_URL', 'https://www.sena-digital.com')), '/');
+
+        if ($log->transaction_status === 'pending') {
+            return $frontendUrl.'/dashboard/payment-pending?order_id='.urlencode((string) $log->order_id);
+        }
+
+        if (in_array($log->transaction_status, ['capture', 'settlement'], true)) {
+            return $frontendUrl.'/dashboard';
+        }
+
+        return $frontendUrl.'/pilih-paket?order_id='.urlencode((string) $log->order_id);
     }
 
     public function checkPaymentStatus(Request $request): JsonResponse
@@ -652,19 +939,21 @@ class MidtransController extends Controller
                 return response()->json(['message' => 'Invalid signature'], 403);
             }
 
-            if (in_array($invitation->payment_status, ['paid', 'failed', 'expired']) && in_array($transactionStatus, ['capture', 'settlement'])) {
+            if ($this->isPaidStatus($invitation->payment_status)) {
                 Log::info('Duplicate webhook for already-terminal invitation', [
                     'order_id' => $orderId,
                     'invitation_id' => $invitation->id,
                     'current_status' => $invitation->payment_status,
+                    'incoming_transaction_status' => $transactionStatus,
                 ]);
 
                 return response()->json(['message' => 'Already processed'], 200);
             }
 
-            DB::transaction(function () use ($invitation, $transactionStatus, $transactionId, $midtransService, $request, $orderId, $grossAmount) {
+            $processedLog = DB::transaction(function () use ($invitation, $transactionStatus, $transactionId, $midtransService, $request, $orderId, $grossAmount) {
                 $paymentStatus = $midtransService->getPaymentStatusFromTransactionStatus($transactionStatus);
                 $snapshot = $invitation->package_features_snapshot ?? [];
+                $paymentDetails = $this->extractPaymentDetails($request);
 
                 $updateData = [
                     'payment_status' => $paymentStatus,
@@ -707,7 +996,7 @@ class MidtransController extends Controller
                     }
                 }
 
-                PaymentLog::create([
+                return PaymentLog::create([
                     'user_id' => $invitation->user_id,
                     'invitation_id' => $invitation->id,
                     'order_id' => $orderId,
@@ -716,16 +1005,24 @@ class MidtransController extends Controller
                     'transaction_status' => $transactionStatus,
                     'payment_type' => $request->input('payment_type'),
                     'gross_amount' => $grossAmount,
+                    'request_payload' => json_encode($request->all()),
+                    'response_payload' => json_encode([
+                        'transaction_time' => $request->input('transaction_time'),
+                        'expiry_time' => $request->input('expiry_time'),
+                        'payment_details' => $paymentDetails,
+                    ]),
                     'signature_valid' => true,
                     'ip_address' => $request->ip(),
                     'notes' => "Payment status updated to: {$paymentStatus}",
                 ]);
             });
 
+            $this->sendWebhookPaymentNotification($processedLog->fresh(), $request);
+
             Log::info('Webhook processed successfully', [
                 'order_id' => $orderId,
                 'transaction_status' => $transactionStatus,
-                'payment_status' => $invitation->payment_status,
+                'payment_status' => $invitation->fresh()->payment_status,
             ]);
 
             return response()->json(['message' => 'Webhook processed successfully'], 200);

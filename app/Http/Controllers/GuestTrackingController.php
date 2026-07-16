@@ -11,6 +11,7 @@ use App\Models\AttendanceScan;
 use App\Services\DomainService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Support\Facades\Validator;
@@ -280,6 +281,7 @@ class GuestTrackingController extends Controller
 
             return response()->json([
                 'status' => true,
+                'success' => true,
                 'message' => 'Data tamu berhasil diambil.',
                 'data' => $guests,
                 'total' => $guests->count(),
@@ -302,10 +304,12 @@ class GuestTrackingController extends Controller
     {
         $validated = $request->validate([
             'domain' => ['required', 'string', 'max:255'],
-            'guest_name' => ['required', 'string', 'max:255'],
+            'guest_name' => ['required_without:name', 'string', 'max:255'],
+            'name' => ['required_without:guest_name', 'string', 'max:255'],
         ], [
             'domain.required' => 'Domain undangan wajib diisi.',
             'guest_name.required' => 'Nama tamu wajib diisi.',
+            'name.required' => 'Nama tamu wajib diisi.',
         ]);
 
         $domain = $this->normalizeDomain($validated['domain']);
@@ -326,35 +330,127 @@ class GuestTrackingController extends Controller
             ], 403);
         }
 
-        $guestName = trim($validated['guest_name']);
-        $guestCode = $this->uniqueGuestCode((int) $ownerUserId, $guestName, $domain);
-        $invitationUrl = $this->invitationUrl($domain, $guestCode);
-
-        $guestData = [
-            'user_id' => (int) $ownerUserId,
-            'guest_name' => $guestName,
-            'guest_token' => WeddingGuest::generateUniqueToken($guestName, $domain),
-            'domain' => $domain,
-            'first_visit_at' => now(),
-            'ip_address' => $request->ip(),
-            'user_agent' => $request->userAgent(),
-        ];
-
-        if (Schema::hasColumn('wedding_guests', 'guest_code')) {
-            $guestData['guest_code'] = $guestCode;
-        }
-
-        if (Schema::hasColumn('wedding_guests', 'invitation_url')) {
-            $guestData['invitation_url'] = $invitationUrl;
-        }
-
-        $guest = WeddingGuest::create($guestData);
+        $guestName = trim((string) ($validated['guest_name'] ?? $validated['name']));
+        $guest = DB::transaction(fn (): WeddingGuest => $this->createGuestForOwner((int) $ownerUserId, $domain, $guestName, $request));
 
         return response()->json([
             'status' => true,
+            'success' => true,
             'message' => 'Link tamu berhasil dibuat.',
             'data' => $this->guestPayload($guest->refresh()),
         ], 201);
+    }
+
+    /**
+     * Create guest invitation link from Dashboard -> Bagi Undangan.
+     * POST /v1/user/invitation-guests
+     */
+    public function userStore(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'name' => ['required_without:guest_name', 'string', 'max:255'],
+            'guest_name' => ['required_without:name', 'string', 'max:255'],
+            'domain' => ['nullable', 'string', 'max:255'],
+        ], [
+            'name.required' => 'Nama tamu wajib diisi.',
+            'guest_name.required' => 'Nama tamu wajib diisi.',
+        ]);
+
+        $ownerUserId = (int) auth()->id();
+        $domain = $this->normalizeDomain((string) ($validated['domain'] ?? ''));
+        $domain = $domain !== '' ? $domain : $this->primaryDomainForUser($ownerUserId);
+
+        if ($domain === '') {
+            return response()->json([
+                'status' => false,
+                'success' => false,
+                'code' => 'INVITATION_NOT_FOUND',
+                'message' => 'Domain undangan aktif tidak ditemukan.',
+            ], 404);
+        }
+
+        $resolvedOwnerId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+        if ($resolvedOwnerId && (int) $resolvedOwnerId !== $ownerUserId) {
+            return response()->json([
+                'status' => false,
+                'success' => false,
+                'message' => 'Anda tidak memiliki akses ke undangan ini.',
+            ], 403);
+        }
+
+        $guestName = trim((string) ($validated['name'] ?? $validated['guest_name']));
+        $guest = DB::transaction(fn (): WeddingGuest => $this->createGuestForOwner($ownerUserId, $domain, $guestName, $request));
+
+        return response()->json([
+            'status' => true,
+            'success' => true,
+            'message' => 'Tamu berhasil dibuat.',
+            'data' => $this->guestPayload($guest->refresh()),
+        ], 201);
+    }
+
+    /**
+     * List guest invitation links from database.
+     * GET /v1/user/invitation-guests
+     */
+    public function userIndex(Request $request): JsonResponse
+    {
+        return $this->index($request);
+    }
+
+    /**
+     * Import guest invitations through the dashboard alias.
+     * POST /v1/user/invitation-guests/import
+     */
+    public function userImport(Request $request): JsonResponse
+    {
+        if (! $request->filled('domain')) {
+            $request->merge(['domain' => $this->primaryDomainForUser((int) auth()->id())]);
+        }
+
+        return $this->import($request);
+    }
+
+    /**
+     * Export guest invitations through the dashboard alias.
+     * GET /v1/user/invitation-guests/export
+     */
+    public function userExport(Request $request): JsonResponse
+    {
+        return $this->export($request);
+    }
+
+    /**
+     * List checked-in guests from database.
+     * GET /v1/user/invitation-guests/attendance
+     */
+    public function attendance(Request $request): JsonResponse
+    {
+        $userId = (int) auth()->id();
+        $domain = $this->normalizeDomain((string) $request->query('domain', ''));
+
+        $guests = WeddingGuest::query()
+            ->where('user_id', $userId)
+            ->where('attended', true)
+            ->whereNotNull('attended_at')
+            ->when($domain !== '', function ($query) use ($domain) {
+                $query->where(function ($query) use ($domain) {
+                    $query->whereRaw('LOWER(domain) = ?', [$domain])
+                        ->orWhereRaw('LOWER(domain) LIKE ?', ['%/'.$domain]);
+                });
+            })
+            ->orderByDesc('attended_at')
+            ->get()
+            ->map(fn (WeddingGuest $guest): array => $this->guestPayload($guest))
+            ->values();
+
+        return response()->json([
+            'status' => true,
+            'success' => true,
+            'message' => 'Data tamu hadir berhasil diambil.',
+            'data' => $guests,
+            'total' => $guests->count(),
+        ]);
     }
 
     /**
@@ -435,12 +531,12 @@ class GuestTrackingController extends Controller
             ], 422);
         }
 
-        $created = $guestNames
+        $created = DB::transaction(fn () => $guestNames
             ->unique()
             ->map(fn (string $guestName): array => $this->guestPayload(
                 $this->createGuestForOwner((int) $ownerUserId, $domain, $guestName, $request)
             ))
-            ->values();
+            ->values());
 
         return response()->json([
             'status' => true,
@@ -515,11 +611,12 @@ class GuestTrackingController extends Controller
     private function createGuestForOwner(int $ownerUserId, string $domain, string $guestName, Request $request): WeddingGuest
     {
         $guestCode = $this->uniqueGuestCode($ownerUserId, $guestName, $domain);
-        $invitationUrl = $this->invitationUrl($domain, $guestCode);
+        $guestToken = WeddingGuest::generateUniqueToken($guestName, $domain);
+        $invitationUrl = $this->invitationUrl($domain, $guestCode, $guestToken);
         $guestData = [
             'user_id' => $ownerUserId,
             'guest_name' => $guestName,
-            'guest_token' => WeddingGuest::generateUniqueToken($guestName, $domain),
+            'guest_token' => $guestToken,
             'domain' => $domain,
             'first_visit_at' => now(),
             'ip_address' => $request->ip(),
@@ -544,13 +641,17 @@ class GuestTrackingController extends Controller
 
         return [
             'id' => $guest->id,
+            'name' => $guest->guest_name,
             'guest_name' => $guest->guest_name,
             'guest_code' => $guestCode,
+            'guest_slug' => $guestCode,
             'guest_token' => $guest->guest_token,
             'domain' => $domain,
-            'invitation_url' => $guest->invitation_url ?: $this->invitationUrl($domain, $guestCode),
+            'invitation_url' => $this->invitationUrlForPayload($guest, $domain, $guestCode),
             'attended' => (bool) $guest->attended,
             'attended_at' => $guest->attended_at,
+            'attendance_status' => $guest->attended ? 'present' : 'not_present',
+            'checked_in_at' => $guest->attended_at,
         ];
     }
 
@@ -565,11 +666,25 @@ class GuestTrackingController extends Controller
         return $slug !== '' ? $slug : (string) $guest->guest_token;
     }
 
-    private function invitationUrl(string $domain, string $guestCode): string
+    private function invitationUrl(string $domain, string $guestCode, ?string $guestToken = null): string
     {
         $frontendUrl = rtrim((string) config('app.frontend_url', 'https://www.sena-digital.com'), '/');
+        $query = $guestToken
+            ? http_build_query(['guest' => $guestToken, 'to' => $guestCode])
+            : http_build_query(['to' => $guestCode]);
 
-        return $frontendUrl.'/wedding/'.$domain.'?to='.$guestCode;
+        return $frontendUrl.'/wedding/'.$domain.'?'.$query;
+    }
+
+    private function invitationUrlForPayload(WeddingGuest $guest, string $domain, string $guestCode): string
+    {
+        $storedUrl = (string) $guest->invitation_url;
+
+        if ($storedUrl !== '' && str_contains($storedUrl, 'guest=')) {
+            return $storedUrl;
+        }
+
+        return $this->invitationUrl($domain, $guestCode, (string) $guest->guest_token);
     }
 
     private function guestNamesFromImportFile($file): array|JsonResponse
@@ -683,6 +798,17 @@ class GuestTrackingController extends Controller
     private function normalizeDomain(string $domain): string
     {
         return $this->domainService->normalizeToSlug($domain);
+    }
+
+    private function primaryDomainForUser(int $userId): string
+    {
+        $domain = Setting::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('domain')
+            ->orderByDesc('id')
+            ->value('domain');
+
+        return $this->normalizeDomain((string) $domain);
     }
 
     private function uniqueGuestCode(int $userId, string $guestName, ?string $domain = null): string

@@ -28,7 +28,7 @@ class AttendanceQrScanTest extends TestCase
             ->assertJsonPath('data.guest_name', 'Abdi Tata')
             ->assertJsonPath('data.guest_code', 'abdi-tata')
             ->assertJsonPath('data.domain', 'nova-yusril')
-            ->assertJsonPath('data.attendance_status', 'hadir')
+            ->assertJsonPath('data.attendance_status', 'present')
             ->assertJsonPath('data.already_scanned', false);
 
         $this->assertDatabaseHas('attendance_scans', [
@@ -65,11 +65,96 @@ class AttendanceQrScanTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('status', true)
-            ->assertJsonPath('message', 'Tamu sudah pernah discan sebelumnya.')
+            ->assertJsonPath('code', 'GUEST_ALREADY_CHECKED_IN')
+            ->assertJsonPath('message', 'Tamu ini sudah tercatat hadir.')
             ->assertJsonPath('data.guest_name', 'Abdi Tata')
             ->assertJsonPath('data.already_scanned', true);
 
         $this->assertSame(1, DB::table('attendance_scans')->where('user_id', $user->id)->count());
+    }
+
+    public function test_qr_scan_tokenized_link_marks_guest_attendance(): void
+    {
+        $user = $this->createWeddingWithGuest();
+        $token = (string) DB::table('wedding_guests')
+            ->where('user_id', $user->id)
+            ->value('guest_token');
+
+        $this->postJson('/api/v1/attendance/scan', [
+            'scanned_value' => 'https://www.sena-digital.com/wedding/nova-yusril?guest='.$token.'&to=abdi-tata',
+        ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Kehadiran tamu berhasil dicatat.')
+            ->assertJsonPath('data.name', 'Abdi Tata')
+            ->assertJsonPath('data.guest_token', $token)
+            ->assertJsonPath('data.attendance_status', 'present');
+
+        $this->assertDatabaseHas('wedding_guests', [
+            'user_id' => $user->id,
+            'guest_name' => 'Abdi Tata',
+            'attended' => true,
+        ]);
+    }
+
+    public function test_invalid_guest_token_returns_indonesian_not_found_message(): void
+    {
+        $this->createWeddingWithGuest();
+
+        $this->postJson('/api/v1/attendance/scan', [
+            'guest_token' => 'token-tidak-ada',
+        ])
+            ->assertNotFound()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'GUEST_NOT_FOUND')
+            ->assertJsonPath('message', 'Data tamu tidak ditemukan. Pastikan tamu sudah dibuat atau link undangan benar.');
+    }
+
+    public function test_authenticated_user_cannot_scan_guest_owned_by_another_user(): void
+    {
+        $this->withoutMiddleware();
+
+        $owner = $this->createWeddingWithGuest();
+        $scanner = User::create([
+            'name' => 'Scanner Lain',
+            'email' => 'scanner-'.str()->random(8).'@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        DB::table('settings')->insert([
+            'user_id' => $scanner->id,
+            'domain' => 'scanner-lain',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('acaras')->insert([
+            'user_id' => $scanner->id,
+            'nama_acara' => 'Resepsi Scanner',
+            'tanggal_acara' => now()->toDateString(),
+            'start_acara' => '18:00',
+            'end_acara' => '20:00',
+            'alamat' => 'Gedung Test',
+            'link_maps' => 'https://maps.example.test',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $token = (string) DB::table('wedding_guests')
+            ->where('user_id', $owner->id)
+            ->value('guest_token');
+        $acaraId = (int) DB::table('acaras')
+            ->where('user_id', $scanner->id)
+            ->value('id');
+
+        $this->actingAs($scanner, 'sanctum')
+            ->postJson('/api/v1/user/attendance-scans', [
+                'acara_id' => $acaraId,
+                'guest_token' => $token,
+                'scan_type' => 'qr_code',
+            ])
+            ->assertNotFound()
+            ->assertJsonPath('code', 'GUEST_NOT_FOUND');
     }
 
     public function test_qr_scan_without_to_returns_clear_error(): void
@@ -168,6 +253,10 @@ class AttendanceQrScanTest extends TestCase
 
         if (DB::getSchemaBuilder()->hasColumn('wedding_guests', 'guest_code')) {
             $guestData['guest_code'] = 'abdi-tata';
+        }
+
+        if (DB::getSchemaBuilder()->hasColumn('wedding_guests', 'invitation_url')) {
+            $guestData['invitation_url'] = 'https://www.sena-digital.com/wedding/nova-yusril?guest='.$guestData['guest_token'].'&to=abdi-tata';
         }
 
         DB::table('wedding_guests')->insert($guestData);

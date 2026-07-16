@@ -9,6 +9,7 @@ use App\Models\WeddingGuest;
 use App\Services\DomainService;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
@@ -28,87 +29,73 @@ class AttendanceScanController extends Controller
     {
         try {
             $validated = $request->validate([
-                'url' => ['required', 'string', 'max:2048'],
+                'url' => ['required_without_all:scanned_value,guest_token', 'string', 'max:2048'],
+                'scanned_value' => ['required_without_all:url,guest_token', 'string', 'max:2048'],
+                'guest_token' => ['required_without_all:url,scanned_value', 'string', 'max:255'],
                 'acara_id' => ['nullable', 'integer'],
                 'notes' => ['nullable', 'string', 'max:500'],
             ], [
-                'url.required' => 'URL QR wajib diisi.',
+                'url.required_without_all' => 'URL atau token tamu wajib diisi.',
+                'scanned_value.required_without_all' => 'URL atau token tamu wajib diisi.',
+                'guest_token.required_without_all' => 'URL atau token tamu wajib diisi.',
             ]);
 
-            $url = trim($validated['url']);
-            $domain = $this->domainService->normalizeToSlug($url);
-            $guestCode = $this->guestCodeFromUrl($url);
+            $scannedValue = trim((string) ($validated['guest_token'] ?? $validated['scanned_value'] ?? $validated['url']));
+            $domain = $this->domainService->normalizeToSlug($scannedValue);
+            $guestToken = $this->guestTokenFromScannedValue($scannedValue, $validated['guest_token'] ?? null);
+            $legacyGuestCode = $this->guestCodeFromUrl($scannedValue);
 
-            if ($guestCode === '') {
+            if ($guestToken === '' && $legacyGuestCode === '') {
                 return response()->json([
                     'status' => false,
+                    'success' => false,
                     'code' => 'GUEST_CODE_REQUIRED',
-                    'message' => 'Kode tamu pada parameter to wajib diisi.',
+                    'message' => 'Token tamu atau parameter to wajib diisi.',
                 ], 422);
             }
 
-            $ownerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
-            if (! $ownerUserId) {
+            if ($guestToken === '' && $legacyGuestCode !== '' && ! $this->domainService->resolveOwnerUserIdByDomain($domain)) {
                 return response()->json([
                     'status' => false,
+                    'success' => false,
                     'code' => 'INVITATION_NOT_FOUND',
                     'message' => 'Undangan tidak ditemukan.',
                 ], 404);
             }
 
-            $guest = $this->findGuestByCode((int) $ownerUserId, $domain, $guestCode);
+            $guest = $this->resolveGuestFromScan($guestToken, $legacyGuestCode, $domain);
+
             if (! $guest) {
                 return response()->json([
                     'status' => false,
+                    'success' => false,
                     'code' => 'GUEST_NOT_FOUND',
                     'message' => 'Data tamu tidak ditemukan. Pastikan tamu sudah dibuat atau link undangan benar.',
                 ], 404);
             }
 
+            $ownerUserId = (int) $guest->user_id;
+            $domain = $domain !== '' ? $domain : $this->domainForGuest($guest);
             $acara = $this->resolveAttendanceAcara((int) $ownerUserId, $validated['acara_id'] ?? null);
             if (! $acara) {
                 return response()->json([
                     'status' => false,
+                    'success' => false,
                     'code' => 'EVENT_NOT_FOUND',
                     'message' => 'Data acara undangan tidak ditemukan.',
                 ], 422);
             }
 
-            $identifiers = $this->guestIdentifiers($guest, $guestCode);
-            $existingScan = AttendanceScan::query()
-                ->where('user_id', (int) $ownerUserId)
-                ->where('acara_id', $acara->id)
-                ->whereIn('guest_identifier', $identifiers)
-                ->orderBy('scanned_at')
-                ->first();
-
-            if ($existingScan) {
-                $this->markGuestAndBookAsAttended($guest, $acara, $request, $existingScan->scanned_at);
-
-                return response()->json([
-                    'status' => true,
-                    'message' => 'Tamu sudah pernah discan sebelumnya.',
-                    'data' => $this->scanPayload($guest, $domain, $guestCode, $existingScan->scanned_at, true),
-                ], 200);
-            }
-
-            $scan = AttendanceScan::create([
-                'user_id' => (int) $ownerUserId,
-                'acara_id' => $acara->id,
-                'guest_name' => $guest->guest_name,
-                'guest_identifier' => $this->primaryGuestIdentifier($guest, $guestCode),
-                'scan_type' => 'qr_code',
-                'scanned_at' => now(),
-                'scanned_by' => auth()->id(),
-                'notes' => $validated['notes'] ?? null,
-            ]);
-
-            $this->markGuestAndBookAsAttended($guest, $acara, $request, $scan->scanned_at);
+            $result = $this->recordGuestAttendance($guest, $acara, $request, $legacyGuestCode ?: (string) $guest->guest_token, auth()->id());
 
             return response()->json([
                 'status' => true,
-                'message' => 'Kehadiran tamu berhasil dicatat.',
-                'data' => $this->scanPayload($guest, $domain, $guestCode, $scan->scanned_at, false),
+                'success' => true,
+                'code' => $result['already_scanned'] ? 'GUEST_ALREADY_CHECKED_IN' : 'GUEST_CHECKED_IN',
+                'message' => $result['already_scanned']
+                    ? 'Tamu ini sudah tercatat hadir.'
+                    : 'Kehadiran tamu berhasil dicatat.',
+                'data' => $this->scanPayload($guest->refresh(), $domain, $legacyGuestCode, $result['scanned_at'], $result['already_scanned']),
             ], 200);
         } catch (ValidationException $e) {
             return response()->json([
@@ -215,8 +202,11 @@ class AttendanceScanController extends Controller
         try {
             $validated = $request->validate([
                 'acara_id' => 'required|integer|exists:acaras,id',
+                'guest_token' => 'nullable|string|max:255',
+                'scanned_value' => 'nullable|string|max:2048',
+                'url' => 'nullable|string|max:2048',
                 'guest_identifier' => 'nullable|string|max:255',
-                'guest_name' => 'required_without:guest_identifier|string|max:255',
+                'guest_name' => 'required_without_all:guest_identifier,guest_token,scanned_value,url|string|max:255',
                 'scan_type' => 'required|in:qr_code,manual',
                 'notes' => 'nullable|string|max:500',
             ]);
@@ -227,6 +217,36 @@ class AttendanceScanController extends Controller
             $acara = Acara::where('id', $validated['acara_id'])
                           ->where('user_id', $userId)
                           ->firstOrFail();
+
+            $scannedValue = trim((string) ($validated['guest_token'] ?? $validated['scanned_value'] ?? $validated['url'] ?? $validated['guest_identifier'] ?? ''));
+            $guestToken = $this->guestTokenFromScannedValue($scannedValue, $validated['guest_token'] ?? null);
+            $legacyGuestCode = $this->guestCodeFromUrl($scannedValue) ?: Str::slug((string) ($validated['guest_identifier'] ?? ''), '-');
+
+            if ($guestToken || $legacyGuestCode) {
+                $domain = $this->domainService->normalizeToSlug($scannedValue);
+                $guest = $this->resolveGuestFromScan($guestToken, $legacyGuestCode, $domain, (int) $userId);
+
+                if (! $guest) {
+                    return response()->json([
+                        'status' => false,
+                        'success' => false,
+                        'code' => 'GUEST_NOT_FOUND',
+                        'message' => 'Data tamu tidak ditemukan. Pastikan tamu sudah dibuat atau link undangan benar.',
+                    ], 404);
+                }
+
+                $result = $this->recordGuestAttendance($guest, $acara, $request, $legacyGuestCode ?: (string) $guest->guest_token, (int) $userId);
+
+                return response()->json([
+                    'status' => true,
+                    'success' => true,
+                    'code' => $result['already_scanned'] ? 'GUEST_ALREADY_CHECKED_IN' : 'GUEST_CHECKED_IN',
+                    'message' => $result['already_scanned']
+                        ? 'Tamu ini sudah tercatat hadir.'
+                        : 'Kehadiran tamu berhasil dicatat.',
+                    'data' => $this->scanPayload($guest->refresh(), $this->domainForGuest($guest), $legacyGuestCode, $result['scanned_at'], $result['already_scanned']),
+                ], 200);
+            }
 
             // Check for duplicate scan (same guest, same event)
             if (!empty($validated['guest_identifier'])) {
@@ -292,6 +312,77 @@ class AttendanceScanController extends Controller
         }
 
         return Str::slug((string) ($query['to'] ?? ''), '-');
+    }
+
+    private function guestTokenFromScannedValue(string $scannedValue, ?string $explicitToken = null): string
+    {
+        $explicitToken = trim((string) $explicitToken);
+        if ($explicitToken !== '') {
+            return $explicitToken;
+        }
+
+        $parts = parse_url($scannedValue);
+        $query = [];
+
+        if (is_array($parts) && isset($parts['query'])) {
+            parse_str((string) $parts['query'], $query);
+        }
+
+        return trim((string) ($query['guest'] ?? $query['guest_token'] ?? ''));
+    }
+
+    private function resolveGuestFromScan(string $guestToken, string $legacyGuestCode, string $domain, ?int $ownerUserId = null): ?WeddingGuest
+    {
+        if ($guestToken !== '') {
+            $query = WeddingGuest::query()->where('guest_token', $guestToken);
+
+            if ($ownerUserId !== null) {
+                $query->where('user_id', $ownerUserId);
+            }
+
+            if ($domain !== '') {
+                $query->where(function ($query) use ($domain) {
+                    $query->whereRaw('LOWER(domain) = ?', [strtolower($domain)])
+                        ->orWhereRaw('LOWER(domain) LIKE ?', ['%/'.$domain]);
+                });
+            }
+
+            return $query->first();
+        }
+
+        if ($legacyGuestCode === '' || $domain === '') {
+            return null;
+        }
+
+        $resolvedOwnerId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+        if (! $resolvedOwnerId || ($ownerUserId !== null && (int) $resolvedOwnerId !== $ownerUserId)) {
+            return null;
+        }
+
+        return $this->findUniqueLegacyGuestByCode((int) $resolvedOwnerId, $domain, $legacyGuestCode);
+    }
+
+    private function findUniqueLegacyGuestByCode(int $userId, string $domain, string $guestCode): ?WeddingGuest
+    {
+        $guestCode = Str::slug($guestCode, '-');
+
+        $matches = WeddingGuest::query()
+            ->where('user_id', $userId)
+            ->where(function ($query) use ($domain) {
+                $query->whereRaw('LOWER(domain) = ?', [strtolower($domain)])
+                    ->orWhereRaw('LOWER(domain) LIKE ?', ['%/'.$domain]);
+            })
+            ->get()
+            ->filter(function (WeddingGuest $guest) use ($guestCode): bool {
+                if (Schema::hasColumn('wedding_guests', 'guest_code') && Str::lower((string) $guest->guest_code) === $guestCode) {
+                    return true;
+                }
+
+                return Str::slug((string) $guest->guest_name, '-') === $guestCode;
+            })
+            ->values();
+
+        return $matches->count() === 1 ? $matches->first() : null;
     }
 
     private function findGuestByCode(int $userId, string $domain, string $guestCode): ?WeddingGuest
@@ -365,13 +456,64 @@ class AttendanceScanController extends Controller
         );
     }
 
+    /**
+     * @return array{scanned_at:mixed,already_scanned:bool}
+     */
+    private function recordGuestAttendance(WeddingGuest $guest, Acara $acara, Request $request, string $fallbackIdentifier, ?int $scannerId): array
+    {
+        return DB::transaction(function () use ($guest, $acara, $request, $fallbackIdentifier, $scannerId): array {
+            $guest = WeddingGuest::query()->lockForUpdate()->findOrFail($guest->id);
+            $identifiers = $this->guestIdentifiers($guest, $fallbackIdentifier);
+
+            $existingScan = AttendanceScan::query()
+                ->where('user_id', (int) $guest->user_id)
+                ->where('acara_id', $acara->id)
+                ->whereIn('guest_identifier', $identifiers)
+                ->orderBy('scanned_at')
+                ->first();
+
+            if ($existingScan || $guest->attended) {
+                $scannedAt = $existingScan?->scanned_at ?: $guest->attended_at;
+                $this->markGuestAndBookAsAttended($guest, $acara, $request, $scannedAt);
+
+                return [
+                    'scanned_at' => $scannedAt,
+                    'already_scanned' => true,
+                ];
+            }
+
+            $scan = AttendanceScan::create([
+                'user_id' => (int) $guest->user_id,
+                'acara_id' => $acara->id,
+                'guest_name' => $guest->guest_name,
+                'guest_identifier' => $this->primaryGuestIdentifier($guest, $fallbackIdentifier),
+                'scan_type' => 'qr_code',
+                'scanned_at' => now(),
+                'scanned_by' => $scannerId,
+                'notes' => $request->input('notes'),
+            ]);
+
+            $this->markGuestAndBookAsAttended($guest, $acara, $request, $scan->scanned_at);
+
+            return [
+                'scanned_at' => $scan->scanned_at,
+                'already_scanned' => false,
+            ];
+        });
+    }
+
     private function scanPayload(WeddingGuest $guest, string $domain, string $guestCode, $scannedAt, bool $alreadyScanned): array
     {
         return [
+            'id' => $guest->id,
+            'name' => $guest->guest_name,
             'guest_name' => $guest->guest_name,
             'guest_code' => $this->primaryGuestIdentifier($guest, $guestCode),
+            'guest_token' => $guest->guest_token,
+            'invitation_url' => $this->invitationUrlForGuest($guest, $domain),
             'domain' => $domain,
-            'attendance_status' => 'hadir',
+            'attendance_status' => 'present',
+            'checked_in_at' => $this->formatScanTime($scannedAt),
             'scanned_at' => $this->formatScanTime($scannedAt),
             'already_scanned' => $alreadyScanned,
         ];
@@ -399,6 +541,27 @@ class AttendanceScanController extends Controller
         }
 
         return Str::slug($fallback, '-');
+    }
+
+    private function invitationUrlForGuest(WeddingGuest $guest, string $domain): string
+    {
+        $storedUrl = (string) $guest->invitation_url;
+        if ($storedUrl !== '' && str_contains($storedUrl, 'guest=')) {
+            return $storedUrl;
+        }
+
+        $frontendUrl = rtrim((string) config('app.frontend_url', 'https://www.sena-digital.com'), '/');
+        $guestCode = $this->primaryGuestIdentifier($guest, (string) $guest->guest_token);
+
+        return $frontendUrl.'/wedding/'.$domain.'?'.http_build_query([
+            'guest' => $guest->guest_token,
+            'to' => $guestCode,
+        ]);
+    }
+
+    private function domainForGuest(WeddingGuest $guest): string
+    {
+        return $this->domainService->normalizeToSlug((string) $guest->domain);
     }
 
     private function formatScanTime($date): ?string

@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\Invitation;
 use App\Models\Mempelai;
+use App\Models\PaymentLog;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Http\JsonResponse;
@@ -85,6 +86,21 @@ class TagihanController extends Controller
                 return response()->json(['message' => 'Data invitation tidak ditemukan'], 404);
             }
 
+            if ($activeMidtrans = $this->activeMidtransTransactionFor($invitation)) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_METHOD_ALREADY_SELECTED',
+                    'message' => 'Metode pembayaran Midtrans sudah dipilih. Silakan lanjutkan pembayaran yang tersedia.',
+                    'data' => [
+                        'payment_method' => 'midtrans',
+                        'order_id' => $activeMidtrans['order_id'],
+                        'snap_token' => $activeMidtrans['snap_token'],
+                        'redirect_url' => $activeMidtrans['redirect_url'],
+                        'expires_at' => $activeMidtrans['expires_at'],
+                    ],
+                ], 409);
+            }
+
             // Read trial duration from admin-configurable settings, fallback to 3 days
             $trialConfig = Setting::whereNotNull('trial_masa_aktif')
                 ->where('trial_masa_aktif', '>', 0)
@@ -139,5 +155,44 @@ class TagihanController extends Controller
                 'error' => config('app.debug') ? $e->getMessage() : 'Internal server error'
             ], 500);
         }
+    }
+
+    private function activeMidtransTransactionFor(Invitation $invitation): ?array
+    {
+        if (! $invitation->order_id || in_array(strtolower((string) $invitation->payment_status), ['paid', 'confirmed', 'success', 'settlement', 'capture', 'failed', 'deny', 'cancel', 'expire', 'expired', 'refund', 'refunded'], true)) {
+            return null;
+        }
+
+        $log = PaymentLog::query()
+            ->where('invitation_id', $invitation->id)
+            ->where('order_id', $invitation->order_id)
+            ->where('event_type', 'token_request')
+            ->latest('id')
+            ->first();
+
+        if (! $log || in_array(strtolower((string) $log->transaction_status), ['capture', 'settlement', 'deny', 'cancel', 'expire', 'refund'], true)) {
+            return null;
+        }
+
+        $payload = json_decode((string) $log->response_payload, true);
+        $snapToken = is_array($payload) ? trim((string) ($payload['snap_token'] ?? '')) : '';
+        if ($snapToken === '') {
+            return null;
+        }
+
+        $expiresAt = ! empty($payload['expires_at'])
+            ? \Carbon\Carbon::parse($payload['expires_at'])
+            : $log->created_at->copy()->addHours((int) config('midtrans.token_expiry_hours', 24));
+
+        if ($expiresAt->isPast()) {
+            return null;
+        }
+
+        return [
+            'order_id' => $log->order_id,
+            'snap_token' => $snapToken,
+            'redirect_url' => null,
+            'expires_at' => $expiresAt->toIso8601String(),
+        ];
     }
 }

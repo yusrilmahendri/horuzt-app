@@ -635,6 +635,15 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
     });
 
     // Guest Tracking endpoints (protected - requires authentication)
+    Route::controller(GuestTrackingController::class)->prefix('v1/user/invitation-guests')->middleware('invitation.feature')->group(function () {
+        Route::get('/', 'userIndex');                    // List guest invitation links from database
+        Route::post('/', 'userStore');                   // Create guest invitation link
+        Route::post('/import', 'userImport');            // Import guest invitation links
+        Route::get('/export', 'userExport');             // Export guest invitation links
+        Route::get('/attendance', 'attendance');         // List checked-in guests
+        Route::delete('/{id}', 'destroy');               // Delete guest invitation link
+    });
+
     Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->middleware('invitation.feature')->group(function () {
         Route::get('/', 'index');                         // Get guest list
         Route::post('/', 'store');                        // Create guest invitation link

@@ -46,14 +46,25 @@ class WeddingGuestInvitationTest extends TestCase
             ->assertJsonPath('data.guest_name', 'h & hj')
             ->assertJsonPath('data.guest_code', 'h-hj')
             ->assertJsonPath('data.domain', 'nova-yusril')
-            ->assertJsonPath('data.invitation_url', 'https://www.sena-digital.com/wedding/nova-yusril?to=h-hj');
+            ->assertJsonPath('data.attendance_status', 'not_present');
+
+        $guest = DB::table('wedding_guests')
+            ->where('user_id', $user->id)
+            ->where('guest_name', 'h & hj')
+            ->first();
+
+        $this->assertNotEmpty($guest->guest_token);
+        $this->assertSame(
+            'https://www.sena-digital.com/wedding/nova-yusril?guest='.$guest->guest_token.'&to=h-hj',
+            $guest->invitation_url
+        );
 
         $this->assertDatabaseHas('wedding_guests', [
             'user_id' => $user->id,
             'domain' => 'nova-yusril',
             'guest_name' => 'h & hj',
             'guest_code' => 'h-hj',
-            'invitation_url' => 'https://www.sena-digital.com/wedding/nova-yusril?to=h-hj',
+            'invitation_url' => $guest->invitation_url,
         ]);
 
         $this->getJson('/api/v1/wedding-guests?domain=nova-yusril')
@@ -71,13 +82,48 @@ class WeddingGuestInvitationTest extends TestCase
             ->assertJsonPath('message', 'Kehadiran tamu berhasil dicatat.')
             ->assertJsonPath('data.guest_name', 'h & hj')
             ->assertJsonPath('data.guest_code', 'h-hj')
-            ->assertJsonPath('data.attendance_status', 'hadir');
+            ->assertJsonPath('data.attendance_status', 'present');
 
         $this->getJson('/api/v1/attendance/list?domain=nova-yusril')
             ->assertOk()
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.guest_name', 'h & hj')
             ->assertJsonPath('data.0.guest_code', 'h-hj');
+    }
+
+    public function test_user_invitation_guests_endpoint_creates_database_guest_with_tokenized_link(): void
+    {
+        $user = $this->createWeddingOwner();
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/user/invitation-guests', [
+            'name' => 'Yusril & Nova',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('message', 'Tamu berhasil dibuat.')
+            ->assertJsonPath('data.name', 'Yusril & Nova')
+            ->assertJsonPath('data.guest_slug', 'yusril-nova')
+            ->assertJsonPath('data.attendance_status', 'not_present');
+
+        $token = (string) $response->json('data.guest_token');
+        $this->assertNotEmpty($token);
+        $this->assertSame(
+            'https://www.sena-digital.com/wedding/nova-yusril?guest='.$token.'&to=yusril-nova',
+            $response->json('data.invitation_url')
+        );
+
+        $this->assertDatabaseHas('wedding_guests', [
+            'user_id' => $user->id,
+            'guest_name' => 'Yusril & Nova',
+            'guest_code' => 'yusril-nova',
+        ]);
+
+        $this->getJson('/api/v1/user/invitation-guests')
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('total', 1)
+            ->assertJsonPath('data.0.name', 'Yusril & Nova');
     }
 
     public function test_duplicate_guest_code_gets_suffix_and_export_uses_database(): void
@@ -124,11 +170,17 @@ class WeddingGuestInvitationTest extends TestCase
             ->assertJsonPath('total', 1)
             ->assertJsonPath('data.0.guest_code', 'tamu-import');
 
+        $token = (string) DB::table('wedding_guests')
+            ->where('user_id', $user->id)
+            ->where('guest_name', 'Tamu Import')
+            ->value('guest_token');
+
         $this->assertDatabaseHas('wedding_guests', [
             'user_id' => $user->id,
             'domain' => 'nova-yusril',
             'guest_name' => 'Tamu Import',
             'guest_code' => 'tamu-import',
+            'invitation_url' => 'https://www.sena-digital.com/wedding/nova-yusril?guest='.$token.'&to=tamu-import',
         ]);
     }
 
