@@ -10,6 +10,7 @@ use App\Models\PaketUndangan;
 use App\Models\ResultThemas;
 use App\Models\Setting;
 use App\Models\User;
+use App\Models\WeddingGuest;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Tests\TestCase;
 
@@ -69,11 +70,72 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
 
         $this->getJson('/api/v1/public/wedding/nova-yusril?to=yusril-nova')
             ->assertOk()
-            ->assertJsonPath('data.guest_name', 'yusril-nova');
+            ->assertJsonPath('data.guest_name', 'yusril nova')
+            ->assertJsonPath('data.nama_tamu', 'yusril nova')
+            ->assertJsonPath('data.guest.name', 'yusril nova')
+            ->assertJsonPath('data.guest.guest_token', null)
+            ->assertJsonPath('data.guest.guest_slug', 'yusril-nova');
 
         $this->getJson('/api/v1/public/wedding/nova-yusril?to=')
             ->assertOk()
-            ->assertJsonPath('data.guest_name', 'Tamu Undangan');
+            ->assertJsonPath('data.guest_name', 'Tamu Undangan')
+            ->assertJsonPath('data.nama_tamu', 'Tamu Undangan')
+            ->assertJsonPath('data.guest.name', 'Tamu Undangan');
+    }
+
+    public function test_public_wedding_resolves_valid_guest_token_for_current_domain(): void
+    {
+        $user = $this->createPublicWeddingUser('opah-iyus');
+        $guest = $this->createWeddingGuest($user, 'opah-iyus', 'yusril dan nova', 'yusril-dan-nova');
+
+        $this->getJson('/api/v1/wedding/opah-iyus?guest='.$guest->guest_token.'&to=yusril-dan-nova')
+            ->assertOk()
+            ->assertJsonPath('data.guest_name', 'yusril dan nova')
+            ->assertJsonPath('data.nama_tamu', 'yusril dan nova')
+            ->assertJsonPath('data.guest.name', 'yusril dan nova')
+            ->assertJsonPath('data.guest.guest_token', $guest->guest_token)
+            ->assertJsonPath('data.guest.guest_slug', 'yusril-dan-nova');
+    }
+
+    public function test_public_wedding_rejects_guest_token_from_other_invitation(): void
+    {
+        $this->createPublicWeddingUser('opah-iyus');
+        $otherUser = $this->createPublicWeddingUser('domain-lain');
+        $otherGuest = $this->createWeddingGuest($otherUser, 'domain-lain', 'Nama Undangan Lain', 'nama-undangan-lain');
+
+        $this->getJson('/api/v1/wedding/opah-iyus?guest='.$otherGuest->guest_token)
+            ->assertOk()
+            ->assertJsonPath('data.guest_name', 'Tamu Undangan')
+            ->assertJsonPath('data.nama_tamu', 'Tamu Undangan')
+            ->assertJsonPath('data.guest.name', 'Tamu Undangan')
+            ->assertJsonPath('data.guest.guest_token', null);
+    }
+
+    public function test_public_wedding_still_supports_legacy_to_query(): void
+    {
+        $user = $this->createPublicWeddingUser('legacy-to');
+        $guest = $this->createWeddingGuest($user, 'legacy-to', 'Yusril dan Nova', 'yusril-dan-nova');
+
+        $this->getJson('/api/v1/wedding/legacy-to?to=yusril-dan-nova')
+            ->assertOk()
+            ->assertJsonPath('data.guest_name', 'Yusril dan Nova')
+            ->assertJsonPath('data.nama_tamu', 'Yusril dan Nova')
+            ->assertJsonPath('data.guest.name', 'Yusril dan Nova')
+            ->assertJsonPath('data.guest.guest_token', $guest->guest_token)
+            ->assertJsonPath('data.guest.guest_slug', 'yusril-dan-nova');
+    }
+
+    public function test_public_wedding_without_guest_query_uses_default_guest_name(): void
+    {
+        $this->createPublicWeddingUser('tanpa-query');
+
+        $this->getJson('/api/v1/wedding/tanpa-query')
+            ->assertOk()
+            ->assertJsonPath('data.guest_name', 'Tamu Undangan')
+            ->assertJsonPath('data.nama_tamu', 'Tamu Undangan')
+            ->assertJsonPath('data.guest.name', 'Tamu Undangan')
+            ->assertJsonPath('data.guest.guest_token', null)
+            ->assertJsonPath('data.guest.guest_slug', null);
     }
 
     public function test_public_wedding_domain_not_found_returns_404(): void
@@ -135,5 +197,17 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    private function createWeddingGuest(User $user, string $domain, string $guestName, string $guestCode): WeddingGuest
+    {
+        return WeddingGuest::create([
+            'user_id' => $user->id,
+            'guest_name' => $guestName,
+            'guest_token' => hash('sha256', $domain.'-'.$guestCode.'-'.$user->id),
+            'guest_code' => $guestCode,
+            'domain' => $domain,
+            'first_visit_at' => now(),
+        ]);
     }
 }

@@ -3,13 +3,16 @@
 namespace App\Http\Resources\WeddingProfile;
 
 use App\Models\JenisThemas;
+use App\Models\WeddingGuest;
 use App\Services\PackageThemeAccessService;
 use App\Services\LocationResolverService;
 use App\Services\ReligionContentResolver;
 use Illuminate\Http\Request;
 use Illuminate\Http\Resources\Json\JsonResource;
 use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class WeddingProfileResource extends JsonResource
 {
@@ -18,7 +21,9 @@ class WeddingProfileResource extends JsonResource
     protected ?int $ownerUserIdContext;
     protected ?array $resolvedReligionContentCache = null;
     protected ?array $selectedThemeResolutionCache = null;
+    protected ?array $publicGuestResolutionCache = null;
     protected bool $selectedThemeResolutionResolved = false;
+    protected bool $publicGuestResolutionResolved = false;
 
     public function __construct($resource, $isPublicView = false, ?string $domainContext = null, ?int $ownerUserIdContext = null)
     {
@@ -36,6 +41,7 @@ class WeddingProfileResource extends JsonResource
     public function toArray(Request $request): array
     {
         $selectedTheme = $this->getSelectedThemeSummary();
+        $guest = $this->publicGuestResolution();
 
         return [
             'user_info' => $this->getUserInfo(),
@@ -44,7 +50,9 @@ class WeddingProfileResource extends JsonResource
             'selected_theme' => $selectedTheme,
             'selected_theme_slug' => $selectedTheme['slug'] ?? null,
             'theme_slug' => $selectedTheme['slug'] ?? null,
-            'guest_name' => $this->publicGuestName(),
+            'guest_name' => $guest['guest_name'],
+            'nama_tamu' => $guest['nama_tamu'],
+            'guest' => $guest['guest'],
             'events' => $this->getEventsInfo(),
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
@@ -714,13 +722,122 @@ class WeddingProfileResource extends JsonResource
 
     private function publicGuestName(): string
     {
-        $guestName = trim((string) request()->query('guest_name', ''));
+        return $this->publicGuestResolution()['guest_name'];
+    }
 
-        if ($guestName === '') {
-            $guestName = trim((string) request()->query('to', ''));
+    private function publicGuestResolution(): array
+    {
+        if ($this->publicGuestResolutionResolved) {
+            return $this->publicGuestResolutionCache;
         }
 
-        return $guestName !== '' ? $guestName : 'Tamu Undangan';
+        $this->publicGuestResolutionResolved = true;
+
+        $request = request();
+        $guestToken = trim((string) $request->query('guest', ''));
+        $guestToken = $guestToken !== '' ? $guestToken : trim((string) $request->query('guest_token', ''));
+        $guestSlug = trim((string) $request->query('to', ''));
+        $guestName = trim((string) $request->query('guest_name', ''));
+        $resolvedGuest = null;
+
+        if ($this->isPublicView && $this->ownerUserIdContext && $this->domainContext) {
+            if ($guestToken !== '') {
+                $resolvedGuest = WeddingGuest::query()
+                    ->where('user_id', $this->ownerUserIdContext)
+                    ->where('domain', $this->domainContext)
+                    ->where('guest_token', $guestToken)
+                    ->first();
+            }
+
+            if (! $resolvedGuest && $guestSlug !== '') {
+                $resolvedGuest = $this->resolveGuestBySlug($guestSlug);
+            }
+        }
+
+        if ($resolvedGuest instanceof WeddingGuest) {
+            return $this->publicGuestResolutionCache = $this->guestResolutionPayload(
+                (string) $resolvedGuest->guest_name,
+                (string) $resolvedGuest->guest_token,
+                $this->guestSlugForPayload($resolvedGuest)
+            );
+        }
+
+        if ($guestName === '') {
+            $guestName = $this->humanGuestNameFromSlug($guestSlug);
+        }
+
+        if ($guestName === '') {
+            $guestName = 'Tamu Undangan';
+        }
+
+        return $this->publicGuestResolutionCache = $this->guestResolutionPayload(
+            $guestName,
+            null,
+            $guestSlug !== '' ? $guestSlug : null
+        );
+    }
+
+    private function resolveGuestBySlug(string $guestSlug): ?WeddingGuest
+    {
+        $guestSlug = Str::slug($guestSlug, '-');
+
+        if ($guestSlug === '') {
+            return null;
+        }
+
+        $query = WeddingGuest::query()
+            ->where('user_id', $this->ownerUserIdContext)
+            ->where('domain', $this->domainContext);
+
+        if (Schema::hasColumn('wedding_guests', 'guest_code')) {
+            $query->where('guest_code', $guestSlug);
+            $guest = $query->first();
+
+            if ($guest instanceof WeddingGuest) {
+                return $guest;
+            }
+        }
+
+        return WeddingGuest::query()
+            ->where('user_id', $this->ownerUserIdContext)
+            ->where('domain', $this->domainContext)
+            ->get()
+            ->first(fn (WeddingGuest $guest): bool => Str::slug((string) $guest->guest_name, '-') === $guestSlug);
+    }
+
+    private function guestResolutionPayload(string $guestName, ?string $guestToken, ?string $guestSlug): array
+    {
+        return [
+            'guest_name' => $guestName,
+            'nama_tamu' => $guestName,
+            'guest' => [
+                'name' => $guestName,
+                'guest_token' => $guestToken,
+                'guest_slug' => $guestSlug,
+            ],
+        ];
+    }
+
+    private function guestSlugForPayload(WeddingGuest $guest): string
+    {
+        if (Schema::hasColumn('wedding_guests', 'guest_code') && $guest->guest_code) {
+            return (string) $guest->guest_code;
+        }
+
+        $slug = Str::slug((string) $guest->guest_name, '-');
+
+        return $slug !== '' ? $slug : (string) $guest->guest_token;
+    }
+
+    private function humanGuestNameFromSlug(string $guestSlug): string
+    {
+        $guestSlug = trim(rawurldecode($guestSlug));
+
+        if ($guestSlug === '') {
+            return '';
+        }
+
+        return trim((string) preg_replace('/\s+/', ' ', str_replace(['-', '_'], ' ', $guestSlug)));
     }
 
     private function getMetadata(): array
