@@ -307,7 +307,7 @@ class AcaraController extends Controller
     {
         $countDown = CountdownAcara::find($id);
         if (! $countDown) {
-            return response()->json(['message' => 'Countdown not found!'], 404);
+            return response()->json(['message' => 'Countdown acara tidak ditemukan!'], 404);
         }
 
         $validateData = $request->validate([
@@ -317,9 +317,9 @@ class AcaraController extends Controller
         $countDown->name_countdown = $validateData['name_countdown'];
 
         if ($countDown->save()) {
-            return response()->json(['data' => $countDown, 'message' => 'Countdown updated successfully!'], 200);
+            return response()->json(['data' => $countDown, 'message' => 'Countdown acara berhasil diubah!'], 200);
         }
-        return response()->json(['message' => 'Failed to update countdown!'], 400);
+        return response()->json(['message' => 'Maaf, gagal ubah countdown!'], 400);
     }
 
     public function updateAcara(Request $request)
