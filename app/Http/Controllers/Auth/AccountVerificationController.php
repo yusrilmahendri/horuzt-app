@@ -8,6 +8,7 @@ use App\Services\VerificationCodeService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use App\Models\User;
 use RuntimeException;
 
 class AccountVerificationController extends Controller
@@ -19,6 +20,11 @@ class AccountVerificationController extends Controller
 
     public function send(Request $request): JsonResponse
     {
+        $user = $this->authenticatedUser($request);
+        if (!$user) {
+            return $this->unauthenticatedResponse();
+        }
+
         $data = $request->validate(['channel' => ['required', 'string']]);
         if ($data['channel'] === 'whatsapp') {
             return $this->error(422, 'Verifikasi WhatsApp sementara tidak tersedia.', 'WHATSAPP_UNAVAILABLE');
@@ -27,7 +33,8 @@ class AccountVerificationController extends Controller
             return $this->error(422, 'Channel verifikasi tidak valid.', 'VERIFICATION_CHANNEL_INVALID');
         }
 
-        $user = $request->user();
+
+
         $user->forceFill(['verification_channel' => $data['channel']])->save();
         try {
             $this->codes->issue($user, $data['channel'], 'account_verification');
@@ -83,7 +90,11 @@ class AccountVerificationController extends Controller
 
     public function status(Request $request): JsonResponse
     {
-        $user = $request->user();
+        $user = $this->authenticatedUser($request);
+        if (!$user) {
+            return $this->unauthenticatedResponse();
+        }
+
         $channel = 'email';
         $seconds = $this->codes->resendAvailableIn($user, $channel, 'account_verification');
 
@@ -116,4 +127,17 @@ class AccountVerificationController extends Controller
         return substr($name, 0, 2).str_repeat('*', max(3, strlen($name) - 2)).'@'.$domain;
     }
 
+    private function authenticatedUser(Request $request): ?User
+    {
+        $user = $request->user();
+        return $user instanceof User ? $user : null;
+    }
+
+    private function unauthenticatedResponse(): JsonResponse
+    {
+        return $this->error(401,
+            'Sesi pengguna tidak ditemukan. Silakan login kembali.',
+            'UNAUTHENTICATED'
+        );
+    }
 }
