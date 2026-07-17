@@ -68,120 +68,151 @@ class MempelaiController extends Controller
     }
 
     public function update(Request $request)
-{
-    try {
-        $userId = Auth::id();
+    {
+        try {
+            $userId = Auth::id();
 
+            if (!$userId) {
+                return response()->json([
+                    'message' => 'Pengguna tidak terautentikasi.',
+                ], 401);
+            }
 
-        $validated = $request->validate([
-            'cover_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'urutan_mempelai' => 'nullable|string|in:pria,wanita',
-            'photo_pria' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'photo_wanita' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
-            'name_lengkap_pria' => 'nullable|string|max:255',
-            'name_lengkap_wanita' => 'nullable|string|max:255',
-            'name_panggilan_pria' => 'nullable|string|max:255',
-            'name_panggilan_wanita' => 'nullable|string|max:255',
-            'ayah_pria' => 'nullable|string|max:255',
-            'ayah_wanita' => 'nullable|string|max:255',
-            'ibu_pria' => 'nullable|string|max:255',
-            'ibu_wanita' => 'nullable|string|max:255',
-        ]);
+            $validated = $request->validate([
+                'cover_photo' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'urutan_mempelai' => 'nullable|string|in:pria,wanita',
+                'photo_pria' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'photo_wanita' => 'nullable|image|mimes:jpeg,png,jpg,gif|max:2048',
+                'name_lengkap_pria' => 'nullable|string|max:255',
+                'name_lengkap_wanita' => 'nullable|string|max:255',
+                'name_panggilan_pria' => 'nullable|string|max:255',
+                'name_panggilan_wanita' => 'nullable|string|max:255',
+                'ayah_pria' => 'nullable|string|max:255',
+                'ayah_wanita' => 'nullable|string|max:255',
+                'ibu_pria' => 'nullable|string|max:255',
+                'ibu_wanita' => 'nullable|string|max:255',
+            ]);
 
+            $mempelai = Mempelai::firstOrCreate(
+                ['user_id' => $userId],
+                [
+                    'status' => 'Belum Bayar',
+                    'kd_status' => 'BB',
+                ]
+            );
 
-        $mempelai = Mempelai::where('user_id', $userId)->first();
+            $updateData = [];
 
-        if (!$mempelai) {
+            if ($request->hasFile('cover_photo')) {
+                if (
+                    $mempelai->cover_photo &&
+                    Storage::disk('public')->exists($mempelai->cover_photo)
+                ) {
+                    Storage::disk('public')->delete($mempelai->cover_photo);
+                }
+
+                $updateData['cover_photo'] = $request
+                    ->file('cover_photo')
+                    ->store('photos', 'public');
+            }
+
+            if ($request->hasFile('photo_pria')) {
+                if (
+                    $mempelai->photo_pria &&
+                    Storage::disk('public')->exists($mempelai->photo_pria)
+                ) {
+                    Storage::disk('public')->delete($mempelai->photo_pria);
+                }
+
+                $updateData['photo_pria'] = $request
+                    ->file('photo_pria')
+                    ->store('photos', 'public');
+            }
+
+            if ($request->hasFile('photo_wanita')) {
+                if (
+                    $mempelai->photo_wanita &&
+                    Storage::disk('public')->exists($mempelai->photo_wanita)
+                ) {
+                    Storage::disk('public')->delete($mempelai->photo_wanita);
+                }
+
+                $updateData['photo_wanita'] = $request
+                    ->file('photo_wanita')
+                    ->store('photos', 'public');
+            }
+
+            $textFields = [
+                'urutan_mempelai',
+                'name_lengkap_pria',
+                'name_lengkap_wanita',
+                'name_panggilan_pria',
+                'name_panggilan_wanita',
+                'ayah_pria',
+                'ayah_wanita',
+                'ibu_pria',
+                'ibu_wanita',
+            ];
+
+            foreach ($textFields as $field) {
+                if ($request->has($field)) {
+                    $updateData[$field] = $validated[$field];
+                }
+            }
+
+            if (!empty($updateData)) {
+                $mempelai->update($updateData);
+            }
+
+            if (isset($updateData['photo_pria'])) {
+                $this->syncGalleryPhotoPath(
+                    $userId,
+                    'Photo Pria',
+                    $updateData['photo_pria']
+                );
+            }
+
+            if (isset($updateData['photo_wanita'])) {
+                $this->syncGalleryPhotoPath(
+                    $userId,
+                    'Photo Wanita',
+                    $updateData['photo_wanita']
+                );
+            }
+
+            if (isset($updateData['cover_photo'])) {
+                $this->syncGalleryPhotoPath(
+                    $userId,
+                    'Cover Photo',
+                    $updateData['cover_photo']
+                );
+            }
+
+            $mempelai->refresh();
+            $mempelai = $this->transformPhotoUrls($mempelai);
+
             return response()->json([
-                'message' => 'Data mempelai tidak ditemukan',
-            ], 404);
+                'message' => 'Data mempelai berhasil diperbarui',
+                'data' => $mempelai,
+            ], 200);
+
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            return response()->json([
+                'message' => 'Validasi gagal',
+                'errors' => $e->errors(),
+            ], 422);
+
+        } catch (\Exception $e) {
+            Log::error('Gagal memperbarui data mempelai', [
+                'user_id' => Auth::id(),
+                'message' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'message' => 'Terjadi kesalahan server',
+            ], 500);
         }
-
-
-        $updateData = [];
-
-
-        if ($request->hasFile('cover_photo')) {
-
-            if ($mempelai->cover_photo && Storage::exists('public/' . $mempelai->cover_photo)) {
-                Storage::delete('public/' . $mempelai->cover_photo);
-            }
-            $updateData['cover_photo'] = $request->file('cover_photo')->store('photos', 'public');
-        }
-
-        if ($request->hasFile('photo_pria')) {
-
-            if ($mempelai->photo_pria && Storage::exists('public/' . $mempelai->photo_pria)) {
-                Storage::delete('public/' . $mempelai->photo_pria);
-            }
-            $updateData['photo_pria'] = $request->file('photo_pria')->store('photos', 'public');
-        }
-
-        if ($request->hasFile('photo_wanita')) {
-
-            if ($mempelai->photo_wanita && Storage::exists('public/' . $mempelai->photo_wanita)) {
-                Storage::delete('public/' . $mempelai->photo_wanita);
-            }
-            $updateData['photo_wanita'] = $request->file('photo_wanita')->store('photos', 'public');
-        }
-
-
-        $textFields = [
-            'urutan_mempelai',
-            'name_lengkap_pria',
-            'name_lengkap_wanita',
-            'name_panggilan_pria',
-            'name_panggilan_wanita',
-            'ayah_pria',
-            'ayah_wanita',
-            'ibu_pria',
-            'ibu_wanita'
-        ];
-
-        foreach ($textFields as $field) {
-            if ($request->has($field)) {
-                $updateData[$field] = $validated[$field];
-            }
-        }
-
-
-        $mempelai->update($updateData);
-
-        if (isset($updateData['photo_pria'])) {
-            $this->syncGalleryPhotoPath($userId, 'Photo Pria', $updateData['photo_pria']);
-        }
-
-        if (isset($updateData['photo_wanita'])) {
-            $this->syncGalleryPhotoPath($userId, 'Photo Wanita', $updateData['photo_wanita']);
-        }
-
-        if (isset($updateData['cover_photo'])) {
-            $this->syncGalleryPhotoPath($userId, 'Cover Photo', $updateData['cover_photo']);
-        }
-
-
-        $mempelai->refresh();
-
-
-        $mempelai = $this->transformPhotoUrls($mempelai);
-
-        return response()->json([
-            'message' => 'Data mempelai berhasil diperbarui',
-            'data' => $mempelai,
-        ], 200);
-
-    } catch (\Illuminate\Validation\ValidationException $e) {
-        return response()->json([
-            'message' => 'Validasi gagal',
-            'errors' => $e->errors(),
-        ], 422);
-    } catch (\Exception $e) {
-        return response()->json([
-            'message' => 'Terjadi kesalahan server',
-            'error' => $e->getMessage(),
-        ], 500);
     }
-}
 
 
     public function updateStatusBayar(Request $request)
