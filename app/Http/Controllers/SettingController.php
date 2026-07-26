@@ -63,6 +63,82 @@ class SettingController extends Controller
         ], 200);
     }
 
+    public function checkDomainAvailability(Request $request)
+    {
+        $user = Auth::user();
+
+        $validatedData = $request->validate([
+            'domain' => 'required|string|max:255',
+        ]);
+
+        $rawDomain = (string) $validatedData['domain'];
+        $normalizedDomain = $this->domainService->normalizeToSlug($rawDomain);
+
+        if ($normalizedDomain === '') {
+            $this->domainService->logValidation(
+                (int) $user->id,
+                $rawDomain,
+                '',
+                false,
+                false,
+                'invalid'
+            );
+
+            return response()->json([
+                'available' => false,
+                'is_current' => false,
+                'domain' => '',
+                'message' => 'Domain wajib diisi dengan format slug yang valid.',
+                'errors' => [
+                    'domain' => [
+                        'Domain wajib diisi dengan format slug yang valid.',
+                    ],
+                ],
+            ], 422);
+        }
+
+        $currentSetting = Setting::query()
+            ->where('user_id', $user->id)
+            ->first();
+
+        $isCurrent = $currentSetting?->domain === $normalizedDomain;
+
+        /*
+        * DomainService harus mengecualikan domain milik user yang sedang login
+        * berdasarkan argumen user ID.
+        */
+        $domainUsage = $this->domainService->checkDomainUsage(
+            $normalizedDomain,
+            (int) $user->id
+        );
+
+        $available = $isCurrent || !$domainUsage['is_used'];
+
+        $status = $isCurrent
+            ? 'current'
+            : ($available ? 'available' : 'duplicate');
+
+        $this->domainService->logValidation(
+            (int) $user->id,
+            $rawDomain,
+            $normalizedDomain,
+            $domainUsage['exists_in_settings'],
+            $domainUsage['exists_in_invitations'],
+            $status
+        );
+
+        return response()->json([
+            'available' => $available,
+            'is_current' => $isCurrent,
+            'domain' => $normalizedDomain,
+            'message' => $isCurrent
+                ? 'Domain ini sedang digunakan oleh akun Anda.'
+                : ($available
+                    ? 'Domain tersedia.'
+                    : 'Domain undangan sudah digunakan.'),
+        ], 200);
+    }
+
     public function storeDomainToken(Request $request)
     {
         $user = Auth::user();
@@ -129,6 +205,85 @@ class SettingController extends Controller
                 'Message' => 'Data gagal disimpan!',
             ], 500);
         }
+    }
+
+    public function updateDomain(Request $request)
+    {
+        $user = Auth::user();
+
+        $validatedData = $request->validate([
+            'domain' => 'required|string|max:255',
+        ]);
+
+        $rawDomain = (string) $validatedData['domain'];
+        $normalizedDomain = $this->domainService->normalizeToSlug($rawDomain);
+
+        if ($normalizedDomain === '') {
+            return response()->json([
+                'message' => 'Domain wajib diisi dengan format slug yang valid.',
+                'errors' => [
+                    'domain' => [
+                        'Domain wajib diisi dengan format slug yang valid.',
+                    ],
+                ],
+            ], 422);
+        }
+
+        $setting = Setting::query()
+            ->where('user_id', $user->id)
+            ->first();
+
+        $currentDomain = $setting?->domain;
+
+        if ($currentDomain === $normalizedDomain) {
+            return response()->json([
+                'message' => 'Domain tidak mengalami perubahan.',
+                'data' => [
+                    'domain' => $normalizedDomain,
+                    'previous_domain' => $currentDomain,
+                    'is_current' => true,
+                ],
+            ], 200);
+        }
+
+        $domainUsage = $this->domainService->checkDomainUsage(
+            $normalizedDomain,
+            (int) $user->id
+        );
+
+        $this->domainService->logValidation(
+            (int) $user->id,
+            $rawDomain,
+            $normalizedDomain,
+            $domainUsage['exists_in_settings'],
+            $domainUsage['exists_in_invitations'],
+            $domainUsage['is_used'] ? 'duplicate' : 'available'
+        );
+
+        if ($domainUsage['is_used']) {
+            return response()->json([
+                'message' => 'Domain undangan sudah digunakan.',
+                'errors' => [
+                    'domain' => [
+                        'Domain undangan sudah digunakan.',
+                    ],
+                ],
+            ], 422);
+        }
+
+        $setting = Setting::updateOrCreate(
+            ['user_id' => $user->id],
+            ['domain' => $normalizedDomain]
+        );
+
+        return response()->json([
+            'message' => 'Domain undangan berhasil diubah.',
+            'data' => [
+                'domain' => $setting->domain,
+                'previous_domain' => $currentDomain,
+                'is_current' => true,
+            ],
+        ], 200);
     }
 
     public function storeMusic(StoreMusicRequest $request)

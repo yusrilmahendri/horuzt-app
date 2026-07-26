@@ -595,6 +595,8 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
 
     Route::controller(SettingController::class)->middleware('invitation.feature')->group(function () {
         Route::post('/v1/user/settings/domain', 'storeDomainToken');
+        Route::get('/v1/settings/domain/check', 'checkDomainAvailability');
+        Route::put('/v1/settings/domain', 'updateDomain');
         Route::post('/v1/user/settings/music', 'storeMusic'); // Kept for backward compatibility
         Route::post('/v1/user/settings/salam', 'storeSalam');
         Route::get('/v1/user/music/download', 'downloadMusic'); // Kept for backward compatibility
