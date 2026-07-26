@@ -52,13 +52,13 @@ class ReligionContentTest extends TestCase
         $this->putJson('/api/v1/user/religion-content', [
             'religion_code' => 'kristen',
         ])->assertOk()
-            ->assertJsonPath('data.religion_code', 'christian')
+            ->assertJsonPath('data.religion_code', 'kristen')
             ->assertJsonPath('data.custom.opening_greeting', '')
             ->assertJsonPath('data.resolved.opening_greeting', '');
 
         $setting = Setting::where('user_id', $user->id)->firstOrFail();
 
-        $this->assertSame('christian', $setting->religion_code);
+        $this->assertSame('kristen', $setting->religion_code);
         $this->assertSame('', $setting->religion_opening_greeting);
         $this->assertSame(
             'Halo {{guest_name}}, undangan {{bride_name}} dan {{groom_name}}: {{invitation_url}}',

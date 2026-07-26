@@ -20,6 +20,7 @@ class Invitation extends Model
         'order_id',
         'midtrans_transaction_id',
         'payment_status',
+        'payment_method',
         'is_trial',
         'domain_expires_at',
         'payment_confirmed_at',

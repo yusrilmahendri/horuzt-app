@@ -15,7 +15,8 @@ class RegisterController extends Controller
         $validatedData = $request->validate([
             'name' => 'required|string|min:3|max:100',
             'email' => 'required|string|email|max:255|unique:users',
-            'password' => 'required|string|min:8',
+            'password' => ['required', 'string', 'min:8', 'confirmed'],
+            'password_confirmation' => ['required', 'string'],
             'phone' => 'nullable|string|max:30',
             'verification_channel' => 'nullable|string',
         ], [
@@ -23,6 +24,8 @@ class RegisterController extends Controller
             'name.min' => 'Nama pengguna minimal 3 karakter.',
             'name.max' => 'Nama pengguna maksimal 100 karakter.',
             'name.string' => 'Nama pengguna harus berupa teks.',
+            'password.confirmed' => 'Ulangi password tidak sama dengan password.',
+            'password_confirmation.required' => 'Ulangi password wajib diisi.',
         ]);
         if (($validatedData['verification_channel'] ?? 'email') === 'whatsapp') {
             return response()->json(['status' => 422, 'code' => 'WHATSAPP_UNAVAILABLE', 'message' => 'Verifikasi WhatsApp sementara tidak tersedia.', 'data' => []], 422);

@@ -25,6 +25,7 @@ class AccountVerificationTest extends TestCase
             'name' => 'Pengguna Baru',
             'email' => 'new@example.test',
             'password' => 'password123',
+            'password_confirmation' => 'password123',
         ]);
 
         $response->assertCreated()
@@ -40,6 +41,7 @@ class AccountVerificationTest extends TestCase
         $this->postJson('/api/v1/register', [
             'email' => 'noname@example.test',
             'password' => 'password123',
+            'password_confirmation' => 'password123',
         ])
             ->assertStatus(422)
             ->assertJsonValidationErrors('name')
@@ -52,6 +54,7 @@ class AccountVerificationTest extends TestCase
             'name' => 'Nama Pengguna',
             'email' => 'profile-name@example.test',
             'password' => 'password123',
+            'password_confirmation' => 'password123',
         ])->assertCreated();
 
         $user = User::whereEmail('profile-name@example.test')->firstOrFail();
@@ -78,6 +81,7 @@ class AccountVerificationTest extends TestCase
             'name' => 'Nama Paket',
             'email' => 'package-name@example.test',
             'password' => 'password123',
+            'password_confirmation' => 'password123',
             'phone' => '081234567890',
         ])->assertCreated();
 

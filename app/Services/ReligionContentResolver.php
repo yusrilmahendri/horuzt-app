@@ -2,6 +2,7 @@
 
 namespace App\Services;
 
+use App\Models\ReligionTemplate;
 use App\Models\Setting;
 use App\Models\User;
 use Illuminate\Support\Facades\Schema;
@@ -62,11 +63,15 @@ class ReligionContentResolver
         );
 
         return [
+            'religion_key' => $religionCode,
             'religion_code' => $religionCode,
             'religion_label' => $this->label($religionCode),
             'defaults' => $defaults,
+            'default_template' => $this->aliasedContent($defaults),
             'custom' => $custom,
+            'custom_content' => $this->aliasedContent($custom),
             'resolved' => $resolved,
+            'resolved_content' => $this->aliasedContent($resolved),
             'legacy' => $legacy,
             'flags' => [
                 'sources' => $sources,
@@ -123,10 +128,30 @@ class ReligionContentResolver
 
     private function template(string $code): array
     {
-        $template = config("religion_content.templates.$code", []);
+        if (Schema::hasTable('religion_templates')) {
+            $template = $this->databaseTemplate($code);
+        } else {
+            $template = config("religion_content.templates.$code", []);
+        }
 
         return collect($this->fields())
             ->mapWithKeys(fn (string $field) => [$field => $template[$field] ?? null])
+            ->all();
+    }
+
+    private function databaseTemplate(string $code): array
+    {
+        $template = ReligionTemplate::query()
+            ->where('religion_key', $code)
+            ->where('active', true)
+            ->first();
+
+        if (! $template instanceof ReligionTemplate) {
+            return [];
+        }
+
+        return collect($this->fields())
+            ->mapWithKeys(fn (string $field) => [$field => $template->{$field}])
             ->all();
     }
 
@@ -141,13 +166,17 @@ class ReligionContentResolver
 
     private function legacyFor(User $user, ?Setting $setting): array
     {
-        $pernikahan = $user->relationLoaded('pernikahan')
-            ? $user->pernikahan
-            : $user->pernikahan()->first();
+        $pernikahan = Schema::hasTable('pernikahans')
+            ? ($user->relationLoaded('pernikahan')
+                ? $user->pernikahan
+                : $user->pernikahan()->first())
+            : null;
 
-        $quote = $user->relationLoaded('qoute')
-            ? $user->qoute->sortByDesc('id')->first()
-            : $user->qoute()->latest('id')->first();
+        $quote = Schema::hasTable('qoutes')
+            ? ($user->relationLoaded('qoute')
+                ? $user->qoute->sortByDesc('id')->first()
+                : $user->qoute()->latest('id')->first())
+            : null;
 
         $waParts = array_filter([
             $pernikahan?->salam_wa_atas,
@@ -190,5 +219,15 @@ class ReligionContentResolver
         }
 
         return null;
+    }
+
+    private function aliasedContent(array $content): array
+    {
+        return array_merge($content, [
+            'opening_heading' => $content['opening_greeting'] ?? null,
+            'opening_text' => $content['invitation_intro'] ?? null,
+            'closing_text' => $content['closing_greeting'] ?? null,
+            'invitation_greeting' => $content['opening_greeting'] ?? null,
+        ]);
     }
 }

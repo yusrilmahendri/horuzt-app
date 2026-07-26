@@ -472,7 +472,10 @@ class GuestTrackingController extends Controller
 
         return response()->json([
             'status' => true,
-            'message' => 'Data tamu berhasil dihapus.',
+            'message' => 'Link tamu berhasil dihapus.',
+            'data' => [
+                'id' => $id,
+            ],
         ]);
     }
 

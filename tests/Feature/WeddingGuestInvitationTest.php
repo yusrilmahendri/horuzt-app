@@ -2,12 +2,15 @@
 
 namespace Tests\Feature;
 
+use App\Http\Middleware\EnsureAccountIsVerified;
+use App\Http\Middleware\EnsureInvitationFeatureAccess;
 use App\Models\User;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
+use Spatie\Permission\Middleware\RoleMiddleware;
 use Tests\TestCase;
 use ZipArchive;
 
@@ -26,7 +29,11 @@ class WeddingGuestInvitationTest extends TestCase
 
         DB::purge('sqlite');
         DB::reconnect('sqlite');
-        $this->withoutMiddleware();
+        $this->withoutMiddleware([
+            EnsureAccountIsVerified::class,
+            EnsureInvitationFeatureAccess::class,
+            RoleMiddleware::class,
+        ]);
 
         $this->createMinimalSchema();
     }
@@ -212,7 +219,98 @@ class WeddingGuestInvitationTest extends TestCase
         ]);
     }
 
-    private function createWeddingOwner(): User
+    public function test_authenticated_user_can_delete_owned_guest_link_and_it_disappears_from_list(): void
+    {
+        $user = $this->createWeddingOwner();
+        $guest = $this->createWeddingGuest($user, 'Tamu Hapus');
+        Sanctum::actingAs($user);
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('message', 'Link tamu berhasil dihapus.')
+            ->assertJsonPath('data.id', $guest->id);
+
+        $this->assertDatabaseMissing('wedding_guests', [
+            'id' => $guest->id,
+        ]);
+
+        $this->getJson('/api/v1/wedding-guests?domain=nova-yusril')
+            ->assertOk()
+            ->assertJsonPath('total', 0)
+            ->assertJsonPath('data', []);
+    }
+
+    public function test_user_cannot_delete_guest_link_owned_by_another_user(): void
+    {
+        $owner = $this->createWeddingOwner();
+        $otherUser = $this->createWeddingOwner('owner-lain');
+        $guest = $this->createWeddingGuest($otherUser, 'Tamu Orang Lain', 'owner-lain');
+        Sanctum::actingAs($owner);
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertNotFound()
+            ->assertJsonPath('status', false)
+            ->assertJsonPath('message', 'Data tamu tidak ditemukan.');
+
+        $this->assertDatabaseHas('wedding_guests', [
+            'id' => $guest->id,
+            'user_id' => $otherUser->id,
+        ]);
+    }
+
+    public function test_delete_missing_guest_link_returns_not_found_and_repeat_delete_is_not_server_error(): void
+    {
+        $user = $this->createWeddingOwner();
+        $guest = $this->createWeddingGuest($user, 'Tamu Sekali Hapus');
+        Sanctum::actingAs($user);
+
+        $this->deleteJson('/api/v1/wedding-guests/999999')
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Data tamu tidak ditemukan.');
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertOk();
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Data tamu tidak ditemukan.');
+    }
+
+    public function test_deleted_guest_token_no_longer_verifies_as_valid_guest(): void
+    {
+        $user = $this->createWeddingOwner();
+        $guest = $this->createWeddingGuest($user, 'Tamu Token');
+        Sanctum::actingAs($user);
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertOk();
+
+        $this->getJson('/api/v1/wedding-guests/verify/'.$guest->guest_token)
+            ->assertNotFound()
+            ->assertJsonPath('message', 'Invalid guest token');
+    }
+
+    public function test_attended_guest_link_is_hard_deleted_to_match_current_model_behavior(): void
+    {
+        $user = $this->createWeddingOwner();
+        $guest = $this->createWeddingGuest($user, 'Tamu Hadir', 'nova-yusril', [
+            'attended' => true,
+            'attended_at' => now(),
+            'attended_acara_id' => DB::table('acaras')->where('user_id', $user->id)->value('id'),
+        ]);
+        Sanctum::actingAs($user);
+
+        $this->deleteJson('/api/v1/wedding-guests/'.$guest->id)
+            ->assertOk()
+            ->assertJsonPath('data.id', $guest->id);
+
+        $this->assertDatabaseMissing('wedding_guests', [
+            'id' => $guest->id,
+        ]);
+    }
+
+    private function createWeddingOwner(string $domain = 'nova-yusril'): User
     {
         $user = User::create([
             'name' => 'Nova Yusril Owner',
@@ -223,7 +321,7 @@ class WeddingGuestInvitationTest extends TestCase
 
         DB::table('settings')->insert([
             'user_id' => $user->id,
-            'domain' => 'nova-yusril',
+            'domain' => $domain,
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -241,6 +339,32 @@ class WeddingGuestInvitationTest extends TestCase
         ]);
 
         return $user;
+    }
+
+    private function createWeddingGuest(User $user, string $guestName, string $domain = 'nova-yusril', array $overrides = []): object
+    {
+        $guestCode = str($guestName)->slug('-')->toString();
+        $guestCode = $guestCode !== '' ? $guestCode : 'tamu';
+        $guestToken = hash('sha256', $domain.'-'.$guestCode.'-'.$user->id.'-'.str()->random(8));
+
+        $id = DB::table('wedding_guests')->insertGetId(array_merge([
+            'user_id' => $user->id,
+            'guest_name' => $guestName,
+            'guest_token' => $guestToken,
+            'guest_code' => $guestCode,
+            'domain' => $domain,
+            'invitation_url' => 'https://www.sena-digital.com/wedding/'.$domain.'?guest='.$guestToken.'&to='.$guestCode,
+            'first_visit_at' => now(),
+            'ip_address' => '127.0.0.1',
+            'user_agent' => 'Feature test',
+            'attended' => false,
+            'attended_at' => null,
+            'attended_acara_id' => null,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ], $overrides));
+
+        return DB::table('wedding_guests')->where('id', $id)->first();
     }
 
     private function createMinimalSchema(): void

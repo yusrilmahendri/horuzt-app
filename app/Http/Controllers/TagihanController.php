@@ -7,11 +7,24 @@ use App\Models\Mempelai;
 use App\Models\PaymentLog;
 use App\Models\Setting;
 use App\Models\User;
+use App\Services\PaymentMethodResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 
 class TagihanController extends Controller
 {
+    public function __construct(private PaymentMethodResolver $paymentMethodResolver)
+    {
+    }
+
+    public function paymentConfig(): JsonResponse
+    {
+        return response()->json([
+            'message' => 'Konfigurasi pembayaran berhasil diambil.',
+            'data' => $this->paymentMethodResolver->activePayload(),
+        ]);
+    }
+
     /**
      * Display user's billing history (paid invoices only)
      */
@@ -101,6 +114,26 @@ class TagihanController extends Controller
                 ], 409);
             }
 
+            $paymentMethod = $this->paymentMethodResolver->activeMethod();
+
+            if ($paymentMethod !== PaymentMethodResolver::MANUAL) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_METHOD_NOT_AVAILABLE',
+                    'message' => 'Pembayaran manual sedang tidak aktif. Silakan gunakan metode pembayaran yang ditentukan admin.',
+                    'data' => $this->paymentMethodResolver->activePayload(),
+                ], 409);
+            }
+
+            if (! $this->paymentMethodResolver->manualConfigured()) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'MANUAL_PAYMENT_CONFIG_INCOMPLETE',
+                    'message' => 'Konfigurasi pembayaran manual belum lengkap.',
+                    'data' => $this->paymentMethodResolver->activePayload(),
+                ], 409);
+            }
+
             // Read trial duration from admin-configurable settings, fallback to 3 days
             $trialConfig = Setting::whereNotNull('trial_masa_aktif')
                 ->where('trial_masa_aktif', '>', 0)
@@ -115,9 +148,11 @@ class TagihanController extends Controller
                         'kode_pemesanan' => $invitation->kode_pemesanan,
                         'paket' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
                         'total' => $invitation->package_price_snapshot,
+                        'payment_method' => PaymentMethodResolver::MANUAL,
                         'status' => 'pending',
                         'domain_expires_at' => $invitation->domain_expires_at?->format('Y-m-d H:i:s'),
                         'trial_days' => $trialDays,
+                        'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
                     ]
                 ], 200);
             }
@@ -125,6 +160,7 @@ class TagihanController extends Controller
             // Update invitation to pending status (manual payment initiated)
             $invitation->update([
                 'payment_status' => 'pending',
+                'payment_method' => PaymentMethodResolver::MANUAL,
                 'domain_expires_at' => now()->addDays($trialDays),
             ]);
 
@@ -143,9 +179,11 @@ class TagihanController extends Controller
                     'kode_pemesanan' => $invitation->kode_pemesanan,
                     'paket' => $invitation->package_features_snapshot['name_paket'] ?? 'Unknown',
                     'total' => $invitation->package_price_snapshot,
+                    'payment_method' => PaymentMethodResolver::MANUAL,
                     'status' => 'pending',
                     'domain_expires_at' => $invitation->domain_expires_at->format('Y-m-d H:i:s'),
                     'trial_days' => $trialDays,
+                    'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
                 ]
             ], 201);
 

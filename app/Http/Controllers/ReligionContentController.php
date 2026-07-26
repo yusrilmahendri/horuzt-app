@@ -4,13 +4,17 @@ namespace App\Http\Controllers;
 
 use App\Models\Setting;
 use App\Services\ReligionContentResolver;
+use App\Services\WhatsAppTemplateService;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 
 class ReligionContentController extends Controller
 {
-    public function __construct(private ReligionContentResolver $resolver)
+    public function __construct(
+        private ReligionContentResolver $resolver,
+        private WhatsAppTemplateService $whatsAppTemplateService
+    )
     {
         $this->middleware('auth:sanctum');
     }
@@ -34,6 +38,14 @@ class ReligionContentController extends Controller
         }
 
         $validated = $request->validate($rules);
+        $placeholderErrors = $this->placeholderErrors($validated);
+
+        if ($placeholderErrors !== []) {
+            return response()->json([
+                'message' => 'Placeholder konten agama tidak valid.',
+                'errors' => $placeholderErrors,
+            ], 422);
+        }
 
         if (array_key_exists('religion_code', $validated) && $validated['religion_code'] !== null) {
             $normalized = $this->resolver->normalize($validated['religion_code']);
@@ -110,5 +122,22 @@ class ReligionContentController extends Controller
         }
 
         return $fallback;
+    }
+
+    private function placeholderErrors(array $validated): array
+    {
+        $errors = [];
+
+        foreach ($this->resolver->fields() as $field) {
+            $invalid = $this->whatsAppTemplateService->invalidPlaceholders($validated[$field] ?? null);
+
+            if ($invalid !== []) {
+                $errors[$field] = [
+                    'Placeholder tidak didukung: '.implode(', ', $invalid).'. Placeholder yang tersedia: '.implode(', ', $this->whatsAppTemplateService->allowedPlaceholders()).'.',
+                ];
+            }
+        }
+
+        return $errors;
     }
 }

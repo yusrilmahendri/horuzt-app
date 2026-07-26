@@ -3,6 +3,8 @@
 namespace Tests\Feature;
 
 use App\Models\Invitation;
+use App\Models\ActivePaymentMethod;
+use App\Models\MetodeTransaction;
 use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
 use App\Models\User;
@@ -20,6 +22,22 @@ use Tests\TestCase;
 class MidtransCustomerDetailsTest extends TestCase
 {
     use RefreshDatabase;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        config([
+            'midtrans.server_key' => 'server-key-test',
+            'midtrans.client_key' => 'client-key-test',
+        ]);
+
+        $midtransMethod = MetodeTransaction::firstOrCreate(['name' => 'Midtrans']);
+        ActivePaymentMethod::updateOrCreate(
+            ['metode_transaction_id' => $midtransMethod->id],
+            ['is_active' => true]
+        );
+    }
 
     public function test_midtrans_payload_uses_user_name_for_customer_details(): void
     {

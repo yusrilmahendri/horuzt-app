@@ -111,6 +111,23 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
             ->assertJsonPath('data.guest.guest_token', null);
     }
 
+    public function test_public_wedding_does_not_resolve_deleted_guest_token(): void
+    {
+        $user = $this->createPublicWeddingUser('deleted-token');
+        $guest = $this->createWeddingGuest($user, 'deleted-token', 'Tamu Dihapus', 'tamu-dihapus');
+        $token = $guest->guest_token;
+
+        $guest->delete();
+
+        $this->getJson('/api/v1/wedding/deleted-token?guest='.$token.'&to=tamu-dihapus')
+            ->assertOk()
+            ->assertJsonPath('data.guest_name', 'tamu dihapus')
+            ->assertJsonPath('data.nama_tamu', 'tamu dihapus')
+            ->assertJsonPath('data.guest.name', 'tamu dihapus')
+            ->assertJsonPath('data.guest.guest_token', null)
+            ->assertJsonPath('data.guest.guest_slug', 'tamu-dihapus');
+    }
+
     public function test_public_wedding_still_supports_legacy_to_query(): void
     {
         $user = $this->createPublicWeddingUser('legacy-to');

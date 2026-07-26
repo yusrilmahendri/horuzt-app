@@ -7,6 +7,7 @@ use App\Http\Controllers\Admin\AdminContactSettingController;
 use App\Http\Controllers\Admin\AdminInvoiceController;
 use App\Http\Controllers\Admin\AdminMusicTrackController;
 use App\Http\Controllers\Admin\AdminUserManagementController;
+use App\Http\Controllers\Admin\ReligionTemplateController;
 use App\Http\Controllers\Admin\SettingControllerAdmin;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\AttendanceScanController;
@@ -261,6 +262,15 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
         Route::delete('/v1/admin/contact-settings', 'destroy');
     });
 
+    Route::controller(ReligionTemplateController::class)->prefix('v1/admin/religion-templates')->group(function () {
+        Route::get('/', 'index');
+        Route::get('/{id}', 'show');
+        Route::post('/', 'store');
+        Route::put('/{id}', 'update');
+        Route::patch('/{id}/status', 'updateStatus');
+        Route::delete('/{id}', 'destroy');
+    });
+
     // New Bank Account Management (Admin)
     Route::controller(AdminBankAccountController::class)->group(function () {
         Route::get('/v1/admin/bank-accounts', 'index');
@@ -409,6 +419,7 @@ Route::group(['middleware' => ['auth:sanctum', 'role:admin']], function () {
 Route::group(['middleware' => ['auth:sanctum']], function () {
     Route::controller(TagihanController::class)->group(function () {
         Route::get('/v1/user/tagihan', 'index');
+        Route::get('/v1/user/payment-config', 'paymentConfig');
         Route::post('/v1/user/tagihan', 'store');
     });
 });

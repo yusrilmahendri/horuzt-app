@@ -3,11 +3,11 @@
 return [
     'supported' => [
         'islam' => 'Islam',
-        'christian' => 'Kristen',
-        'catholic' => 'Katolik',
+        'kristen' => 'Kristen',
+        'katolik' => 'Katolik',
         'hindu' => 'Hindu',
-        'buddhist' => 'Buddha',
-        'confucian' => 'Konghucu',
+        'buddha' => 'Buddha',
+        'konghucu' => 'Konghucu',
         'universal' => 'Universal',
         'custom' => 'Custom',
     ],
@@ -15,12 +15,12 @@ return [
     'aliases' => [
         'moslem' => 'islam',
         'muslim' => 'islam',
-        'kristen' => 'christian',
-        'protestan' => 'christian',
-        'katolik' => 'catholic',
-        'buddha' => 'buddhist',
-        'konghucu' => 'confucian',
-        'khonghucu' => 'confucian',
+        'christian' => 'kristen',
+        'protestan' => 'kristen',
+        'catholic' => 'katolik',
+        'buddhist' => 'buddha',
+        'confucian' => 'konghucu',
+        'khonghucu' => 'konghucu',
         'umum' => 'universal',
         'general' => 'universal',
         'lainnya' => 'custom',
@@ -61,7 +61,7 @@ return [
             'blessing_text' => 'Doa restu Bapak/Ibu/Saudara/i sangat berarti bagi kami.',
         ],
 
-        'christian' => [
+        'kristen' => [
             'opening_greeting' => 'Salam sejahtera dalam kasih Tuhan.',
             'closing_greeting' => 'Tuhan memberkati.',
             'invitation_intro' => 'Dengan penuh syukur kepada Tuhan, kami mengundang Bapak/Ibu/Saudara/i untuk menghadiri pemberkatan pernikahan kami.',
@@ -72,7 +72,7 @@ return [
             'blessing_text' => 'Kehadiran dan doa Bapak/Ibu/Saudara/i menjadi berkat bagi kami.',
         ],
 
-        'catholic' => [
+        'katolik' => [
             'opening_greeting' => 'Salam damai dalam kasih Kristus.',
             'closing_greeting' => 'Berkah Dalem.',
             'invitation_intro' => 'Dengan ungkapan syukur kepada Tuhan, kami mengundang Bapak/Ibu/Saudara/i untuk menghadiri perayaan sakramen perkawinan kami.',
@@ -94,7 +94,7 @@ return [
             'blessing_text' => 'Doa restu Bapak/Ibu/Saudara/i sangat kami harapkan.',
         ],
 
-        'buddhist' => [
+        'buddha' => [
             'opening_greeting' => 'Namo Buddhaya.',
             'closing_greeting' => 'Sabbe Satta Bhavantu Sukhitatta.',
             'invitation_intro' => 'Dengan penuh kebahagiaan, kami mengundang Bapak/Ibu/Saudara/i untuk menghadiri pernikahan kami.',
@@ -105,7 +105,7 @@ return [
             'blessing_text' => 'Kehadiran dan doa baik Anda sangat berarti bagi kami.',
         ],
 
-        'confucian' => [
+        'konghucu' => [
             'opening_greeting' => 'Salam kebajikan.',
             'closing_greeting' => 'Wei De Dong Tian.',
             'invitation_intro' => 'Dengan penuh rasa syukur kepada Tian, kami mengundang Bapak/Ibu/Saudara/i untuk menghadiri pernikahan kami.',

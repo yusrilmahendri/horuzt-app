@@ -11,6 +11,7 @@ use App\Models\Setting;
 use App\Models\TransactionTagihan;
 use App\Models\TripayTransaction;
 use App\Services\PackageThemeAccessService;
+use App\Services\PaymentMethodResolver;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
@@ -18,7 +19,10 @@ use Illuminate\Validation\Rule;
 
 class SettingControllerAdmin extends Controller
 {
-    public function __construct(private PackageThemeAccessService $packageThemeAccess)
+    public function __construct(
+        private PackageThemeAccessService $packageThemeAccess,
+        private PaymentMethodResolver $paymentMethodResolver
+    )
     {
         $this->middleware('auth:sanctum')->except(['indexPaket']);
     }
@@ -548,7 +552,9 @@ class SettingControllerAdmin extends Controller
 
             return response()->json([
                 'message' => 'Active payment method retrieved successfully',
-                'data' => $active,
+                'data' => $active
+                    ? array_merge($active->toArray(), $this->paymentMethodResolver->activePayload())
+                    : $this->paymentMethodResolver->activePayload(),
             ], 200);
         } catch (\Exception $e) {
             return response()->json([
@@ -573,17 +579,32 @@ class SettingControllerAdmin extends Controller
                 ], 404);
             }
 
-            // Deactivate all and activate the selected one
-            ActivePaymentMethod::query()->update(['is_active' => false]);
+            $paymentMethod = $this->paymentMethodResolver->normalizeMethod($metodeTransaction->name);
 
-            $active = ActivePaymentMethod::updateOrCreate(
-                ['metode_transaction_id' => $id],
-                ['is_active' => true]
-            );
+            if (! in_array($paymentMethod, [PaymentMethodResolver::MANUAL, PaymentMethodResolver::MIDTRANS], true)) {
+                return response()->json([
+                    'message' => 'Metode pembayaran aktif hanya boleh Manual atau Midtrans.',
+                    'errors' => [
+                        'payment_method' => ['Metode pembayaran aktif hanya boleh manual atau midtrans.'],
+                    ],
+                ], 422);
+            }
+
+            $active = DB::transaction(function () use ($id) {
+                ActivePaymentMethod::query()->update(['is_active' => false]);
+
+                return ActivePaymentMethod::updateOrCreate(
+                    ['metode_transaction_id' => $id],
+                    ['is_active' => true]
+                );
+            });
 
             return response()->json([
-                'message' => 'Active payment method updated successfully',
-                'data' => $active->load('metodeTransaction'),
+                'message' => 'Pilihan metode pembayaran lama disimpan, tetapi metode user otomatis ditentukan dari kelengkapan rekening manual.',
+                'data' => array_merge(
+                    $active->load('metodeTransaction')->toArray(),
+                    $this->paymentMethodResolver->activePayload()
+                ),
             ], 200);
         } catch (\Exception $e) {
             return response()->json([

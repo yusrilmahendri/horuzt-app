@@ -34,4 +34,19 @@ class WhatsAppTemplateService
     {
         return self::ALLOWED_PLACEHOLDERS;
     }
+
+    public function invalidPlaceholders(?string $template): array
+    {
+        if ($template === null || $template === '') {
+            return [];
+        }
+
+        preg_match_all('/{{\s*([a-zA-Z0-9_]+)\s*}}/', $template, $matches);
+
+        return collect($matches[1] ?? [])
+            ->unique()
+            ->reject(fn (string $placeholder) => in_array($placeholder, self::ALLOWED_PLACEHOLDERS, true))
+            ->values()
+            ->all();
+    }
 }

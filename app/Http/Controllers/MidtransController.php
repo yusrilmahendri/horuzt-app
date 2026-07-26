@@ -8,6 +8,7 @@ use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
 use App\Notifications\MidtransPaymentStatusNotification;
 use App\Services\MidtransService;
+use App\Services\PaymentMethodResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
@@ -18,7 +19,7 @@ class MidtransController extends Controller
 {
     protected MidtransService $midtransService;
 
-    public function __construct()
+    public function __construct(private PaymentMethodResolver $paymentMethodResolver)
     {
         // Auth is enforced at route level via auth:sanctum middleware
     }
@@ -33,6 +34,25 @@ class MidtransController extends Controller
             }
 
             $validated = $request->validated();
+            $activePaymentMethod = $this->paymentMethodResolver->activeMethod();
+
+            if ($activePaymentMethod !== PaymentMethodResolver::MIDTRANS) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_METHOD_NOT_AVAILABLE',
+                    'message' => 'Pembayaran Midtrans sedang tidak aktif. Silakan gunakan metode pembayaran yang ditentukan admin.',
+                    'data' => $this->paymentMethodResolver->activePayload(),
+                ], 409);
+            }
+
+            if (! $this->paymentMethodResolver->midtransConfigured()) {
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_METHOD_UNAVAILABLE',
+                    'message' => 'Metode pembayaran belum tersedia. Silakan hubungi admin.',
+                    'data' => $this->paymentMethodResolver->activePayload(),
+                ], 409);
+            }
 
             $invitation = Invitation::with(['paketUndangan', 'user.settingOne'])->findOrFail($validated['invitation_id']);
             if ($this->profileNameMissing($user)) {
@@ -134,6 +154,7 @@ class MidtransController extends Controller
                 $invitation->update([
                     'order_id' => $orderId,
                     'payment_status' => 'pending',
+                    'payment_method' => PaymentMethodResolver::MIDTRANS,
                 ]);
 
                 PaymentLog::create([
@@ -143,6 +164,7 @@ class MidtransController extends Controller
                     'event_type' => 'token_request',
                     'transaction_status' => 'pending',
                     'gross_amount' => $grossAmount,
+                    'payment_type' => PaymentMethodResolver::MIDTRANS,
                     'request_payload' => json_encode($params),
                     'response_payload' => json_encode([
                         'snap_token' => $snapToken,

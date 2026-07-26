@@ -57,6 +57,7 @@ class WeddingProfileResource extends JsonResource
             'stories' => $this->getStoriesInfo(),
             'quotes' => $this->getQuotesInfo(),
             'religion' => $this->getReligionInfo(),
+            'religion_key' => $this->resolvedReligionContent()['religion_key'],
             'religion_content' => $this->getReligionContentInfo(),
             'quote' => $this->getReligionAlias('quote'),
             'message' => $this->getReligionAlias('message'),
@@ -533,7 +534,7 @@ class WeddingProfileResource extends JsonResource
 
     private function getReligionContentInfo(): array
     {
-        return $this->resolvedReligionContent()['resolved'];
+        return $this->resolvedReligionContent()['resolved_content'];
     }
 
     private function getReligionAlias(string $alias): mixed
