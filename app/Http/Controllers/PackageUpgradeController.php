@@ -9,18 +9,23 @@ use App\Models\Mempelai;
 use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
 use App\Services\AccountStatusService;
+use App\Services\MidtransService;
 use App\Services\PackageThemeAccessService;
+use App\Services\PaymentMethodResolver;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
+use Illuminate\Support\Str;
 
 class PackageUpgradeController extends Controller
 {
     public function __construct(
         private PackageThemeAccessService $themeAccess,
-        private AccountStatusService $accountStatus
+        private AccountStatusService $accountStatus,
+        private PaymentMethodResolver $paymentMethodResolver
     )
     {
         $this->middleware('auth:sanctum');
@@ -281,6 +286,180 @@ class PackageUpgradeController extends Controller
     }
 
     /**
+     * GET /v1/user/packages
+     */
+    public function packages(Request $request): JsonResponse
+    {
+        $user = $request->user();
+        $currentPackage = $this->currentPackageFor($user);
+        $currentOrder = $currentPackage ? $this->packageOrderValue($currentPackage) : null;
+
+        $packages = $this->orderedPackages()->map(function (PaketUndangan $package) use ($currentPackage, $currentOrder) {
+            $order = $this->packageOrderValue($package);
+            $isCurrent = $currentPackage && (int) $currentPackage->id === (int) $package->id;
+
+            return [
+                'id' => $package->id,
+                'name' => $this->packageName($package),
+                'slug' => $this->packageSlug($package),
+                'price' => $package->price,
+                'features' => $this->packageFeatures($package),
+                'image' => $this->packageImage($package),
+                'order' => $order,
+                'is_current' => $isCurrent,
+                'can_upgrade' => $currentOrder !== null && $order > $currentOrder,
+                'can_downgrade' => $currentOrder !== null && $order < $currentOrder,
+            ];
+        })->values();
+
+        return response()->json($packages);
+    }
+
+    /**
+     * POST /v1/user/package-upgrade
+     */
+    public function packageUpgrade(Request $request): JsonResponse
+    {
+        $validated = $request->validate([
+            'package_id' => ['required', 'integer', 'exists:paket_undangans,id'],
+        ]);
+
+        $user = $request->user();
+        $targetPackage = PaketUndangan::findOrFail($validated['package_id']);
+        $currentPackage = $this->currentPackageFor($user);
+
+        if (! $currentPackage) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Paket aktif tidak ditemukan.',
+            ], 404);
+        }
+
+        if ((int) $currentPackage->id === (int) $targetPackage->id) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Tidak dapat upgrade ke paket yang sama.',
+                'package_before' => $this->publicPackagePayload($currentPackage),
+                'package_after' => $this->publicPackagePayload($targetPackage),
+            ], 422);
+        }
+
+        if ($this->packageOrderValue($targetPackage) <= $this->packageOrderValue($currentPackage)) {
+            return response()->json([
+                'success' => false,
+                'message' => 'Downgrade paket tidak diperbolehkan.',
+                'package_before' => $this->publicPackagePayload($currentPackage),
+                'package_after' => $this->publicPackagePayload($targetPackage),
+            ], 422);
+        }
+
+        $paymentMethod = $this->paymentMethodResolver->activeMethod();
+
+        if ($paymentMethod === PaymentMethodResolver::MANUAL) {
+            return DB::transaction(function () use ($request, $user, $currentPackage, $targetPackage, $paymentMethod) {
+                $invoice = $this->createPackageUpgradeInvoice($user, $currentPackage, $targetPackage, $paymentMethod);
+
+                PaymentLog::create([
+                    'user_id' => $user->id,
+                    'invitation_id' => $invoice->id,
+                    'order_id' => $invoice->kode_pemesanan,
+                    'event_type' => 'token_request',
+                    'transaction_status' => 'pending',
+                    'payment_type' => $paymentMethod,
+                    'gross_amount' => $invoice->package_price_snapshot,
+                    'request_payload' => json_encode(['package_id' => $targetPackage->id]),
+                    'response_payload' => json_encode([
+                        'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
+                    ]),
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'notes' => 'Invoice manual upgrade paket dibuat.',
+                ]);
+
+                return response()->json($this->packageUpgradeResponse(
+                    $currentPackage,
+                    $targetPackage,
+                    $paymentMethod,
+                    $invoice->payment_status,
+                    [
+                        'invoice_id' => $invoice->id,
+                        'invoice_code' => $invoice->kode_pemesanan,
+                        'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
+                    ]
+                ), 201);
+            });
+        }
+
+        if (! $this->paymentMethodResolver->midtransConfigured()) {
+            return response()->json([
+                'success' => false,
+                'code' => 'PAYMENT_METHOD_UNAVAILABLE',
+                'message' => 'Metode pembayaran belum tersedia. Silakan hubungi admin.',
+                'data' => $this->paymentMethodResolver->activePayload(),
+            ], 409);
+        }
+
+        try {
+            return DB::transaction(function () use ($request, $user, $currentPackage, $targetPackage, $paymentMethod) {
+                $invoice = $this->createPackageUpgradeInvoice($user, $currentPackage, $targetPackage, $paymentMethod);
+                $orderId = $invoice->kode_pemesanan;
+                $grossAmount = (float) $targetPackage->price;
+                $snapToken = $this->createMidtransSnapToken($user, $invoice, $targetPackage, $orderId, $grossAmount);
+                $expiresAt = now()->addHours((int) config('midtrans.token_expiry_hours', 24));
+
+                $invoice->update([
+                    'order_id' => $orderId,
+                    'payment_status' => 'pending',
+                    'payment_method' => PaymentMethodResolver::MIDTRANS,
+                ]);
+
+                PaymentLog::create([
+                    'user_id' => $user->id,
+                    'invitation_id' => $invoice->id,
+                    'order_id' => $orderId,
+                    'event_type' => 'token_request',
+                    'transaction_status' => 'pending',
+                    'payment_type' => PaymentMethodResolver::MIDTRANS,
+                    'gross_amount' => $grossAmount,
+                    'request_payload' => json_encode(['package_id' => $targetPackage->id]),
+                    'response_payload' => json_encode([
+                        'snap_token' => $snapToken,
+                        'expires_at' => $expiresAt->toIso8601String(),
+                    ]),
+                    'ip_address' => $request->ip(),
+                    'user_agent' => $request->userAgent(),
+                    'notes' => 'Transaksi Midtrans upgrade paket dibuat.',
+                ]);
+
+                return response()->json($this->packageUpgradeResponse(
+                    $currentPackage,
+                    $targetPackage,
+                    PaymentMethodResolver::MIDTRANS,
+                    $invoice->payment_status,
+                    [
+                        'invoice_id' => $invoice->id,
+                        'invoice_code' => $invoice->kode_pemesanan,
+                        'order_id' => $orderId,
+                        'snap_token' => $snapToken,
+                        'expires_at' => $expiresAt->toIso8601String(),
+                    ]
+                ), 201);
+            });
+        } catch (\RuntimeException $e) {
+            Log::error('Package upgrade Midtrans transaction failed', [
+                'user_id' => $user->id,
+                'target_package_id' => $targetPackage->id,
+                'error' => $e->getMessage(),
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'message' => $e->getMessage(),
+            ], 503);
+        }
+    }
+
+    /**
      * User initiates package upgrade
      * POST /v1/user/upgrade-package
      *
@@ -511,6 +690,214 @@ class PackageUpgradeController extends Controller
             'price' => $package->price,
             'duration_days' => $package->masa_aktif,
         ];
+    }
+
+    private function orderedPackages()
+    {
+        $query = PaketUndangan::query();
+        $orderColumn = $this->packageOrderColumn();
+
+        if ($orderColumn) {
+            return $query->orderBy($orderColumn)->orderBy('id')->get();
+        }
+
+        return $query->orderBy('price')->orderBy('id')->get();
+    }
+
+    private function currentPackageFor(User $user): ?PaketUndangan
+    {
+        if (Schema::hasColumn('users', 'package_id') && $user->getAttribute('package_id')) {
+            $package = PaketUndangan::find($user->getAttribute('package_id'));
+
+            if ($package) {
+                return $package;
+            }
+        }
+
+        return $this->themeAccess->packageForUser($user)
+            ?? Invitation::with('paketUndangan')
+                ->where('user_id', $user->id)
+                ->whereIn('payment_status', ['paid', 'confirmed'])
+                ->orderByDesc('id')
+                ->first()?->paketUndangan;
+    }
+
+    private function packageOrderValue(PaketUndangan $package): int|float
+    {
+        $orderColumn = $this->packageOrderColumn();
+
+        if ($orderColumn && $package->getAttribute($orderColumn) !== null) {
+            return (int) $package->getAttribute($orderColumn);
+        }
+
+        $ids = $this->orderedPackages()->pluck('id')->values();
+        $index = $ids->search($package->id);
+
+        return $index === false ? (float) $package->price : $index + 1;
+    }
+
+    private function packageOrderColumn(): ?string
+    {
+        foreach (['order', 'sort_order', 'display_order', 'position'] as $column) {
+            if (Schema::hasColumn('paket_undangans', $column)) {
+                return $column;
+            }
+        }
+
+        return null;
+    }
+
+    private function packageName(PaketUndangan $package): ?string
+    {
+        return $package->getRawOriginal('name_paket')
+            ?? $package->getRawOriginal('jenis_paket')
+            ?? $package->name_paket;
+    }
+
+    private function packageSlug(PaketUndangan $package): ?string
+    {
+        return $package->getAttribute('slug')
+            ?? $package->getAttribute('code')
+            ?? Str::slug((string) $this->packageName($package));
+    }
+
+    private function packageImage(PaketUndangan $package): ?string
+    {
+        foreach (['image', 'photo', 'thumbnail', 'icon', 'gambar'] as $column) {
+            if (Schema::hasColumn('paket_undangans', $column)) {
+                return $package->getAttribute($column);
+            }
+        }
+
+        return null;
+    }
+
+    private function packageFeatures(PaketUndangan $package): array
+    {
+        $excluded = array_filter([
+            'id',
+            'code',
+            'slug',
+            'jenis_paket',
+            'name_paket',
+            'price',
+            'masa_aktif',
+            'created_at',
+            'updated_at',
+            $this->packageOrderColumn(),
+        ]);
+
+        return collect(Schema::getColumnListing('paket_undangans'))
+            ->reject(fn (string $column) => in_array($column, $excluded, true))
+            ->reject(fn (string $column) => in_array($column, ['image', 'photo', 'thumbnail', 'icon', 'gambar'], true))
+            ->mapWithKeys(fn (string $column) => [$column => $package->getAttribute($column)])
+            ->all();
+    }
+
+    private function publicPackagePayload(PaketUndangan $package): array
+    {
+        return [
+            'id' => $package->id,
+            'name' => $this->packageName($package),
+            'slug' => $this->packageSlug($package),
+            'price' => $package->price,
+            'features' => $this->packageFeatures($package),
+            'image' => $this->packageImage($package),
+            'order' => $this->packageOrderValue($package),
+        ];
+    }
+
+    private function packageUpgradeResponse(
+        PaketUndangan $packageBefore,
+        PaketUndangan $packageAfter,
+        string $paymentMethod,
+        string $paymentStatus,
+        array $extra = []
+    ): array {
+        return array_merge([
+            'success' => true,
+            'package_before' => $this->publicPackagePayload($packageBefore),
+            'package_after' => $this->publicPackagePayload($packageAfter),
+            'payment_method' => $paymentMethod,
+            'payment_status' => $paymentStatus,
+        ], $extra);
+    }
+
+    private function createPackageUpgradeInvoice(
+        User $user,
+        PaketUndangan $currentPackage,
+        PaketUndangan $targetPackage,
+        string $paymentMethod
+    ): Invitation {
+        $activeInvitation = Invitation::where('user_id', $user->id)
+            ->whereIn('payment_status', ['paid', 'confirmed'])
+            ->orderByDesc('id')
+            ->firstOrFail();
+
+        return Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $targetPackage->id,
+            'kode_pemesanan' => '#UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $targetPackage->id,
+            'status' => $activeInvitation->status,
+            'payment_status' => 'pending',
+            'payment_method' => $paymentMethod,
+            'package_price_snapshot' => $targetPackage->price,
+            'package_duration_snapshot' => $targetPackage->masa_aktif,
+            'package_features_snapshot' => [
+                'invoice_type' => 'package_upgrade',
+                'package_id' => $targetPackage->id,
+                'package_slug' => $this->packageSlug($targetPackage),
+                'name_paket' => $this->packageName($targetPackage),
+                'features' => $this->packageFeatures($targetPackage),
+                'upgrade_initiated_at' => now()->toISOString(),
+                'previous_invitation_id' => $activeInvitation->id,
+                'previous_package_id' => $currentPackage->id,
+                'previous_package_slug' => $this->packageSlug($currentPackage),
+                'previous_package_name' => $this->packageName($currentPackage),
+                'original_status' => $activeInvitation->status,
+                'original_payment_status' => $activeInvitation->payment_status,
+            ],
+        ]);
+    }
+
+    private function createMidtransSnapToken(
+        User $user,
+        Invitation $invoice,
+        PaketUndangan $targetPackage,
+        string $orderId,
+        float $grossAmount
+    ): string {
+        $customerName = trim((string) $user->name);
+        if ($customerName === '') {
+            $customerName = trim((string) strtok((string) $user->email, '@')) ?: 'Pelanggan';
+        }
+
+        $params = [
+            'transaction_details' => [
+                'order_id' => $orderId,
+                'gross_amount' => $grossAmount,
+            ],
+            'customer_details' => [
+                'first_name' => preg_split('/\s+/', $customerName, 2)[0] ?? $customerName,
+                'email' => $user->email,
+                'phone' => $user->phone ?? '',
+            ],
+            'item_details' => [[
+                'id' => 'paket-' . $targetPackage->id,
+                'name' => $this->packageName($targetPackage) ?? 'Package',
+                'price' => $grossAmount,
+                'quantity' => 1,
+            ]],
+            'custom_field1' => $orderId,
+            'custom_field2' => 'package_upgrade',
+            'custom_field3' => (string) $invoice->id,
+        ];
+
+        $midtrans = app()->bound(MidtransService::class)
+            ? app(MidtransService::class)
+            : new MidtransService($user->id);
+
+        return $midtrans->createTransaction($params);
     }
 
     private function invoicePayload(Invitation $invoice): array

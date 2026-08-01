@@ -8,6 +8,7 @@ use App\Models\PaketUndangan;
 use App\Models\PaymentLog;
 use App\Notifications\MidtransPaymentStatusNotification;
 use App\Services\MidtransService;
+use App\Services\PackageUpgradeService;
 use App\Services\PaymentMethodResolver;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,10 @@ class MidtransController extends Controller
 {
     protected MidtransService $midtransService;
 
-    public function __construct(private PaymentMethodResolver $paymentMethodResolver)
+    public function __construct(
+        private PaymentMethodResolver $paymentMethodResolver,
+        private PackageUpgradeService $packageUpgradeService
+    )
     {
         // Auth is enforced at route level via auth:sanctum middleware
     }
@@ -671,6 +675,12 @@ class MidtransController extends Controller
                     }
 
                     $invitation->update($updateData);
+                    $this->packageUpgradeService->completeIfUpgrade(
+                        $invitation->fresh(['user', 'paketUndangan']),
+                        PaymentMethodResolver::MIDTRANS,
+                        'paid',
+                        ['source' => 'status_check']
+                    );
 
                     // Sync mempelai status — polling confirms payment same as webhook
                     $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
@@ -806,7 +816,7 @@ class MidtransController extends Controller
             }
 
             // Mark as paid based on frontend callback
-            DB::transaction(function () use ($invitation, $transactionId, $orderId) {
+            DB::transaction(function () use ($request, $grossAmount, $invitation, $transactionId, $orderId) {
                 $snapshot = $invitation->package_features_snapshot ?? [];
 
                 $updateData = [
@@ -835,6 +845,12 @@ class MidtransController extends Controller
                 }
 
                 $invitation->update($updateData);
+                $this->packageUpgradeService->completeIfUpgrade(
+                    $invitation->fresh(['user', 'paketUndangan']),
+                    PaymentMethodResolver::MIDTRANS,
+                    'paid',
+                    ['source' => 'frontend_callback']
+                );
 
                 // Sync mempelai status
                 $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
@@ -1006,6 +1022,15 @@ class MidtransController extends Controller
                 }
 
                 $invitation->update($updateData);
+
+                if (in_array($transactionStatus, ['capture', 'settlement'])) {
+                    $this->packageUpgradeService->completeIfUpgrade(
+                        $invitation->fresh(['user', 'paketUndangan']),
+                        PaymentMethodResolver::MIDTRANS,
+                        'paid',
+                        ['source' => 'webhook']
+                    );
+                }
 
                 // Midtrans payments are auto-confirmed — sync mempelai status immediately
                 if (in_array($transactionStatus, ['capture', 'settlement'])) {

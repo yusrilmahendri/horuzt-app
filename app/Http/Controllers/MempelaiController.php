@@ -11,6 +11,8 @@ use Illuminate\Support\Facades\Auth;
 use App\Models\User;
 use App\Http\Resources\Mempelai\MempelaiCollection;
 use App\Services\AccountStatusService;
+use App\Services\PackageUpgradeService;
+use App\Services\PaymentMethodResolver;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -307,6 +309,12 @@ class MempelaiController extends Controller
                 }
 
                 $invoice->update($invoiceUpdate);
+                app(PackageUpgradeService::class)->completeIfUpgrade(
+                    $invoice->fresh(['user', 'paketUndangan']),
+                    $invoice->payment_method ?: PaymentMethodResolver::MANUAL,
+                    'paid',
+                    ['source' => 'manual_admin_confirmation']
+                );
 
                 $invoice->refresh()->load('paketUndangan');
                 $accountStatus = app(AccountStatusService::class)->summary($user->fresh());

@@ -2,7 +2,7 @@
 
 namespace Tests\Feature;
 
-use App\Models\CategoryThemas;
+use App\Models\Galery;
 use App\Models\Invitation;
 use App\Models\JenisThemas;
 use App\Models\Mempelai;
@@ -12,6 +12,7 @@ use App\Models\Setting;
 use App\Models\User;
 use App\Models\WeddingGuest;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class PublicWeddingProfileSelectedThemeTest extends TestCase
@@ -81,6 +82,82 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
             ->assertJsonPath('data.guest_name', 'Tamu Undangan')
             ->assertJsonPath('data.nama_tamu', 'Tamu Undangan')
             ->assertJsonPath('data.guest.name', 'Tamu Undangan');
+    }
+
+    public function test_public_wedding_share_returns_safe_open_graph_html_with_cover_photo(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('photos/cover-sena.jpg', 'fake image content');
+
+        $this->createPublicWeddingUser('share-cover');
+
+        Mempelai::whereHas('user.settingOne', fn ($query) => $query->where('domain', 'share-cover'))
+            ->update([
+                'cover_photo' => 'photos/cover-sena.jpg',
+                'name_panggilan_pria' => 'Sena',
+                'name_panggilan_wanita' => 'Digital',
+            ]);
+
+        Setting::where('domain', 'share-cover')->update([
+            'religion_invitation_intro' => '<p>Dengan bahagia kami mengundang {{guest_name}} untuk hadir.</p>',
+        ]);
+
+        $response = $this->get('/api/v1/public/wedding/share-cover/share?guest=secret-token&to=tamu-rahasia');
+
+        $response->assertOk()
+            ->assertHeader('content-type', 'text/html; charset=UTF-8');
+
+        $html = $response->getContent();
+
+        $this->assertStringContainsString('<meta property="og:title" content="The Wedding of Sena &amp; Digital">', $html);
+        $this->assertStringContainsString('<meta property="og:url" content="https://www.sena-digital.com/wedding/share-cover">', $html);
+        $this->assertStringContainsString('<link rel="canonical" href="https://www.sena-digital.com/wedding/share-cover">', $html);
+        $this->assertStringContainsString('<meta property="og:image" content="https://cloud-api.sena-digital.com/storage/photos/cover-sena.jpg">', $html);
+        $this->assertStringContainsString('Dengan bahagia kami mengundang untuk hadir.', $html);
+        $this->assertStringNotContainsString('secret-token', $html);
+        $this->assertStringNotContainsString('tamu-rahasia', $html);
+        $this->assertStringNotContainsString('og:image:width', $html);
+        $this->assertStringNotContainsString('og:image:height', $html);
+    }
+
+    public function test_public_wedding_share_uses_featured_gallery_when_cover_photo_missing(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('gallery/featured.jpg', 'fake image content');
+        Storage::disk('public')->put('gallery/ordinary.jpg', 'fake image content');
+
+        $user = $this->createPublicWeddingUser('share-gallery');
+
+        Galery::create([
+            'user_id' => $user->id,
+            'photo' => 'gallery/ordinary.jpg',
+            'status' => true,
+            'is_featured' => false,
+            'sort_order' => 1,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        Galery::create([
+            'user_id' => $user->id,
+            'photo' => 'gallery/featured.jpg',
+            'status' => true,
+            'is_featured' => true,
+            'sort_order' => 2,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        $this->get('/api/v1/public/wedding/share-gallery/share')
+            ->assertOk()
+            ->assertSee('https://cloud-api.sena-digital.com/storage/gallery/featured.jpg', false)
+            ->assertDontSee('https://cloud-api.sena-digital.com/storage/gallery/ordinary.jpg', false);
+    }
+
+    public function test_public_wedding_share_returns_404_when_invitation_cannot_be_shared(): void
+    {
+        $this->createPublicWeddingUser('share-pending', 'pending', 'MK');
+
+        $this->get('/api/v1/public/wedding/share-pending/share')
+            ->assertNotFound();
     }
 
     public function test_public_wedding_resolves_valid_guest_token_for_current_domain(): void

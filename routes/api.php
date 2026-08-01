@@ -50,6 +50,7 @@ use App\Http\Controllers\ThemaController;
 use App\Http\Controllers\UcapanController;
 use App\Http\Controllers\UserController;
 use App\Http\Controllers\WeddingProfileController;
+use App\Http\Controllers\WeddingShareController;
 use Illuminate\Support\Facades\Route;
 
 /*
@@ -135,6 +136,7 @@ Route::get('/v1/wedding-profile/public', [WeddingProfileController::class, 'publ
 Route::get('/v1/wedding-profile/couple/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
 Route::get('/v1/wedding/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
 Route::get('/v1/public/wedding/{domain}', [WeddingProfileController::class, 'publicProfileByDomain']);
+Route::get('/v1/public/wedding/{domain}/share', [WeddingShareController::class, 'show']);
 
 // Public Guest Tracking endpoints (for guest visit tracking and QR verification)
 Route::controller(GuestTrackingController::class)->prefix('v1/wedding-guests')->group(function () {
@@ -480,6 +482,8 @@ Route::group(['middleware' => ['auth:sanctum', 'role:user', 'account.verified']]
 
     // Package Upgrade endpoints
     Route::controller(PackageUpgradeController::class)->group(function () {
+        Route::get('/v1/user/packages', 'packages');
+        Route::post('/v1/user/package-upgrade', 'packageUpgrade');
         Route::get('/v1/user/eligible-packages', 'getEligiblePackages');
         Route::post('/v1/user/upgrade-package', 'initiateUpgrade');
         Route::post('/v1/packages/upgrade', 'initiateUpgrade');
