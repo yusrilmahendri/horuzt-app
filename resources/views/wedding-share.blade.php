@@ -19,6 +19,10 @@
     @if (!empty($imageType))
     <meta property="og:image:type" content="{{ $imageType }}">
     @endif
+    @if (!empty($imageWidth) && !empty($imageHeight))
+    <meta property="og:image:width" content="{{ $imageWidth }}">
+    <meta property="og:image:height" content="{{ $imageHeight }}">
+    @endif
 
     <meta name="twitter:card" content="summary_large_image">
     <meta name="twitter:title" content="{{ $title }}">

@@ -113,11 +113,37 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
         $this->assertStringContainsString('<meta property="og:url" content="https://www.sena-digital.com/wedding/share-cover">', $html);
         $this->assertStringContainsString('<link rel="canonical" href="https://www.sena-digital.com/wedding/share-cover">', $html);
         $this->assertStringContainsString('<meta property="og:image" content="https://cloud-api.sena-digital.com/storage/photos/cover-sena.jpg">', $html);
+        $this->assertStringContainsString('<meta property="og:image:secure_url" content="https://cloud-api.sena-digital.com/storage/photos/cover-sena.jpg">', $html);
+        $this->assertStringContainsString('<meta property="og:image:type" content="image/jpeg">', $html);
         $this->assertStringContainsString('Dengan bahagia kami mengundang untuk hadir.', $html);
         $this->assertStringNotContainsString('secret-token', $html);
         $this->assertStringNotContainsString('tamu-rahasia', $html);
         $this->assertStringNotContainsString('og:image:width', $html);
         $this->assertStringNotContainsString('og:image:height', $html);
+    }
+
+    public function test_public_wedding_share_normalizes_legacy_api_storage_image_url(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('photos/cover sena.png', base64_decode(
+            'iVBORw0KGgoAAAANSUhEUgAAAAIAAAABCAYAAAD0In+KAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg=='
+        ));
+
+        $this->createPublicWeddingUser('share-normalized-cover');
+
+        Mempelai::whereHas('user.settingOne', fn ($query) => $query->where('domain', 'share-normalized-cover'))
+            ->update([
+                'cover_photo' => 'https://www.sena-digital.com/api/storage/photos/cover%20sena.png',
+            ]);
+
+        $this->get('/api/v1/public/wedding/share-normalized-cover/share')
+            ->assertOk()
+            ->assertSee('<meta property="og:image" content="https://cloud-api.sena-digital.com/storage/photos/cover%20sena.png">', false)
+            ->assertSee('<meta property="og:image:secure_url" content="https://cloud-api.sena-digital.com/storage/photos/cover%20sena.png">', false)
+            ->assertSee('<meta property="og:image:type" content="image/png">', false)
+            ->assertSee('<meta property="og:image:width" content="2">', false)
+            ->assertSee('<meta property="og:image:height" content="1">', false)
+            ->assertDontSee('https://www.sena-digital.com/api/storage', false);
     }
 
     public function test_public_wedding_share_uses_featured_gallery_when_cover_photo_missing(): void
@@ -150,6 +176,33 @@ class PublicWeddingProfileSelectedThemeTest extends TestCase
             ->assertOk()
             ->assertSee('https://cloud-api.sena-digital.com/storage/gallery/featured.jpg', false)
             ->assertDontSee('https://cloud-api.sena-digital.com/storage/gallery/ordinary.jpg', false);
+    }
+
+    public function test_public_wedding_share_skips_unsafe_frontend_and_signed_image_candidates(): void
+    {
+        Storage::fake('public');
+        Storage::disk('public')->put('gallery/safe-cover.jpg', 'fake image content');
+
+        $user = $this->createPublicWeddingUser('share-unsafe-cover');
+
+        Mempelai::whereHas('user.settingOne', fn ($query) => $query->where('domain', 'share-unsafe-cover'))
+            ->update([
+                'cover_photo' => 'https://www.sena-digital.com/assets/images/cover.jpg?guest=secret-token',
+            ]);
+
+        Galery::create([
+            'user_id' => $user->id,
+            'photo' => 'gallery/safe-cover.jpg',
+            'status' => true,
+            'is_featured' => true,
+            'mime_type' => 'image/jpeg',
+        ]);
+
+        $this->get('/api/v1/public/wedding/share-unsafe-cover/share?guest=secret-token')
+            ->assertOk()
+            ->assertSee('https://cloud-api.sena-digital.com/storage/gallery/safe-cover.jpg', false)
+            ->assertDontSee('https://www.sena-digital.com/assets/images/cover.jpg', false)
+            ->assertDontSee('secret-token', false);
     }
 
     public function test_public_wedding_share_returns_404_when_invitation_cannot_be_shared(): void

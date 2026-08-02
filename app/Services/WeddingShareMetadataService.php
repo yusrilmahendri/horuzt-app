@@ -16,7 +16,13 @@ class WeddingShareMetadataService
 
     private const FALLBACK_DESCRIPTION = 'Dengan penuh rasa syukur, kami mengundang Bapak/Ibu/Saudara/i untuk hadir dalam acara pernikahan kami.';
 
-    private const FALLBACK_IMAGE_URL = self::FRONTEND_BASE_URL.'/assets/images/default-og-cover.jpg';
+    private const FALLBACK_IMAGE_URL = self::BACKEND_BASE_URL.'/storage/og/default-og-cover.jpg';
+
+    private const ALLOWED_IMAGE_MIME_TYPES = [
+        'image/jpeg',
+        'image/png',
+        'image/webp',
+    ];
 
     public function __construct(
         private DomainService $domainService,
@@ -51,6 +57,8 @@ class WeddingShareMetadataService
             'description' => $this->resolveDescription($user),
             'coverUrl' => $cover['url'],
             'imageType' => $cover['mime_type'],
+            'imageWidth' => $cover['width'] ?? null,
+            'imageHeight' => $cover['height'] ?? null,
             'frontendUrl' => $canonicalUrl,
         ];
     }
@@ -194,19 +202,29 @@ class WeddingShareMetadataService
 
     private function resolveImageCandidate(?string $candidate, ?string $knownMimeType = null): ?array
     {
-        $url = $this->absolutePublicImageUrl($candidate);
+        $url = $this->resolvePublicImageUrl($candidate);
 
         if (! $url) {
             return null;
         }
 
+        $mimeType = $this->resolveMimeType($candidate, $knownMimeType);
+
+        if (! $mimeType || ! in_array($mimeType, self::ALLOWED_IMAGE_MIME_TYPES, true)) {
+            return null;
+        }
+
+        $dimensions = $this->resolveImageDimensions($candidate);
+
         return [
             'url' => $url,
-            'mime_type' => $this->resolveMimeType($candidate, $knownMimeType),
+            'mime_type' => $mimeType,
+            'width' => $dimensions['width'] ?? null,
+            'height' => $dimensions['height'] ?? null,
         ];
     }
 
-    private function absolutePublicImageUrl(?string $value): ?string
+    private function resolvePublicImageUrl(?string $value): ?string
     {
         if (! $value || trim($value) === '') {
             return null;
@@ -215,20 +233,33 @@ class WeddingShareMetadataService
         $value = trim($value);
 
         if (Str::startsWith($value, ['http://', 'https://'])) {
+            if ($this->hasUnsafeImageQuery($value)) {
+                return null;
+            }
+
+            $storagePath = $this->publicStoragePathFromUrl($value);
+
+            if ($storagePath !== null) {
+                return $this->publicStorageUrlForPath($storagePath, $value);
+            }
+
             if ($this->isUnsafePublicUrl($value)) {
                 return null;
             }
 
-            return Str::startsWith($value, 'http://')
-                ? 'https://'.Str::after($value, 'http://')
-                : $value;
+            return $this->normalizeHttpsUrl($value);
         }
 
         $cleanPath = $this->normalizeStoragePath($value);
 
+        return $this->publicStorageUrlForPath($cleanPath, $value);
+    }
+
+    private function publicStorageUrlForPath(?string $cleanPath, string $originalValue): ?string
+    {
         if (! $cleanPath || ! Storage::disk('public')->exists($cleanPath)) {
             Log::warning('[WeddingShareMissingImageFile]', [
-                'original_path' => $value,
+                'original_path' => $originalValue,
                 'clean_path' => $cleanPath,
             ]);
 
@@ -241,26 +272,61 @@ class WeddingShareMetadataService
     private function isUnsafePublicUrl(string $url): bool
     {
         $host = strtolower((string) parse_url($url, PHP_URL_HOST));
+        $path = strtolower((string) parse_url($url, PHP_URL_PATH));
 
         return $host === ''
             || $host === 'localhost'
             || $host === '127.0.0.1'
             || Str::endsWith($host, '.test')
-            || Str::endsWith($host, '.local');
+            || Str::endsWith($host, '.local')
+            || $host === parse_url(self::FRONTEND_BASE_URL, PHP_URL_HOST)
+            || (Str::startsWith($path, '/api/') && ! Str::startsWith($path, '/api/storage/'));
+    }
+
+    private function hasUnsafeImageQuery(string $url): bool
+    {
+        $query = (string) parse_url($url, PHP_URL_QUERY);
+
+        if ($query === '') {
+            return false;
+        }
+
+        parse_str($query, $parameters);
+
+        return collect(array_keys($parameters))
+            ->contains(fn (string $key): bool => in_array(strtolower($key), [
+                'authorization',
+                'expires',
+                'guest',
+                'signature',
+                'signed',
+                'temporary',
+                'token',
+                'to',
+            ], true));
+    }
+
+    private function normalizeHttpsUrl(string $url): string
+    {
+        return preg_replace('#^http://#i', 'https://', $url) ?? $url;
     }
 
     private function resolveMimeType(?string $candidate, ?string $knownMimeType = null): ?string
     {
-        if ($knownMimeType && Str::startsWith($knownMimeType, 'image/')) {
-            return $knownMimeType;
+        if ($knownMimeType) {
+            $knownMimeType = strtolower(trim($knownMimeType));
+
+            if (Str::startsWith($knownMimeType, 'image/') && in_array($knownMimeType, self::ALLOWED_IMAGE_MIME_TYPES, true)) {
+                return $knownMimeType;
+            }
         }
 
         $cleanPath = $this->normalizeStoragePath($candidate);
 
         if ($cleanPath && Storage::disk('public')->exists($cleanPath)) {
             $mimeType = Storage::disk('public')->mimeType($cleanPath);
-            if ($mimeType && Str::startsWith($mimeType, 'image/')) {
-                return $mimeType;
+            if ($mimeType && in_array(strtolower($mimeType), self::ALLOWED_IMAGE_MIME_TYPES, true)) {
+                return strtolower($mimeType);
             }
         }
 
@@ -270,9 +336,29 @@ class WeddingShareMetadataService
             'jpg', 'jpeg' => 'image/jpeg',
             'png' => 'image/png',
             'webp' => 'image/webp',
-            'gif' => 'image/gif',
             default => null,
         };
+    }
+
+    private function resolveImageDimensions(?string $candidate): ?array
+    {
+        $cleanPath = $this->normalizeStoragePath($candidate);
+
+        if (! $cleanPath || ! Storage::disk('public')->exists($cleanPath)) {
+            return null;
+        }
+
+        $path = Storage::disk('public')->path($cleanPath);
+        $size = @getimagesize($path);
+
+        if (! is_array($size) || empty($size[0]) || empty($size[1])) {
+            return null;
+        }
+
+        return [
+            'width' => (int) $size[0],
+            'height' => (int) $size[1],
+        ];
     }
 
     private function looksLikeCoverGallery(Galery $gallery): bool
@@ -296,13 +382,35 @@ class WeddingShareMetadataService
         }
 
         $path = trim($path);
+        $path = strtok($path, '?') ?: $path;
+        $path = rawurldecode($path);
         $path = preg_replace('#^https?://[^/]+/storage/#', '', $path);
+        $path = preg_replace('#^https?://[^/]+/api/storage/#', '', $path);
         $path = preg_replace('#^/storage/#', '', $path);
+        $path = preg_replace('#^/api/storage/#', '', $path);
         $path = preg_replace('#^storage/#', '', $path);
+        $path = preg_replace('#^api/storage/#', '', $path);
         $path = preg_replace('#^public/#', '', $path);
         $path = ltrim($path, '/');
+        $path = preg_replace('#/+#', '/', $path) ?? $path;
+        $path = str_replace('\\', '/', $path);
+
+        if (str_contains($path, '..')) {
+            return null;
+        }
 
         return $path ?: null;
+    }
+
+    private function publicStoragePathFromUrl(string $url): ?string
+    {
+        $path = (string) parse_url($url, PHP_URL_PATH);
+
+        if (! preg_match('#/(?:api/)?storage/(.+)$#', $path, $matches)) {
+            return null;
+        }
+
+        return $this->normalizeStoragePath($matches[1] ?? null);
     }
 
     private function cleanDescription(?string $value): string
