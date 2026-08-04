@@ -6,6 +6,7 @@ use App\Models\User;
 use Illuminate\Foundation\Testing\DatabaseTransactions;
 use Illuminate\Support\Facades\DB;
 use Tests\TestCase;
+use ZipArchive;
 
 class AttendanceQrScanTest extends TestCase
 {
@@ -194,23 +195,82 @@ class AttendanceQrScanTest extends TestCase
             ->assertJsonPath('message', 'Data tamu tidak ditemukan. Pastikan tamu sudah dibuat atau link undangan benar.');
     }
 
-    public function test_qr_scan_export_uses_database_scan_rows(): void
+    public function test_qr_scan_export_uses_database_scan_rows_as_xlsx_download(): void
     {
-        $this->createWeddingWithGuest();
+        $user = $this->createWeddingWithGuest();
 
         $this->postJson('/api/v1/attendance/scan', [
             'url' => 'https://www.sena-digital.com/wedding/nova-yusril?to=abdi-tata',
         ])->assertOk();
 
-        $response = $this->getJson('/api/v1/attendance/export?domain=nova-yusril')
+        $response = $this->actingAs($user, 'sanctum')
+            ->get('/api/v1/attendance/export?domain=nova-yusril')
             ->assertOk()
-            ->assertJsonPath('status', true)
-            ->assertJsonPath('data.mime_type', 'text/csv');
+            ->assertHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            ->assertHeader('Access-Control-Expose-Headers', 'Content-Disposition');
 
-        $csv = base64_decode((string) $response->json('data.content'));
-        $this->assertStringContainsString('Abdi Tata', $csv);
-        $this->assertStringContainsString('abdi-tata', $csv);
-        $this->assertStringContainsString('nova-yusril', $csv);
+        $this->assertStringContainsString(
+            'attachment; filename="tamu-hadir-nova-yusril-',
+            (string) $response->headers->get('Content-Disposition')
+        );
+        $this->assertStringEndsWith('.xlsx"', (string) $response->headers->get('Content-Disposition'));
+        $this->assertStringNotContainsString('.json', (string) $response->headers->get('Content-Disposition'));
+
+        $worksheetXml = $this->worksheetXmlFromXlsx($response->getContent());
+        $this->assertStringContainsString('Nama Tamu', $worksheetXml);
+        $this->assertStringContainsString('Abdi Tata', $worksheetXml);
+        $this->assertStringContainsString('Hadir', $worksheetXml);
+        $this->assertStringContainsString('QR Code', $worksheetXml);
+    }
+
+    public function test_qr_scan_export_without_attendance_returns_json_422(): void
+    {
+        $user = $this->createWeddingWithGuest();
+
+        $this->actingAs($user, 'sanctum')
+            ->getJson('/api/v1/attendance/export?domain=nova-yusril')
+            ->assertUnprocessable()
+            ->assertJson([
+                'status' => false,
+                'message' => 'Belum ada data tamu hadir yang dapat diekspor.',
+            ]);
+    }
+
+    public function test_authenticated_user_cannot_export_another_users_attendance(): void
+    {
+        $owner = $this->createWeddingWithGuest();
+        $other = User::create([
+            'name' => 'Pemilik Lain',
+            'email' => 'export-other-'.str()->random(8).'@example.test',
+            'password' => bcrypt('secret123'),
+        ]);
+
+        DB::table('settings')->insert([
+            'user_id' => $other->id,
+            'domain' => 'pemilik-lain',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('invitations')->insert([
+            'user_id' => $other->id,
+            'paket_undangan_id' => $this->createPackageId(),
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'domain_expires_at' => now()->addDays(7),
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        $this->actingAs($other, 'sanctum')
+            ->getJson('/api/v1/attendance/export?domain=nova-yusril')
+            ->assertNotFound()
+            ->assertJsonPath('code', 'INVITATION_NOT_FOUND');
+
+        $this->actingAs($owner, 'sanctum')
+            ->getJson('/api/v1/attendance/export?domain=pemilik-lain')
+            ->assertNotFound()
+            ->assertJsonPath('code', 'INVITATION_NOT_FOUND');
     }
 
     private function createWeddingWithGuest(): User
@@ -224,6 +284,16 @@ class AttendanceQrScanTest extends TestCase
         DB::table('settings')->insert([
             'user_id' => $user->id,
             'domain' => 'nova-yusril',
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+
+        DB::table('invitations')->insert([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $this->createPackageId(),
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'domain_expires_at' => now()->addDays(7),
             'created_at' => now(),
             'updated_at' => now(),
         ]);
@@ -262,5 +332,33 @@ class AttendanceQrScanTest extends TestCase
         DB::table('wedding_guests')->insert($guestData);
 
         return $user;
+    }
+
+    private function createPackageId(): int
+    {
+        return (int) DB::table('paket_undangans')->insertGetId([
+            'code' => 'attendance-export-'.str()->random(8),
+            'jenis_paket' => 'Ruby',
+            'name_paket' => 'Ruby',
+            'price' => 100000,
+            'masa_aktif' => 30,
+            'created_at' => now(),
+            'updated_at' => now(),
+        ]);
+    }
+
+    private function worksheetXmlFromXlsx(string $content): string
+    {
+        $path = tempnam(sys_get_temp_dir(), 'attendance-export-test-');
+        file_put_contents($path, $content);
+
+        $zip = new ZipArchive();
+        $this->assertTrue($zip->open($path));
+
+        $xml = (string) $zip->getFromName('xl/worksheets/sheet1.xml');
+        $zip->close();
+        @unlink($path);
+
+        return $xml;
     }
 }

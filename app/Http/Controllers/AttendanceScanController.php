@@ -5,20 +5,24 @@ namespace App\Http\Controllers;
 use App\Models\AttendanceScan;
 use App\Models\Acara;
 use App\Models\BukuTamu;
+use App\Models\Invitation;
+use App\Models\Setting;
 use App\Models\WeddingGuest;
 use App\Services\DomainService;
+use Carbon\CarbonInterface;
 use Illuminate\Http\Request;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Str;
 use Illuminate\Validation\ValidationException;
+use ZipArchive;
 
 class AttendanceScanController extends Controller
 {
     public function __construct(private DomainService $domainService)
     {
-        $this->middleware('auth:sanctum')->except(['scanFromUrl', 'publicList', 'publicExport']);
+        $this->middleware('auth:sanctum')->except(['scanFromUrl', 'publicList']);
     }
 
     /**
@@ -153,44 +157,81 @@ class AttendanceScanController extends Controller
     }
 
     /**
-     * Export QR attendance scans from database as CSV payload.
+     * Export QR attendance scans from database as an XLSX download.
      * GET /v1/attendance/export?domain=nova-yusril
      */
-    public function publicExport(Request $request): JsonResponse
+    public function publicExport(Request $request)
     {
-        [$ownerUserId, $domain, $error] = $this->resolveOwnerForAttendanceRequest($request);
+        try {
+            [$ownerUserId, $domain, $error] = $this->resolveOwnerForAttendanceExport($request);
 
-        if ($error) {
-            return $error;
+            if ($error) {
+                return $error;
+            }
+
+            $rows = AttendanceScan::with('acara')
+                ->where('user_id', $ownerUserId)
+                ->orderByDesc('scanned_at')
+                ->get()
+                ->map(function (AttendanceScan $scan) use ($domain) {
+                    $guest = $this->findGuestByCode((int) $scan->user_id, $domain, (string) $scan->guest_identifier);
+
+                    if (! $guest || $this->domainForGuest($guest) !== $domain) {
+                        return null;
+                    }
+
+                    return [
+                        'dedupe_key' => $this->primaryGuestIdentifier($guest, (string) $scan->guest_identifier),
+                        'guest_name' => $scan->guest_name,
+                        'scanned_at' => $this->formatScanTimeForExport($scan->scanned_at),
+                        'attendance_status' => 'Hadir',
+                        'scan_type' => $this->scanTypeLabel((string) $scan->scan_type),
+                    ];
+                })
+                ->filter()
+                ->unique('dedupe_key')
+                ->values();
+
+            if ($rows->isEmpty()) {
+                return response()->json([
+                    'status' => false,
+                    'message' => 'Belum ada data tamu hadir yang dapat diekspor.',
+                ], 422);
+            }
+
+            $workbookRows = $rows
+                ->map(fn (array $row, int $index): array => [
+                    $index + 1,
+                    $row['guest_name'],
+                    $row['scanned_at'],
+                    $row['attendance_status'],
+                    $row['scan_type'],
+                ])
+                ->prepend([
+                    'No.',
+                    'Nama Tamu',
+                    'Waktu Kehadiran',
+                    'Status Kehadiran',
+                    'Sumber/Metode Scan',
+                ])
+                ->values()
+                ->all();
+
+            $filename = 'tamu-hadir-'.$domain.'-'.now(config('app.timezone'))->format('Y-m-d').'.xlsx';
+
+            return response($this->buildXlsx($workbookRows), 200, [
+                'Content-Type' => 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                'Content-Disposition' => 'attachment; filename="'.$filename.'"',
+                'Access-Control-Expose-Headers' => 'Content-Disposition',
+                'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            ]);
+        } catch (\Throwable $e) {
+            return response()->json([
+                'status' => false,
+                'message' => 'Gagal mengekspor data tamu hadir.',
+                'error' => config('app.debug') ? $e->getMessage() : 'Internal server error',
+            ], 500);
         }
-
-        $rows = AttendanceScan::query()
-            ->where('user_id', $ownerUserId)
-            ->orderByDesc('scanned_at')
-            ->get();
-
-        $csv = "No,Nama Tamu,Kode Tamu,Domain,Status,Waktu Scan\n";
-        foreach ($rows as $index => $scan) {
-            $guest = $this->findGuestByCode((int) $scan->user_id, $domain, (string) $scan->guest_identifier);
-            $csv .= implode(',', [
-                $index + 1,
-                '"'.str_replace('"', '""', $scan->guest_name).'"',
-                $this->primaryGuestIdentifier($guest, (string) $scan->guest_identifier),
-                $domain ?: ($guest?->domain ?? ''),
-                'hadir',
-                $this->formatScanTime($scan->scanned_at),
-            ])."\n";
-        }
-
-        return response()->json([
-            'status' => true,
-            'message' => 'Data tamu hadir berhasil diekspor.',
-            'data' => [
-                'content' => base64_encode($csv),
-                'filename' => 'attendance_scans_'.($domain ?: 'undangan').'_'.now()->format('Y-m-d').'.csv',
-                'mime_type' => 'text/csv',
-            ],
-        ]);
     }
 
     /**
@@ -569,6 +610,30 @@ class AttendanceScanController extends Controller
         return $date ? $date->format('d/m/Y H.i.s') : null;
     }
 
+    private function formatScanTimeForExport($date): ?string
+    {
+        if (! $date) {
+            return null;
+        }
+
+        if ($date instanceof CarbonInterface) {
+            return $date->copy()
+                ->timezone(config('app.timezone'))
+                ->format('d/m/Y H:i:s');
+        }
+
+        return (string) $date;
+    }
+
+    private function scanTypeLabel(string $scanType): string
+    {
+        return match ($scanType) {
+            'qr_code' => 'QR Code',
+            'manual' => 'Manual',
+            default => Str::headline($scanType),
+        };
+    }
+
     /**
      * @return array{0:?int,1:string,2:?JsonResponse}
      */
@@ -595,6 +660,206 @@ class AttendanceScanController extends Controller
         }
 
         return [(int) $ownerUserId, $domain, null];
+    }
+
+    /**
+     * @return array{0:?int,1:string,2:?JsonResponse}
+     */
+    private function resolveOwnerForAttendanceExport(Request $request): array
+    {
+        $userId = auth()->id();
+
+        if (! $userId) {
+            return [
+                null,
+                '',
+                response()->json([
+                    'status' => false,
+                    'message' => 'Unauthenticated.',
+                ], 401),
+            ];
+        }
+
+        $invitation = Invitation::query()
+            ->where('user_id', $userId)
+            ->activeDomains()
+            ->orderByRaw("CASE WHEN payment_status = 'paid' THEN 0 ELSE 1 END")
+            ->orderByDesc('id')
+            ->first();
+
+        if (! $invitation) {
+            return [
+                null,
+                '',
+                response()->json([
+                    'status' => false,
+                    'message' => 'Undangan aktif tidak ditemukan.',
+                ], 403),
+            ];
+        }
+
+        $domainInput = (string) ($request->query('domain') ?: $request->query('url') ?: '');
+        $domain = $this->domainService->normalizeToSlug($domainInput);
+        $domain = $domain !== '' ? $domain : $this->activeDomainForUser((int) $userId);
+
+        if ($domain === '') {
+            return [
+                null,
+                '',
+                response()->json([
+                    'status' => false,
+                    'code' => 'DOMAIN_REQUIRED',
+                    'message' => 'Domain undangan wajib diisi.',
+                ], 422),
+            ];
+        }
+
+        $resolvedOwnerUserId = $this->domainService->resolveOwnerUserIdByDomain($domain);
+        if ((int) $resolvedOwnerUserId !== (int) $userId) {
+            return [
+                null,
+                $domain,
+                response()->json([
+                    'status' => false,
+                    'code' => 'INVITATION_NOT_FOUND',
+                    'message' => 'Undangan tidak ditemukan.',
+                ], 404),
+            ];
+        }
+
+        return [(int) $userId, $domain, null];
+    }
+
+    private function activeDomainForUser(int $userId): string
+    {
+        $settingDomain = Setting::query()
+            ->where('user_id', $userId)
+            ->whereNotNull('domain')
+            ->latest('id')
+            ->value('domain');
+
+        return $this->domainService->normalizeToSlug((string) $settingDomain);
+    }
+
+    private function buildXlsx(array $rows): string
+    {
+        $tempPath = tempnam(sys_get_temp_dir(), 'attendance-export-');
+        $zip = new ZipArchive();
+
+        if ($tempPath === false || $zip->open($tempPath, ZipArchive::OVERWRITE) !== true) {
+            throw new \RuntimeException('Gagal membuat file XLSX.');
+        }
+
+        $zip->addFromString('[Content_Types].xml', $this->xlsxContentTypes());
+        $zip->addFromString('_rels/.rels', $this->xlsxRootRelationships());
+        $zip->addFromString('xl/workbook.xml', $this->xlsxWorkbook());
+        $zip->addFromString('xl/_rels/workbook.xml.rels', $this->xlsxWorkbookRelationships());
+        $zip->addFromString('xl/styles.xml', $this->xlsxStyles());
+        $zip->addFromString('xl/worksheets/sheet1.xml', $this->xlsxWorksheet($rows));
+        $zip->close();
+
+        $content = file_get_contents($tempPath);
+        @unlink($tempPath);
+
+        if ($content === false) {
+            throw new \RuntimeException('Gagal membaca file XLSX.');
+        }
+
+        return $content;
+    }
+
+    private function xlsxWorksheet(array $rows): string
+    {
+        $sheetRows = '';
+
+        foreach ($rows as $rowIndex => $row) {
+            $cellXml = '';
+            foreach (array_values($row) as $columnIndex => $value) {
+                $cell = $this->excelColumnName($columnIndex + 1).($rowIndex + 1);
+                $style = $rowIndex === 0 ? ' s="1"' : '';
+                $cellXml .= '<c r="'.$cell.'" t="inlineStr"'.$style.'><is><t>'.$this->xmlEscape((string) $value).'</t></is></c>';
+            }
+
+            $sheetRows .= '<row r="'.($rowIndex + 1).'">'.$cellXml.'</row>';
+        }
+
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            .'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<dimension ref="A1:E'.max(1, count($rows)).'"/>'
+            .'<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+            .'<sheetFormatPr defaultRowHeight="15"/>'
+            .'<cols><col min="1" max="1" width="8" customWidth="1"/><col min="2" max="2" width="30" customWidth="1"/><col min="3" max="3" width="22" customWidth="1"/><col min="4" max="4" width="20" customWidth="1"/><col min="5" max="5" width="22" customWidth="1"/></cols>'
+            .'<sheetData>'.$sheetRows.'</sheetData>'
+            .'</worksheet>';
+    }
+
+    private function excelColumnName(int $number): string
+    {
+        $name = '';
+
+        while ($number > 0) {
+            $number--;
+            $name = chr(65 + ($number % 26)).$name;
+            $number = intdiv($number, 26);
+        }
+
+        return $name;
+    }
+
+    private function xmlEscape(string $value): string
+    {
+        return htmlspecialchars($value, ENT_XML1 | ENT_COMPAT, 'UTF-8');
+    }
+
+    private function xlsxContentTypes(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+            .'<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+            .'<Default Extension="xml" ContentType="application/xml"/>'
+            .'<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
+            .'<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
+            .'<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>'
+            .'</Types>';
+    }
+
+    private function xlsxRootRelationships(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
+            .'</Relationships>';
+    }
+
+    private function xlsxWorkbook(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
+            .'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            .'<sheets><sheet name="Tamu Hadir" sheetId="1" r:id="rId1"/></sheets>'
+            .'</workbook>';
+    }
+
+    private function xlsxWorkbookRelationships(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+            .'<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
+            .'<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>'
+            .'</Relationships>';
+    }
+
+    private function xlsxStyles(): string
+    {
+        return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+            .'<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
+            .'<fonts count="2"><font><sz val="11"/><name val="Calibri"/></font><font><b/><sz val="11"/><name val="Calibri"/></font></fonts>'
+            .'<fills count="1"><fill><patternFill patternType="none"/></fill></fills>'
+            .'<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>'
+            .'<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>'
+            .'<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/><xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1"/></cellXfs>'
+            .'</styleSheet>';
     }
 
     /**
