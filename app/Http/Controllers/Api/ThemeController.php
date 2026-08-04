@@ -380,12 +380,22 @@ class ThemeController extends Controller
                         : [],
                 ]);
 
+                $requiredPackage = $this->themeAccess->packageSummaryPayload(
+                    $this->themeAccess->minimumPackageForTheme($theme)
+                );
+                $message = $requiredPackage
+                    ? 'Tema ini tersedia mulai '.$requiredPackage['name'].'.'
+                    : 'Tema ini membutuhkan upgrade paket.';
+
                 return response()->json([
                     'status' => false,
-                    'code' => 'THEME_UPGRADE_REQUIRED',
-                    'message' => 'Tema ini membutuhkan upgrade paket.',
+                    'code' => 'PACKAGE_UPGRADE_REQUIRED',
+                    'message' => $message,
+                    'required_package' => $requiredPackage,
                     'data' => [
                         'theme' => $this->themeAccessPayload($theme, $package, null),
+                        'required_package' => $requiredPackage,
+                        'current_package' => $this->themeAccess->packageSummaryPayload($package),
                     ],
                 ], 403);
             }

@@ -476,6 +476,7 @@ class PackageThemeAccessService
             'id' => $package->id,
             'code' => $tier,
             'name' => PaketUndangan::displayLabelFromCode($tier, $package->name_paket),
+            'rank' => $this->packageRank($package),
         ];
     }
 
@@ -504,6 +505,15 @@ class PackageThemeAccessService
             && $targetPackage !== null
             && $userRank >= 0
             && $requiredRank > $userRank;
+        $requiredPackage = $this->packageSummaryPayload($targetPackage);
+        $currentPackage = $this->packageSummaryPayload($package);
+        $lockReason = match (true) {
+            ! $adminIsActive => 'Tema belum aktif.',
+            ! $accountIsActive => 'Subscription belum aktif.',
+            ! $packageCoversTheme && $requiredPackage !== null => 'Tema ini tersedia mulai '.$requiredPackage['name'].'.',
+            ! $packageCoversTheme => 'Tema ini belum tersedia untuk paket Anda.',
+            default => null,
+        };
 
         return [
             'id' => $theme->id,
@@ -515,15 +525,22 @@ class PackageThemeAccessService
                 'slug' => $theme->category->slug,
                 'type' => $theme->category->type,
             ] : null,
-            'package_required' => $this->packageSummaryPayload($targetPackage),
+            'package_required' => $requiredPackage,
+            'required_package' => $requiredPackage,
+            'current_package' => $currentPackage,
             'admin_is_active' => $adminIsActive,
             'can_preview' => true,
             'can_use' => $canUse,
             'is_current_theme' => $selectedThemeId !== null && (int) $selectedThemeId === (int) $theme->id,
             'upgrade_required' => $upgradeRequired,
             'locked' => ! $canUse,
+            'is_locked' => ! $canUse,
+            'lock_reason' => $lockReason,
             'inactive_by_admin' => $packageCoversTheme && ! $adminIsActive,
-            'target_package' => $upgradeRequired ? $this->packageSummaryPayload($targetPackage) : null,
+            'target_package' => ! $canUse ? $requiredPackage : null,
+            'upgrade_url' => $requiredPackage && $theme->slug
+                ? '/user/upgrade-account?package='.urlencode((string) ($requiredPackage['code'] ?? $requiredPackage['id'])).'&theme='.urlencode((string) $theme->slug).'&returnUrl='.urlencode('/user/tampilan')
+                : null,
             'price' => $theme->price,
             'preview' => $theme->preview,
             'preview_image' => $theme->preview_image,

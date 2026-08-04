@@ -815,66 +815,18 @@ class MidtransController extends Controller
                 ]);
             }
 
-            // Mark as paid based on frontend callback
-            DB::transaction(function () use ($request, $grossAmount, $invitation, $transactionId, $orderId) {
-                $snapshot = $invitation->package_features_snapshot ?? [];
-
-                $updateData = [
-                    'payment_status' => 'paid',
-                    'midtrans_transaction_id' => $transactionId,
-                    'payment_confirmed_at' => now(),
-                ];
-
-                // Check if this was an upgrade payment - restore original status
-                if (isset($snapshot['original_status'])) {
-                    $updateData['status'] = $snapshot['original_status'];
-                }
-
-                // Calculate expiry date - use package_duration_snapshot which was captured at registration
-                $duration = $invitation->package_duration_snapshot ?? ($invitation->paketUndangan->masa_aktif ?? 0);
-
-                // For upgrade payments, extend from current expiry. For new payments, extend from now.
-                if ($duration > 0) {
-                    if (isset($snapshot['upgrade_initiated_at']) && $invitation->domain_expires_at) {
-                        // Upgrade: extend from current expiry
-                        $updateData['domain_expires_at'] = $invitation->domain_expires_at->copy()->addDays($duration);
-                    } else {
-                        // New payment: extend from now
-                        $updateData['domain_expires_at'] = now()->addDays($duration);
-                    }
-                }
-
-                $invitation->update($updateData);
-                $this->packageUpgradeService->completeIfUpgrade(
-                    $invitation->fresh(['user', 'paketUndangan']),
-                    PaymentMethodResolver::MIDTRANS,
-                    'paid',
-                    ['source' => 'frontend_callback']
-                );
-
-                // Sync mempelai status
-                $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
-                if ($mempelai) {
-                    $mempelai->update([
-                        'status'    => 'Sudah Bayar',
-                        'kd_status' => 'SB',
-                    ]);
-                }
-
-                // Log the frontend callback confirmation
-                PaymentLog::create([
-                    'user_id' => $invitation->user_id,
-                    'invitation_id' => $invitation->id,
-                    'order_id' => $orderId,
-                    'midtrans_transaction_id' => $transactionId,
-                    'event_type' => 'frontend_callback_confirmed',
-                    'transaction_status' => 'settlement',
-                    'gross_amount' => $grossAmount,
-                    'signature_valid' => true,
-                    'ip_address' => $request->ip(),
-                    'notes' => 'Payment confirmed via frontend onSuccess callback (API fallback)',
-                ]);
-            });
+            PaymentLog::create([
+                'user_id' => $invitation->user_id,
+                'invitation_id' => $invitation->id,
+                'order_id' => $orderId,
+                'midtrans_transaction_id' => $transactionId,
+                'event_type' => 'status_check',
+                'transaction_status' => 'pending',
+                'gross_amount' => $grossAmount,
+                'signature_valid' => false,
+                'ip_address' => $request->ip(),
+                'notes' => 'Frontend success callback diterima; menunggu webhook Midtrans terverifikasi.',
+            ]);
 
             Log::info('Payment confirmed via frontend callback', [
                 'order_id' => $orderId,
@@ -884,8 +836,8 @@ class MidtransController extends Controller
 
             return response()->json([
                 'success' => true,
-                'payment_status' => 'paid',
-                'message' => 'Payment confirmed successfully',
+                'payment_status' => $invitation->fresh()->payment_status ?? 'pending',
+                'message' => 'Callback diterima. Pembayaran akan aktif setelah webhook Midtrans terverifikasi.',
                 'data' => [
                     'order_id' => $orderId,
                     'transaction_id' => $transactionId,
@@ -1090,7 +1042,10 @@ class MidtransController extends Controller
                 'ip_address' => $request->ip(),
             ]);
 
-            return response()->json(['message' => 'Webhook processing failed'], 500);
+            return response()->json(array_filter([
+                'message' => 'Webhook processing failed',
+                'error' => config('app.debug') ? $e->getMessage() : null,
+            ]), 500);
         }
     }
 }

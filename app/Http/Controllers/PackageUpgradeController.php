@@ -292,11 +292,21 @@ class PackageUpgradeController extends Controller
     {
         $user = $request->user();
         $currentPackage = $this->currentPackageFor($user);
+        $lastPackage = $this->lastPackageFor($user);
         $currentOrder = $currentPackage ? $this->packageOrderValue($currentPackage) : null;
+        $subscriptionStatus = $currentPackage ? 'active' : ($lastPackage ? 'expired' : 'none');
 
-        $packages = $this->orderedPackages()->map(function (PaketUndangan $package) use ($currentPackage, $currentOrder) {
+        $packages = $this->orderedPackages()->map(function (PaketUndangan $package) use ($user, $currentPackage, $lastPackage, $currentOrder, $subscriptionStatus) {
             $order = $this->packageOrderValue($package);
             $isCurrent = $currentPackage && (int) $currentPackage->id === (int) $package->id;
+            $isLastPackage = $lastPackage && (int) $lastPackage->id === (int) $package->id;
+            [$canSelect, $action, $disabledReason] = $this->packageSelectionState(
+                $user,
+                $package,
+                $currentPackage,
+                $currentOrder,
+                $subscriptionStatus
+            );
 
             return [
                 'id' => $package->id,
@@ -306,9 +316,15 @@ class PackageUpgradeController extends Controller
                 'features' => $this->packageFeatures($package),
                 'image' => $this->packageImage($package),
                 'order' => $order,
+                'rank' => $order,
                 'is_current' => $isCurrent,
-                'can_upgrade' => $currentOrder !== null && $order > $currentOrder,
-                'can_downgrade' => $currentOrder !== null && $order < $currentOrder,
+                'is_last_package' => $isLastPackage,
+                'subscription_status' => $subscriptionStatus,
+                'can_select' => $canSelect,
+                'action' => $action,
+                'disabled_reason' => $disabledReason,
+                'can_upgrade' => $subscriptionStatus === 'active' && $currentOrder !== null && $order > $currentOrder,
+                'can_downgrade' => $subscriptionStatus === 'active' && $currentOrder !== null && $order < $currentOrder,
             ];
         })->values();
 
@@ -327,37 +343,42 @@ class PackageUpgradeController extends Controller
         $user = $request->user();
         $targetPackage = PaketUndangan::findOrFail($validated['package_id']);
         $currentPackage = $this->currentPackageFor($user);
+        $lastPackage = $this->lastPackageFor($user);
+        $subscriptionStatus = $currentPackage ? 'active' : ($lastPackage ? 'expired' : 'none');
 
-        if (! $currentPackage) {
+        if (! $currentPackage && ! $lastPackage) {
             return response()->json([
                 'success' => false,
                 'message' => 'Paket aktif tidak ditemukan.',
             ], 404);
         }
 
-        if ((int) $currentPackage->id === (int) $targetPackage->id) {
-            return response()->json([
-                'success' => false,
-                'message' => 'Tidak dapat upgrade ke paket yang sama.',
-                'package_before' => $this->publicPackagePayload($currentPackage),
-                'package_after' => $this->publicPackagePayload($targetPackage),
-            ], 422);
-        }
+        [$canSelect, $action, $disabledReason] = $this->packageSelectionState(
+            $user,
+            $targetPackage,
+            $currentPackage,
+            $currentPackage ? $this->packageOrderValue($currentPackage) : null,
+            $subscriptionStatus
+        );
 
-        if ($this->packageOrderValue($targetPackage) <= $this->packageOrderValue($currentPackage)) {
+        $packageBefore = $currentPackage ?? $lastPackage;
+
+        if (! $canSelect) {
             return response()->json([
                 'success' => false,
-                'message' => 'Downgrade paket tidak diperbolehkan.',
-                'package_before' => $this->publicPackagePayload($currentPackage),
+                'message' => $disabledReason ?? 'Paket sedang aktif.',
+                'package_before' => $packageBefore ? $this->publicPackagePayload($packageBefore) : null,
                 'package_after' => $this->publicPackagePayload($targetPackage),
+                'subscription_status' => $subscriptionStatus,
+                'action' => $action,
             ], 422);
         }
 
         $paymentMethod = $this->paymentMethodResolver->activeMethod();
 
         if ($paymentMethod === PaymentMethodResolver::MANUAL) {
-            return DB::transaction(function () use ($request, $user, $currentPackage, $targetPackage, $paymentMethod) {
-                $invoice = $this->createPackageUpgradeInvoice($user, $currentPackage, $targetPackage, $paymentMethod);
+            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action) {
+                $invoice = $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
 
                 PaymentLog::create([
                     'user_id' => $user->id,
@@ -377,7 +398,7 @@ class PackageUpgradeController extends Controller
                 ]);
 
                 return response()->json($this->packageUpgradeResponse(
-                    $currentPackage,
+                    $packageBefore,
                     $targetPackage,
                     $paymentMethod,
                     $invoice->payment_status,
@@ -385,6 +406,8 @@ class PackageUpgradeController extends Controller
                         'invoice_id' => $invoice->id,
                         'invoice_code' => $invoice->kode_pemesanan,
                         'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
+                        'subscription_status' => $subscriptionStatus,
+                        'action' => $action,
                     ]
                 ), 201);
             });
@@ -400,8 +423,8 @@ class PackageUpgradeController extends Controller
         }
 
         try {
-            return DB::transaction(function () use ($request, $user, $currentPackage, $targetPackage, $paymentMethod) {
-                $invoice = $this->createPackageUpgradeInvoice($user, $currentPackage, $targetPackage, $paymentMethod);
+            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action) {
+                $invoice = $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
                 $orderId = $invoice->kode_pemesanan;
                 $grossAmount = (float) $targetPackage->price;
                 $snapToken = $this->createMidtransSnapToken($user, $invoice, $targetPackage, $orderId, $grossAmount);
@@ -432,7 +455,7 @@ class PackageUpgradeController extends Controller
                 ]);
 
                 return response()->json($this->packageUpgradeResponse(
-                    $currentPackage,
+                    $packageBefore,
                     $targetPackage,
                     PaymentMethodResolver::MIDTRANS,
                     $invoice->payment_status,
@@ -442,6 +465,8 @@ class PackageUpgradeController extends Controller
                         'order_id' => $orderId,
                         'snap_token' => $snapToken,
                         'expires_at' => $expiresAt->toIso8601String(),
+                        'subscription_status' => $subscriptionStatus,
+                        'action' => $action,
                     ]
                 ), 201);
             });
@@ -706,20 +731,61 @@ class PackageUpgradeController extends Controller
 
     private function currentPackageFor(User $user): ?PaketUndangan
     {
-        if (Schema::hasColumn('users', 'package_id') && $user->getAttribute('package_id')) {
-            $package = PaketUndangan::find($user->getAttribute('package_id'));
+        return $this->activeSubscriptionFor($user)?->paketUndangan;
+    }
 
-            if ($package) {
-                return $package;
-            }
+    private function lastPackageFor(User $user): ?PaketUndangan
+    {
+        return $this->lastPaidSubscriptionFor($user)?->paketUndangan;
+    }
+
+    private function activeSubscriptionFor(User $user): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->whereIn('payment_status', ['paid', 'confirmed'])
+            ->whereNotNull('domain_expires_at')
+            ->where('domain_expires_at', '>=', now())
+            ->orderByDesc('domain_expires_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function lastPaidSubscriptionFor(User $user): ?Invitation
+    {
+        return Invitation::with('paketUndangan')
+            ->where('user_id', $user->id)
+            ->whereIn('payment_status', ['paid', 'confirmed'])
+            ->orderByDesc('domain_expires_at')
+            ->orderByDesc('id')
+            ->first();
+    }
+
+    private function packageSelectionState(
+        User $user,
+        PaketUndangan $package,
+        ?PaketUndangan $currentPackage,
+        int|float|null $currentOrder,
+        string $subscriptionStatus
+    ): array {
+        if ($subscriptionStatus !== 'active' || ! $currentPackage || $currentOrder === null) {
+            $lastPackage = $this->lastPackageFor($user);
+            $action = $lastPackage && (int) $lastPackage->id === (int) $package->id ? 'renew' : 'subscribe';
+
+            return [true, $action, null];
         }
 
-        return $this->themeAccess->packageForUser($user)
-            ?? Invitation::with('paketUndangan')
-                ->where('user_id', $user->id)
-                ->whereIn('payment_status', ['paid', 'confirmed'])
-                ->orderByDesc('id')
-                ->first()?->paketUndangan;
+        $order = $this->packageOrderValue($package);
+
+        if ((int) $currentPackage->id === (int) $package->id) {
+            return [false, 'current', null];
+        }
+
+        if ($order < $currentOrder) {
+            return [true, 'downgrade', null];
+        }
+
+        return [true, 'upgrade', null];
     }
 
     private function packageOrderValue(PaketUndangan $package): int|float
@@ -804,6 +870,7 @@ class PackageUpgradeController extends Controller
             'features' => $this->packageFeatures($package),
             'image' => $this->packageImage($package),
             'order' => $this->packageOrderValue($package),
+            'rank' => $this->packageOrderValue($package),
         ];
     }
 
@@ -825,37 +892,40 @@ class PackageUpgradeController extends Controller
 
     private function createPackageUpgradeInvoice(
         User $user,
-        PaketUndangan $currentPackage,
+        ?PaketUndangan $currentPackage,
         PaketUndangan $targetPackage,
-        string $paymentMethod
+        string $paymentMethod,
+        string $changeType
     ): Invitation {
-        $activeInvitation = Invitation::where('user_id', $user->id)
-            ->whereIn('payment_status', ['paid', 'confirmed'])
-            ->orderByDesc('id')
-            ->firstOrFail();
+        $baseInvitation = $this->activeSubscriptionFor($user)
+            ?? $this->lastPaidSubscriptionFor($user);
 
         return Invitation::create([
             'user_id' => $user->id,
             'paket_undangan_id' => $targetPackage->id,
             'kode_pemesanan' => '#UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $targetPackage->id,
-            'status' => $activeInvitation->status,
+            'status' => $baseInvitation?->status ?? 'pending',
             'payment_status' => 'pending',
             'payment_method' => $paymentMethod,
+            'domain_expires_at' => null,
+            'payment_confirmed_at' => null,
             'package_price_snapshot' => $targetPackage->price,
             'package_duration_snapshot' => $targetPackage->masa_aktif,
             'package_features_snapshot' => [
                 'invoice_type' => 'package_upgrade',
                 'package_id' => $targetPackage->id,
+                'target_package_id' => $targetPackage->id,
+                'change_type' => $changeType,
                 'package_slug' => $this->packageSlug($targetPackage),
                 'name_paket' => $this->packageName($targetPackage),
                 'features' => $this->packageFeatures($targetPackage),
                 'upgrade_initiated_at' => now()->toISOString(),
-                'previous_invitation_id' => $activeInvitation->id,
-                'previous_package_id' => $currentPackage->id,
-                'previous_package_slug' => $this->packageSlug($currentPackage),
-                'previous_package_name' => $this->packageName($currentPackage),
-                'original_status' => $activeInvitation->status,
-                'original_payment_status' => $activeInvitation->payment_status,
+                'previous_invitation_id' => $baseInvitation?->id,
+                'previous_package_id' => $currentPackage?->id,
+                'previous_package_slug' => $currentPackage ? $this->packageSlug($currentPackage) : null,
+                'previous_package_name' => $currentPackage ? $this->packageName($currentPackage) : null,
+                'original_status' => $baseInvitation?->status,
+                'original_payment_status' => $baseInvitation?->payment_status,
             ],
         ]);
     }

@@ -147,6 +147,9 @@ class PackageThemeAccessTest extends TestCase
         $this->assertContains('Velvet Mauve', $themeNames);
         $this->assertTrue($themes->firstWhere('slug', 'soft-ivory')['can_use']);
         $this->assertFalse($themes->firstWhere('slug', 'velvet-mauve')['can_use']);
+        $this->assertTrue($themes->firstWhere('slug', 'velvet-mauve')['is_locked']);
+        $this->assertNotNull($themes->firstWhere('slug', 'velvet-mauve')['required_package']);
+        $this->assertSame(3, $themes->firstWhere('slug', 'velvet-mauve')['required_package']['rank']);
         $this->assertTrue($themes->firstWhere('slug', 'velvet-mauve')['upgrade_required']);
     }
 
@@ -297,10 +300,9 @@ class PackageThemeAccessTest extends TestCase
 
         $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
             ->assertForbidden()
-            ->assertJson([
-                'status' => false,
-                'message' => 'Tema ini membutuhkan upgrade paket.',
-            ]);
+            ->assertJsonPath('status', false)
+            ->assertJsonPath('code', 'PACKAGE_UPGRADE_REQUIRED')
+            ->assertJsonPath('required_package.rank', 3);
 
         $this->assertDatabaseMissing('result_themas', [
             'user_id' => $user->id,
@@ -322,10 +324,9 @@ class PackageThemeAccessTest extends TestCase
 
         $this->postJson('/api/themes/select', ['theme_id' => $blockedTheme->id])
             ->assertForbidden()
-            ->assertJson([
-                'status' => false,
-                'message' => 'Tema ini membutuhkan upgrade paket.',
-            ]);
+            ->assertJsonPath('status', false)
+            ->assertJsonPath('code', 'PACKAGE_UPGRADE_REQUIRED')
+            ->assertJsonPath('required_package.rank', 1);
     }
 
     public function test_authenticated_user_can_only_read_their_own_dashboard_context(): void

@@ -5,7 +5,9 @@ namespace Tests\Feature;
 use App\Http\Middleware\EnsureAccountIsVerified;
 use App\Models\Invitation;
 use App\Models\PaketUndangan;
+use App\Services\MidtransService;
 use App\Models\User;
+use Illuminate\Support\Facades\Notification;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
@@ -26,6 +28,8 @@ class UserPackageUpgradeTest extends TestCase
             'database.connections.sqlite.database' => ':memory:',
             'cache.default' => 'array',
             'permission.cache.store' => 'array',
+            'midtrans.server_key' => 'server-key-test',
+            'midtrans.client_key' => 'client-key-test',
         ]);
 
         DB::purge('sqlite');
@@ -51,8 +55,11 @@ class UserPackageUpgradeTest extends TestCase
             ->assertOk()
             ->assertJsonPath('0.name', 'Starter Custom')
             ->assertJsonPath('0.is_current', true)
+            ->assertJsonPath('0.action', 'current')
+            ->assertJsonPath('0.rank', 1)
             ->assertJsonPath('0.can_upgrade', false)
             ->assertJsonPath('1.name', 'Pro Custom')
+            ->assertJsonPath('1.action', 'upgrade')
             ->assertJsonPath('1.can_upgrade', true)
             ->assertJsonPath('1.features.halaman_buku', 100);
     }
@@ -85,9 +92,11 @@ class UserPackageUpgradeTest extends TestCase
         ]);
     }
 
-    public function test_user_cannot_downgrade_or_upgrade_to_same_package(): void
+    public function test_active_user_can_downgrade_and_same_package_is_current(): void
     {
         [$starter, $pro] = $this->packages();
+        $admin = $this->admin();
+        $this->manualAccountFor($admin);
         $user = $this->user();
         $this->paidInvitation($user, $pro);
 
@@ -95,13 +104,190 @@ class UserPackageUpgradeTest extends TestCase
 
         $this->postJson('/api/v1/user/package-upgrade', [
             'package_id' => $starter->id,
-        ])->assertStatus(422)
-            ->assertJsonPath('message', 'Downgrade paket tidak diperbolehkan.');
+        ])->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('package_before.id', $pro->id)
+            ->assertJsonPath('package_after.id', $starter->id)
+            ->assertJsonPath('action', 'downgrade');
 
         $this->postJson('/api/v1/user/package-upgrade', [
             'package_id' => $pro->id,
         ])->assertStatus(422)
-            ->assertJsonPath('message', 'Tidak dapat upgrade ke paket yang sama.');
+            ->assertJsonPath('message', 'Paket sedang aktif.');
+    }
+
+    public function test_expired_subscription_can_select_lower_same_and_higher_packages(): void
+    {
+        [$starter, $pro] = $this->packages();
+        $enterprise = PaketUndangan::create([
+            'code' => 'enterprise-custom',
+            'jenis_paket' => 'Enterprise Custom',
+            'name_paket' => 'Enterprise Custom',
+            'price' => 250000,
+            'masa_aktif' => 90,
+        ]);
+        $user = $this->user();
+        $this->paidInvitation($user, $pro, expired: true);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/user/packages')
+            ->assertOk()
+            ->assertJsonPath('0.id', $starter->id)
+            ->assertJsonPath('0.subscription_status', 'expired')
+            ->assertJsonPath('0.can_select', true)
+            ->assertJsonPath('0.action', 'subscribe')
+            ->assertJsonPath('1.id', $pro->id)
+            ->assertJsonPath('1.is_current', false)
+            ->assertJsonPath('1.is_last_package', true)
+            ->assertJsonPath('1.can_select', true)
+            ->assertJsonPath('1.action', 'renew')
+            ->assertJsonPath('2.id', $enterprise->id)
+            ->assertJsonPath('2.can_select', true);
+    }
+
+    public function test_expired_subscription_can_create_lower_package_invoice_without_downgrade_error(): void
+    {
+        [$starter, $pro] = $this->packages();
+        $admin = $this->admin();
+        $this->manualAccountFor($admin);
+        $user = $this->user();
+        $this->paidInvitation($user, $pro, expired: true);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $starter->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('package_before.id', $pro->id)
+            ->assertJsonPath('package_after.id', $starter->id)
+            ->assertJsonPath('subscription_status', 'expired')
+            ->assertJsonPath('action', 'subscribe');
+    }
+
+    public function test_manual_payment_config_response_contains_checkout_fields(): void
+    {
+        $admin = $this->admin();
+        $this->manualAccountFor($admin);
+
+        Sanctum::actingAs($this->user());
+
+        $this->getJson('/api/v1/user/payment-config')
+            ->assertOk()
+            ->assertJsonPath('data.payment_method', 'manual')
+            ->assertJsonPath('data.manual_payment.type', 'manual')
+            ->assertJsonPath('data.manual_payment.bank_name', 'BCA')
+            ->assertJsonPath('data.manual_payment.account_number', '1234567890')
+            ->assertJsonPath('data.manual_payment.account_holder', 'Sena Digital')
+            ->assertJsonPath('data.manual_payment.is_active', true);
+    }
+
+    public function test_manual_payment_config_is_hidden_when_incomplete(): void
+    {
+        $admin = $this->admin();
+        $this->manualAccountFor($admin, accountNumber: '');
+
+        Sanctum::actingAs($this->user());
+
+        $this->getJson('/api/v1/user/payment-config')
+            ->assertOk()
+            ->assertJsonPath('data.payment_method', 'midtrans')
+            ->assertJsonPath('data.manual_payment', null);
+    }
+
+    public function test_midtrans_settlement_activates_subscription_and_duplicate_webhook_is_idempotent(): void
+    {
+        Notification::fake();
+        [$starter, $pro] = $this->packages();
+        $user = $this->user();
+        $this->paidInvitation($user, $starter);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-upgrade');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertCreated()
+            ->assertJsonPath('payment_method', 'midtrans')
+            ->assertJsonPath('snap_token', 'snap-token-upgrade');
+
+        $orderId = $response->json('order_id');
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+        $payload = $this->midtransWebhookPayload($invoice, 'settlement');
+
+        $this->postJson('/api/v1/midtrans/webhook', $payload)->assertOk();
+        $firstExpiry = $invoice->fresh()->domain_expires_at?->toDateTimeString();
+        $this->assertSame('paid', $invoice->fresh()->payment_status);
+        $this->assertDatabaseHas('package_upgrade_histories', [
+            'invitation_id' => $invoice->id,
+            'package_after_id' => $pro->id,
+            'payment_status' => 'paid',
+        ]);
+
+        $this->postJson('/api/v1/midtrans/webhook', $payload)->assertOk();
+        $this->assertSame($firstExpiry, $invoice->fresh()->domain_expires_at?->toDateTimeString());
+        $this->assertSame(1, DB::table('package_upgrade_histories')->where('invitation_id', $invoice->id)->count());
+    }
+
+    public function test_midtrans_expire_marks_transaction_failed_without_activation(): void
+    {
+        Notification::fake();
+        [$starter, $pro] = $this->packages();
+        $user = $this->user();
+        $this->paidInvitation($user, $starter);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-expire');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $orderId = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertCreated()->json('order_id');
+
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+        $this->postJson('/api/v1/midtrans/webhook', $this->midtransWebhookPayload($invoice, 'expire'))
+            ->assertOk();
+
+        $this->assertSame('failed', $invoice->fresh()->payment_status);
+        $this->assertNull($invoice->fresh()->payment_confirmed_at);
+        $this->assertDatabaseMissing('package_upgrade_histories', [
+            'invitation_id' => $invoice->id,
+        ]);
+    }
+
+    public function test_midtrans_frontend_callback_does_not_activate_subscription(): void
+    {
+        [$starter, $pro] = $this->packages();
+        $user = $this->user();
+        $this->paidInvitation($user, $starter);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-callback');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $orderId = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertCreated()->json('order_id');
+
+        $this->postJson('/api/v1/midtrans/confirm-success', [
+            'order_id' => $orderId,
+            'transaction_id' => 'frontend-only',
+            'gross_amount' => 150000,
+        ])->assertOk()
+            ->assertJsonPath('payment_status', 'pending');
+
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+        $this->assertSame('pending', $invoice->payment_status);
+        $this->assertNull($invoice->payment_confirmed_at);
     }
 
     private function packages(): array
@@ -158,7 +344,7 @@ class UserPackageUpgradeTest extends TestCase
         return $admin;
     }
 
-    private function paidInvitation(User $user, PaketUndangan $package): Invitation
+    private function paidInvitation(User $user, PaketUndangan $package, bool $expired = false): Invitation
     {
         return Invitation::create([
             'user_id' => $user->id,
@@ -167,8 +353,8 @@ class UserPackageUpgradeTest extends TestCase
             'status' => 'completed',
             'payment_status' => 'paid',
             'payment_method' => 'manual',
-            'domain_expires_at' => now()->addDays(30),
-            'payment_confirmed_at' => now(),
+            'domain_expires_at' => $expired ? now()->subDay() : now()->addDays(30),
+            'payment_confirmed_at' => now()->subDays($expired ? 40 : 0),
             'package_price_snapshot' => $package->price,
             'package_duration_snapshot' => $package->masa_aktif,
             'package_features_snapshot' => [
@@ -178,13 +364,13 @@ class UserPackageUpgradeTest extends TestCase
         ]);
     }
 
-    private function manualAccountFor(User $admin): void
+    private function manualAccountFor(User $admin, string $accountNumber = '1234567890'): void
     {
         DB::table('rekenings')->insert([
             'user_id' => $admin->id,
             'kode_bank' => 'BCA',
             'email' => $admin->email,
-            'nomor_rekening' => '1234567890',
+            'nomor_rekening' => $accountNumber,
             'nama_bank' => 'BCA',
             'nama_pemilik' => 'Sena Digital',
             'methode_pembayaran' => 'Manual',
@@ -192,6 +378,22 @@ class UserPackageUpgradeTest extends TestCase
             'created_at' => now(),
             'updated_at' => now(),
         ]);
+    }
+
+    private function midtransWebhookPayload(Invitation $invoice, string $transactionStatus): array
+    {
+        $grossAmount = number_format((float) $invoice->package_price_snapshot, 2, '.', '');
+        $statusCode = $transactionStatus === 'settlement' ? '200' : '201';
+
+        return [
+            'order_id' => $invoice->order_id,
+            'transaction_status' => $transactionStatus,
+            'transaction_id' => 'trx-'.$transactionStatus.'-'.$invoice->id,
+            'status_code' => $statusCode,
+            'gross_amount' => $grossAmount,
+            'payment_type' => 'bank_transfer',
+            'signature_key' => hash('sha512', $invoice->order_id.$statusCode.$grossAmount.config('midtrans.server_key')),
+        ];
     }
 
     private function createMinimalSchema(): void
@@ -277,15 +479,50 @@ class UserPackageUpgradeTest extends TestCase
             $table->unsignedBigInteger('user_id')->nullable();
             $table->unsignedBigInteger('invitation_id')->nullable();
             $table->string('order_id')->nullable();
+            $table->string('midtrans_transaction_id')->nullable();
             $table->string('event_type')->default('token_request');
             $table->string('transaction_status')->nullable();
             $table->string('payment_type')->nullable();
             $table->decimal('gross_amount', 15, 2)->nullable();
             $table->text('request_payload')->nullable();
             $table->text('response_payload')->nullable();
+            $table->string('signature_key')->nullable();
+            $table->boolean('signature_valid')->nullable();
             $table->string('ip_address')->nullable();
             $table->string('user_agent')->nullable();
+            $table->text('error_message')->nullable();
             $table->text('notes')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('midtrans_transactions', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id')->nullable();
+            $table->string('server_key')->nullable();
+            $table->string('client_key')->nullable();
+            $table->string('metode_production')->default('sandbox');
+            $table->boolean('is_active')->default(false);
+            $table->timestamps();
+        });
+
+        Schema::create('mempelais', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('status')->nullable();
+            $table->string('kd_status')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('package_upgrade_histories', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->unsignedBigInteger('invitation_id')->nullable();
+            $table->unsignedBigInteger('package_before_id')->nullable();
+            $table->unsignedBigInteger('package_after_id');
+            $table->string('payment_method', 20);
+            $table->string('payment_status', 30);
+            $table->decimal('amount', 15, 2)->nullable();
+            $table->json('metadata')->nullable();
             $table->timestamps();
         });
     }

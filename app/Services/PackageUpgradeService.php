@@ -10,6 +10,73 @@ use Illuminate\Support\Facades\Schema;
 
 class PackageUpgradeService
 {
+    public function activate(
+        Invitation $invoice,
+        string $paymentMethod,
+        string $source,
+        ?string $transactionId = null
+    ): ?PackageUpgradeHistory {
+        if ($invoice->payment_status === 'paid' && $invoice->payment_confirmed_at !== null) {
+            if (Schema::hasColumn('users', 'package_id')) {
+                $invoice->user?->forceFill(['package_id' => $invoice->paket_undangan_id])->save();
+            }
+
+            Mempelai::where('user_id', $invoice->user_id)->update([
+                'status' => 'Sudah Bayar',
+                'kd_status' => 'SB',
+            ]);
+
+            return $this->completeIfUpgrade($invoice->fresh(['user', 'paketUndangan']), $paymentMethod, 'paid', [
+                'source' => $source,
+                'idempotent' => true,
+            ]);
+        }
+
+        $invoice->loadMissing(['user', 'paketUndangan']);
+        $duration = (int) ($invoice->package_duration_snapshot ?? $invoice->paketUndangan?->masa_aktif ?? 0);
+        $startedAt = now();
+        $expiredAt = $duration > 0 ? $startedAt->copy()->addDays($duration) : null;
+
+        $updateData = [
+            'status' => 'completed',
+            'payment_status' => 'paid',
+            'payment_confirmed_at' => $invoice->payment_confirmed_at ?: $startedAt,
+        ];
+
+        if ($transactionId) {
+            $updateData['midtrans_transaction_id'] = $transactionId;
+        }
+
+        if ($expiredAt) {
+            $updateData['domain_expires_at'] = $expiredAt;
+        }
+
+        if (Schema::hasColumn('invitations', 'tanggal_mulai')) {
+            $updateData['tanggal_mulai'] = $invoice->getAttribute('tanggal_mulai') ?: $startedAt;
+        }
+
+        if (Schema::hasColumn('invitations', 'tanggal_expired') && $expiredAt) {
+            $updateData['tanggal_expired'] = $invoice->getAttribute('tanggal_expired') ?: $expiredAt;
+        }
+
+        $invoice->update($updateData);
+
+        if (Schema::hasColumn('users', 'package_id')) {
+            $invoice->user?->forceFill(['package_id' => $invoice->paket_undangan_id])->save();
+        }
+
+        Mempelai::where('user_id', $invoice->user_id)->update([
+            'status' => 'Sudah Bayar',
+            'kd_status' => 'SB',
+        ]);
+
+        return $this->completeIfUpgrade($invoice->fresh(['user', 'paketUndangan']), $paymentMethod, 'paid', [
+            'source' => $source,
+            'started_at' => $startedAt->toISOString(),
+            'expired_at' => $expiredAt?->toISOString(),
+        ]);
+    }
+
     public function completeIfUpgrade(
         Invitation $invoice,
         string $paymentMethod,

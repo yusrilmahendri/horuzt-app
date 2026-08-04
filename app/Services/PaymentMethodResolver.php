@@ -61,10 +61,16 @@ class PaymentMethodResolver
         }
 
         return [
+            'id' => $account->id,
+            'type' => self::MANUAL,
             'bank_name' => $account->nama_bank,
             'account_number' => $account->nomor_rekening,
+            'account_holder' => $account->nama_pemilik,
             'account_name' => $account->nama_pemilik,
+            'instructions' => 'Transfer sesuai nominal tagihan, lalu tunggu konfirmasi admin.',
+            'logo' => $account->photo_url,
             'account_photo_url' => $account->photo_url,
+            'is_active' => true,
         ];
     }
 
