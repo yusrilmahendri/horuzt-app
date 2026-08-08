@@ -348,6 +348,8 @@ class AccountStatusService
             'original_price' => $pricing['original_price'],
             'discount_percentage' => $pricing['discount_percentage'],
             'discount_amount' => $pricing['discount_amount'],
+            'payable_amount' => $pricing['payable_amount'],
+            'upgrade_price' => $pricing['payable_amount'],
             'amount' => $pricing['amount'],
         ];
     }

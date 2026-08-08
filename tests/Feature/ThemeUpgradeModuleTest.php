@@ -179,7 +179,56 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.original_price', 300000)
             ->assertJsonPath('data.discount_percentage', 40)
             ->assertJsonPath('data.discount_amount', 120000)
+            ->assertJsonPath('data.payable_amount', 180000)
+            ->assertJsonPath('data.upgrade_price', 180000)
+            ->assertJsonPath('data.pricing.payable_amount', 180000)
             ->assertJsonPath('data.amount', 180000);
+    }
+
+    public function test_sapphire_upgrade_ke_diamond_harga_lima_belas_ribu_mengirim_pricing_lengkap(): void
+    {
+        PaketUndangan::where('code', 'diamond')->update(['price' => 15000]);
+        $user = $this->createUserWithPackage('sapphire');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.target_package', 'diamond')
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.current_package.code', 'sapphire')
+            ->assertJsonPath('data.original_price', 15000)
+            ->assertJsonPath('data.discount_percentage', 40)
+            ->assertJsonPath('data.discount_amount', 6000)
+            ->assertJsonPath('data.payable_amount', 9000)
+            ->assertJsonPath('data.upgrade_price', 9000)
+            ->assertJsonPath('data.amount', 9000)
+            ->assertJsonPath('data.pricing.original_price', 15000)
+            ->assertJsonPath('data.pricing.discount_percentage', 40)
+            ->assertJsonPath('data.pricing.discount_amount', 6000)
+            ->assertJsonPath('data.pricing.payable_amount', 9000)
+            ->assertJsonPath('data.invoice.pricing.payable_amount', 9000);
+
+        $invoice = Invitation::where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->firstOrFail();
+        $this->assertSame('9000.00', $invoice->package_price_snapshot);
+        $this->assertEquals(15000.0, $invoice->package_features_snapshot['original_price']);
+        $this->assertSame(40, $invoice->package_features_snapshot['discount_percentage']);
+        $this->assertEquals(6000.0, $invoice->package_features_snapshot['discount_amount']);
+        $this->assertEquals(9000.0, $invoice->package_features_snapshot['payable_amount']);
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.current_package.code', 'sapphire')
+            ->assertJsonPath('data.pending_invoice.package.code', 'diamond')
+            ->assertJsonPath('data.pending_invoice.amount', 9000)
+            ->assertJsonPath('data.pending_invoice.payable_amount', 9000)
+            ->assertJsonPath('data.pending_invoice.upgrade_price', 9000)
+            ->assertJsonPath('data.pending_invoice.pricing.payable_amount', 9000);
     }
 
     public function test_user_diamond_tidak_dibuatkan_invoice_untuk_tema_diamond(): void
