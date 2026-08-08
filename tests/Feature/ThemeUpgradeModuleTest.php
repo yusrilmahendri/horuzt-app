@@ -92,8 +92,9 @@ class ThemeUpgradeModuleTest extends TestCase
 
         $this->postJson('/api/themes/select', ['theme_id' => $theme->id])
             ->assertForbidden()
-            ->assertJsonPath('code', 'THEME_UPGRADE_REQUIRED')
-            ->assertJsonPath('message', 'Tema ini membutuhkan upgrade paket.');
+            ->assertJsonPath('code', 'PACKAGE_UPGRADE_REQUIRED')
+            ->assertJsonPath('message', 'Tema ini tersedia mulai Paket Diamond.')
+            ->assertJsonPath('required_package.code', 'diamond');
     }
 
     public function test_upgrade_paket_membuat_invoice_pending(): void
@@ -282,10 +283,11 @@ class ThemeUpgradeModuleTest extends TestCase
 
         $invitation = Invitation::where('user_id', $user->id)->firstOrFail();
         $invoiceCount = Invitation::where('user_id', $user->id)->count();
+        $expiredAt = now()->addDays(30);
 
         $this->postJson("/api/v1/admin/users/{$user->id}/upgrade-package", [
             'package_code' => 'diamond',
-            'expired_at' => '2026-07-30',
+            'expired_at' => $expiredAt->toDateString(),
             'note' => 'Upgrade manual oleh admin',
         ])
             ->assertOk()
@@ -296,15 +298,15 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.package_name', 'Paket Diamond')
             ->assertJsonPath('data.account_status', 'active')
             ->assertJsonPath('data.payment_status', 'confirmed')
-            ->assertJsonPath('data.active_until', '2026-07-30')
-            ->assertJsonPath('data.active_until_formatted', '30/07/2026');
+            ->assertJsonPath('data.active_until', $expiredAt->toDateString())
+            ->assertJsonPath('data.active_until_formatted', $expiredAt->format('d/m/Y'));
 
         $invitation->refresh();
 
         $this->assertSame($invoiceCount, Invitation::where('user_id', $user->id)->count());
         $this->assertSame(PaketUndangan::where('code', 'diamond')->value('id'), $invitation->paket_undangan_id);
         $this->assertSame('paid', $invitation->payment_status);
-        $this->assertSame('2026-07-30', $invitation->domain_expires_at->toDateString());
+        $this->assertSame($expiredAt->toDateString(), $invitation->domain_expires_at->toDateString());
         $this->assertNotNull($invitation->payment_confirmed_at);
         $this->assertSame('diamond', $invitation->package_features_snapshot['code']);
         $this->assertSame('Paket Diamond', $invitation->package_features_snapshot['name_paket']);

@@ -53,6 +53,9 @@ class AccountStatusPaymentTest extends TestCase
         $this->getJson('/api/profile/status')
             ->assertOk()
             ->assertJsonPath('data.account_status', 'verified_no_invoice')
+            ->assertJsonPath('data.subscription_status', 'verified_no_invoice')
+            ->assertJsonPath('data.payment_requirement', 'initial_payment')
+            ->assertJsonPath('data.pending_invoice', null)
             ->assertJsonPath('data.is_verified', true)
             ->assertJsonPath('data.payment_status', null)
             ->assertJsonPath('data.has_invoice', false)
@@ -73,10 +76,15 @@ class AccountStatusPaymentTest extends TestCase
         $this->getJson('/api/profile/status')
             ->assertOk()
             ->assertJsonPath('data.account_status', 'pending_payment')
+            ->assertJsonPath('data.subscription_status', 'pending_payment')
+            ->assertJsonPath('data.payment_requirement', 'initial_payment')
             ->assertJsonPath('data.payment_status', 'pending')
             ->assertJsonPath('data.has_invoice', true)
             ->assertJsonPath('data.has_pending_invoice', true)
             ->assertJsonPath('data.invoice_code', '#INV-PENDING')
+            ->assertJsonPath('data.pending_invoice.invoice_code', '#INV-PENDING')
+            ->assertJsonPath('data.pending_invoice.payment_status', 'pending')
+            ->assertJsonPath('data.pending_invoice.package.code', 'ruby')
             ->assertJsonPath('data.kode_pemesanan', '#INV-PENDING')
             ->assertJsonPath('data.package_name', 'Paket Ruby')
             ->assertJsonPath('data.package_code', 'ruby')
@@ -93,6 +101,8 @@ class AccountStatusPaymentTest extends TestCase
         $this->getJson('/api/profile/status')
             ->assertOk()
             ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.subscription_status', 'active')
+            ->assertJsonPath('data.payment_requirement', null)
             ->assertJsonPath('data.payment_status', 'paid')
             ->assertJsonPath('data.has_invoice', true)
             ->assertJsonPath('data.has_pending_invoice', false)
@@ -113,6 +123,82 @@ class AccountStatusPaymentTest extends TestCase
             ->assertOk()
             ->assertJsonPath('data.account_status', 'expired')
             ->assertJsonPath('data.is_expired', true);
+    }
+
+    public function test_user_active_dengan_pending_upgrade_tetap_active_dan_pending_invoice_terlihat(): void
+    {
+        $user = $this->makeUser(true, 'paid', now()->addDays(10), now(), '#INV-ACTIVE');
+        $diamond = PaketUndangan::create([
+            'code' => 'diamond',
+            'jenis_paket' => 'Paket Diamond',
+            'name_paket' => 'Paket Diamond',
+            'price' => 300000,
+            'masa_aktif' => 30,
+        ]);
+
+        Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $diamond->id,
+            'kode_pemesanan' => 'UPG-ACTIVE-PENDING',
+            'status' => 'step1',
+            'payment_status' => 'pending',
+            'package_price_snapshot' => $diamond->price,
+            'package_duration_snapshot' => $diamond->masa_aktif,
+            'package_features_snapshot' => [
+                'invoice_type' => 'package_upgrade',
+                'change_type' => 'upgrade',
+                'code' => 'diamond',
+                'name_paket' => 'Paket Diamond',
+            ],
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.payment_status', 'paid')
+            ->assertJsonPath('data.has_pending_invoice', true)
+            ->assertJsonPath('data.payment_requirement', 'upgrade_payment')
+            ->assertJsonPath('data.invoice_code', '#INV-ACTIVE')
+            ->assertJsonPath('data.pending_invoice.invoice_code', 'UPG-ACTIVE-PENDING')
+            ->assertJsonPath('data.pending_invoice.invoice_type', 'package_upgrade')
+            ->assertJsonPath('data.pending_invoice.change_type', 'upgrade')
+            ->assertJsonPath('data.pending_invoice.package.code', 'diamond');
+    }
+
+    public function test_user_expired_dengan_pending_renewal_tetap_expired_dan_bisa_resume_invoice(): void
+    {
+        $user = $this->makeUser(true, 'paid', now()->subDay(), now()->subDays(40), '#INV-EXPIRED');
+        $package = PaketUndangan::where('code', 'ruby')->firstOrFail();
+
+        Invitation::create([
+            'user_id' => $user->id,
+            'paket_undangan_id' => $package->id,
+            'kode_pemesanan' => 'UPG-RENEW-PENDING',
+            'status' => 'step1',
+            'payment_status' => 'pending',
+            'package_price_snapshot' => $package->price,
+            'package_duration_snapshot' => $package->masa_aktif,
+            'package_features_snapshot' => [
+                'invoice_type' => 'package_upgrade',
+                'change_type' => 'renew',
+                'code' => 'ruby',
+                'name_paket' => 'Paket Ruby',
+            ],
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'expired')
+            ->assertJsonPath('data.is_expired', true)
+            ->assertJsonPath('data.has_pending_invoice', true)
+            ->assertJsonPath('data.payment_requirement', 'renewal_payment')
+            ->assertJsonPath('data.invoice_code', '#INV-EXPIRED')
+            ->assertJsonPath('data.pending_invoice.invoice_code', 'UPG-RENEW-PENDING')
+            ->assertJsonPath('data.pending_invoice.change_type', 'renew');
     }
 
     public function test_user_pending_payment_tidak_bisa_akses_fitur_input(): void

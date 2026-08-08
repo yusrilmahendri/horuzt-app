@@ -537,7 +537,7 @@ class PackageThemeAccessService
             'is_locked' => ! $canUse,
             'lock_reason' => $lockReason,
             'inactive_by_admin' => $packageCoversTheme && ! $adminIsActive,
-            'target_package' => ! $canUse ? $requiredPackage : null,
+            'target_package' => $upgradeRequired ? $requiredPackage : null,
             'upgrade_url' => $requiredPackage && $theme->slug
                 ? '/user/upgrade-account?package='.urlencode((string) ($requiredPackage['code'] ?? $requiredPackage['id'])).'&theme='.urlencode((string) $theme->slug).'&returnUrl='.urlencode('/user/tampilan')
                 : null,

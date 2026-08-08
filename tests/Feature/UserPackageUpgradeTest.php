@@ -290,6 +290,98 @@ class UserPackageUpgradeTest extends TestCase
         $this->assertNull($invoice->payment_confirmed_at);
     }
 
+    public function test_expired_subscription_upgrade_pending_stays_expired_until_midtrans_settlement(): void
+    {
+        Notification::fake();
+        [$starter, $pro] = $this->packages();
+        $user = $this->user();
+        $this->paidInvitation($user, $starter, expired: true);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-expired-upgrade');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertCreated()
+            ->assertJsonPath('subscription_status', 'expired')
+            ->assertJsonPath('action', 'subscribe')
+            ->assertJsonPath('payment_status', 'pending');
+
+        $orderId = $response->json('order_id');
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'expired')
+            ->assertJsonPath('data.has_pending_invoice', true)
+            ->assertJsonPath('data.payment_requirement', 'upgrade_payment')
+            ->assertJsonPath('data.pending_invoice.id', $invoice->id)
+            ->assertJsonPath('data.pending_invoice.package.code', 'pro-custom');
+
+        $this->postJson('/api/v1/midtrans/webhook', $this->midtransWebhookPayload($invoice, 'settlement'))
+            ->assertOk();
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.package_code', 'pro-custom')
+            ->assertJsonPath('data.has_pending_invoice', false)
+            ->assertJsonPath('data.payment_requirement', null);
+    }
+
+    public function test_expired_subscription_renewal_resumes_pending_invoice_and_activates_after_payment(): void
+    {
+        Notification::fake();
+        [$starter, $pro] = $this->packages();
+        $user = $this->user();
+        $this->paidInvitation($user, $pro, expired: true);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-renewal');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertCreated()
+            ->assertJsonPath('subscription_status', 'expired')
+            ->assertJsonPath('action', 'renew')
+            ->assertJsonPath('snap_token', 'snap-token-renewal');
+
+        $orderId = $first->json('order_id');
+
+        $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $pro->id,
+        ])->assertOk()
+            ->assertJsonPath('order_id', $orderId)
+            ->assertJsonPath('snap_token', 'snap-token-renewal')
+            ->assertJsonPath('reused', true)
+            ->assertJsonPath('action', 'renew');
+
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'expired')
+            ->assertJsonPath('data.payment_requirement', 'renewal_payment')
+            ->assertJsonPath('data.pending_invoice.change_type', 'renew');
+
+        $this->postJson('/api/v1/midtrans/webhook', $this->midtransWebhookPayload($invoice, 'settlement'))
+            ->assertOk();
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'active')
+            ->assertJsonPath('data.package_code', 'pro-custom')
+            ->assertJsonPath('data.has_pending_invoice', false);
+
+        $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+    }
+
     private function packages(): array
     {
         return [
@@ -321,9 +413,9 @@ class UserPackageUpgradeTest extends TestCase
             'name' => 'Upgrade User',
             'email' => 'upgrade-user-'.str()->random(8).'@example.test',
             'password' => bcrypt('secret123'),
-            'email_verified_at' => now(),
             'verification_channel' => 'email',
         ]);
+        $user->forceFill(['email_verified_at' => now()])->save();
         $user->assignRole('user');
 
         return $user;
