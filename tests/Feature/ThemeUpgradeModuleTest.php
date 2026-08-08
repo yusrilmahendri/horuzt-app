@@ -6,11 +6,14 @@ use App\Models\CategoryThemas;
 use App\Models\Invitation;
 use App\Models\JenisThemas;
 use App\Models\PaketUndangan;
+use App\Models\PaymentLog;
 use App\Models\User;
+use App\Services\MidtransService;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Schema;
 use Laravel\Sanctum\Sanctum;
+use Mockery;
 use Spatie\Permission\Models\Role;
 use Tests\TestCase;
 
@@ -112,6 +115,11 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.redirect_url', '/dashboard/payment-pending');
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+        $invoice = Invitation::where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->firstOrFail();
+        $this->assertMatchesRegularExpression('/^UPG-\d{14}-\d+-\d+$/', $invoice->kode_pemesanan);
+        $this->assertFalse(str_starts_with($invoice->kode_pemesanan, '#'));
         $this->assertDatabaseHas('invitations', [
             'user_id' => $user->id,
             'payment_status' => 'pending',
@@ -191,6 +199,51 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.payment_status', 'pending');
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+    }
+
+    public function test_legacy_package_upgrade_midtrans_is_idempotent_and_uses_safe_order_id(): void
+    {
+        config([
+            'midtrans.server_key' => 'server-key-test',
+            'midtrans.client_key' => 'client-key-test',
+        ]);
+
+        $user = $this->createUserWithPackage('ruby');
+        $targetPackage = PaketUndangan::where('code', 'diamond')->firstOrFail();
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->with(Mockery::on(function (array $params): bool {
+                $orderId = (string) ($params['transaction_details']['order_id'] ?? '');
+
+                return preg_match('/^UPG-\d{14}-\d+-\d+$/', $orderId) === 1
+                    && ! str_contains($orderId, '#');
+            }))
+            ->andReturn('upgrade-snap-token');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $targetPackage->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('snap_token', 'upgrade-snap-token')
+            ->assertJsonPath('reused', false);
+
+        $orderId = $first->json('order_id');
+
+        $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $targetPackage->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('snap_token', 'upgrade-snap-token')
+            ->assertJsonPath('order_id', $orderId)
+            ->assertJsonPath('reused', true);
+
+        $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+        $this->assertSame(1, PaymentLog::where('event_type', 'token_request')->count());
     }
 
     public function test_setelah_invoice_confirmed_user_bisa_pakai_tema_paket_baru(): void
@@ -656,6 +709,9 @@ class ThemeUpgradeModuleTest extends TestCase
             $table->unsignedBigInteger('paket_undangan_id');
             $table->string('status')->default('step1');
             $table->string('payment_status')->default('pending');
+            $table->string('payment_method')->nullable();
+            $table->string('order_id')->nullable();
+            $table->string('midtrans_transaction_id')->nullable();
             $table->boolean('is_trial')->default(false);
             $table->timestamp('domain_expires_at')->nullable();
             $table->timestamp('payment_confirmed_at')->nullable();

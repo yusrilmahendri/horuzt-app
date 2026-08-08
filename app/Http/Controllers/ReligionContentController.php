@@ -69,7 +69,7 @@ class ReligionContentController extends Controller
 
         foreach ($this->resolver->fields() as $field) {
             if (array_key_exists($field, $validated)) {
-                $payload[$this->resolver->customColumn($field)] = $this->inputPreservingEmptyString($request, $field, $validated[$field]);
+                $payload[$this->resolver->customColumn($field)] = $this->inputPreservingExplicitEmpty($request, $field, $validated[$field]);
             }
         }
 
@@ -113,11 +113,11 @@ class ReligionContentController extends Controller
         ]);
     }
 
-    private function inputPreservingEmptyString(Request $request, string $key, mixed $fallback): mixed
+    private function inputPreservingExplicitEmpty(Request $request, string $key, mixed $fallback): mixed
     {
         $raw = json_decode($request->getContent(), true);
 
-        if (is_array($raw) && array_key_exists($key, $raw) && $raw[$key] === '') {
+        if (is_array($raw) && array_key_exists($key, $raw) && ($raw[$key] === '' || $raw[$key] === null)) {
             return '';
         }
 

@@ -215,8 +215,10 @@ class MidtransController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-            ], 503);
+                'code' => 'PAYMENT_CREATION_FAILED',
+                'payment_status' => 'transaction_not_created',
+                'message' => 'Pembayaran belum dapat dibuat. Silakan coba kembali.',
+            ], 502);
 
         } catch (\Exception $e) {
             Log::error('Unexpected error during snap token creation', [
@@ -318,9 +320,21 @@ class MidtransController extends Controller
 
     private function baseOrderIdFor(Invitation $invitation): string
     {
-        return $invitation->kode_pemesanan
+        $baseOrderId = $invitation->kode_pemesanan
             ?? $invitation->user->kode_pemesanan
             ?? 'INV-'.str_pad($invitation->id, 6, '0', STR_PAD_LEFT);
+
+        return $this->midtransSafeOrderId($baseOrderId);
+    }
+
+    private function midtransSafeOrderId(string $orderId): string
+    {
+        $safeOrderId = preg_replace('/[^A-Za-z0-9_-]/', '', $orderId) ?? '';
+        $safeOrderId = trim($safeOrderId, '-_');
+
+        return $safeOrderId !== ''
+            ? $safeOrderId
+            : 'INV-'.now()->format('YmdHis');
     }
 
     private function isPaidStatus(?string $status): bool
@@ -331,6 +345,49 @@ class MidtransController extends Controller
     private function isTerminalStatus(?string $status): bool
     {
         return in_array(strtolower((string) $status), ['paid', 'confirmed', 'success', 'settlement', 'capture', 'failed', 'deny', 'cancel', 'expire', 'expired', 'refund', 'refunded'], true);
+    }
+
+    private function isSuccessfulMidtransStatus(?string $transactionStatus, ?string $fraudStatus = null): bool
+    {
+        $transactionStatus = strtolower((string) $transactionStatus);
+        $fraudStatus = strtolower((string) $fraudStatus);
+
+        if ($transactionStatus === 'settlement') {
+            return true;
+        }
+
+        if ($transactionStatus !== 'capture') {
+            return false;
+        }
+
+        return $fraudStatus === '' || $fraudStatus === 'accept';
+    }
+
+    private function paymentStatusForMidtransStatus(
+        MidtransService $midtransService,
+        ?string $transactionStatus,
+        ?string $fraudStatus = null
+    ): string {
+        $transactionStatus = strtolower((string) $transactionStatus);
+        $fraudStatus = strtolower((string) $fraudStatus);
+
+        if ($transactionStatus === 'capture' && ! $this->isSuccessfulMidtransStatus($transactionStatus, $fraudStatus)) {
+            return $fraudStatus === 'challenge' ? 'pending' : 'failed';
+        }
+
+        return $midtransService->getPaymentStatusFromTransactionStatus($transactionStatus);
+    }
+
+    private function grossAmountMatches(Invitation $invitation, mixed $grossAmount): bool
+    {
+        if ($grossAmount === null || $grossAmount === '') {
+            return false;
+        }
+
+        $expectedAmount = round((float) $invitation->package_price_snapshot, 2);
+        $actualAmount = round((float) $grossAmount, 2);
+
+        return abs($expectedAmount - $actualAmount) < 0.01;
     }
 
     private function buildCustomerDetails($user, Invitation $invitation, mixed $requestCustomerDetails = []): array
@@ -463,6 +520,12 @@ class MidtransController extends Controller
 
     private function sendWebhookPaymentNotification(PaymentLog $log, Request $request): void
     {
+        $payload = json_decode((string) $log->response_payload, true) ?: [];
+        $fraudStatus = strtolower((string) ($payload['fraud_status'] ?? $request->input('fraud_status')));
+        if ($log->transaction_status === 'capture' && ! in_array($fraudStatus, ['', 'accept'], true)) {
+            return;
+        }
+
         $notificationStatus = $this->notificationStatusFor($log->transaction_status);
         if ($notificationStatus === null || $this->notificationAlreadySent($log, $notificationStatus)) {
             return;
@@ -482,7 +545,6 @@ class MidtransController extends Controller
                 return;
             }
 
-            $payload = json_decode((string) $log->response_payload, true) ?: [];
             $paymentDetails = is_array($payload['payment_details'] ?? null) ? $payload['payment_details'] : [];
             $continueUrl = $this->continuePaymentUrl($log);
 
@@ -569,12 +631,21 @@ class MidtransController extends Controller
             }
 
             if (in_array($invitation->payment_status, ['paid', 'failed', 'expired', 'refunded'])) {
+                $latestPaymentLog = PaymentLog::query()
+                    ->where('invitation_id', $invitation->id)
+                    ->where('order_id', $orderId)
+                    ->whereIn('event_type', ['webhook_processed', 'status_check'])
+                    ->latest('id')
+                    ->first();
+
                 return response()->json([
                     'success' => true,
                     'payment_status' => $invitation->payment_status,
+                    'transaction_status' => $latestPaymentLog?->transaction_status,
                     'message' => 'Payment status: ' . $invitation->payment_status,
                     'data' => [
                         'order_id' => $orderId,
+                        'transaction_status' => $latestPaymentLog?->transaction_status,
                         'payment_confirmed_at' => $invitation->payment_confirmed_at,
                         'domain_expires_at' => $invitation->domain_expires_at,
                     ],
@@ -644,8 +715,24 @@ class MidtransController extends Controller
             ]);
 
             $transactionStatus = $status->transaction_status;
+            $fraudStatus = $status->fraud_status ?? null;
 
-            if (in_array($transactionStatus, ['capture', 'settlement'])) {
+            if ($this->isSuccessfulMidtransStatus($transactionStatus, $fraudStatus)) {
+                if (! $this->grossAmountMatches($invitation, $status->gross_amount ?? null)) {
+                    Log::warning('Midtrans status check amount mismatch', [
+                        'order_id' => $orderId,
+                        'expected_amount' => (float) $invitation->package_price_snapshot,
+                        'midtrans_amount' => $status->gross_amount ?? null,
+                    ]);
+
+                    return response()->json([
+                        'success' => false,
+                        'code' => 'PAYMENT_AMOUNT_MISMATCH',
+                        'payment_status' => 'pending',
+                        'message' => 'Status pembayaran belum dapat diverifikasi.',
+                    ], 422);
+                }
+
                 DB::transaction(function () use ($invitation, $status) {
                     $snapshot = $invitation->package_features_snapshot ?? [];
 
@@ -710,12 +797,13 @@ class MidtransController extends Controller
                 ]);
             }
 
-            $paymentStatus = $midtransService->getPaymentStatusFromTransactionStatus($transactionStatus);
+            $paymentStatus = $this->paymentStatusForMidtransStatus($midtransService, $transactionStatus, $fraudStatus);
 
             return response()->json([
                 'success' => true,
                 'payment_status' => $paymentStatus,
                 'transaction_status' => $transactionStatus,
+                'fraud_status' => $fraudStatus,
                 'message' => 'Payment status retrieved',
                 'data' => [
                     'order_id' => $orderId,
@@ -877,6 +965,7 @@ class MidtransController extends Controller
         $statusCode = $request->input('status_code');
         $grossAmount = $request->input('gross_amount');
         $signatureKey = $request->input('signature_key');
+        $fraudStatus = $request->input('fraud_status');
 
         PaymentLog::create([
             'order_id' => $orderId,
@@ -940,8 +1029,43 @@ class MidtransController extends Controller
                 return response()->json(['message' => 'Already processed'], 200);
             }
 
+            if ($this->isSuccessfulMidtransStatus($transactionStatus, $fraudStatus)
+                && ! $this->grossAmountMatches($invitation, $grossAmount)) {
+                PaymentLog::create([
+                    'user_id' => $invitation->user_id,
+                    'invitation_id' => $invitation->id,
+                    'order_id' => $orderId,
+                    'midtrans_transaction_id' => $transactionId,
+                    'event_type' => 'error',
+                    'transaction_status' => $transactionStatus,
+                    'payment_type' => $request->input('payment_type'),
+                    'gross_amount' => $grossAmount,
+                    'request_payload' => json_encode($request->all()),
+                    'signature_valid' => true,
+                    'error_message' => 'Gross amount mismatch',
+                    'ip_address' => $request->ip(),
+                ]);
+
+                Log::warning('Midtrans webhook amount mismatch', [
+                    'order_id' => $orderId,
+                    'expected_amount' => (float) $invitation->package_price_snapshot,
+                    'midtrans_amount' => $grossAmount,
+                ]);
+
+                return response()->json([
+                    'success' => false,
+                    'code' => 'PAYMENT_AMOUNT_MISMATCH',
+                    'payment_status' => $invitation->payment_status ?? 'pending',
+                    'message' => 'Status pembayaran belum dapat diverifikasi.',
+                ], 422);
+            }
+
             $processedLog = DB::transaction(function () use ($invitation, $transactionStatus, $transactionId, $midtransService, $request, $orderId, $grossAmount) {
-                $paymentStatus = $midtransService->getPaymentStatusFromTransactionStatus($transactionStatus);
+                $paymentStatus = $this->paymentStatusForMidtransStatus(
+                    $midtransService,
+                    $transactionStatus,
+                    $request->input('fraud_status')
+                );
                 $snapshot = $invitation->package_features_snapshot ?? [];
                 $paymentDetails = $this->extractPaymentDetails($request);
 
@@ -950,7 +1074,7 @@ class MidtransController extends Controller
                     'midtrans_transaction_id' => $transactionId,
                 ];
 
-                if (in_array($transactionStatus, ['capture', 'settlement'])) {
+                if ($this->isSuccessfulMidtransStatus($transactionStatus, $request->input('fraud_status'))) {
                     $updateData['payment_confirmed_at'] = now();
 
                     // Check if this was an upgrade payment - restore original status
@@ -975,7 +1099,7 @@ class MidtransController extends Controller
 
                 $invitation->update($updateData);
 
-                if (in_array($transactionStatus, ['capture', 'settlement'])) {
+                if ($this->isSuccessfulMidtransStatus($transactionStatus, $request->input('fraud_status'))) {
                     $this->packageUpgradeService->completeIfUpgrade(
                         $invitation->fresh(['user', 'paketUndangan']),
                         PaymentMethodResolver::MIDTRANS,
@@ -985,7 +1109,7 @@ class MidtransController extends Controller
                 }
 
                 // Midtrans payments are auto-confirmed — sync mempelai status immediately
-                if (in_array($transactionStatus, ['capture', 'settlement'])) {
+                if ($this->isSuccessfulMidtransStatus($transactionStatus, $request->input('fraud_status'))) {
                     $mempelai = \App\Models\Mempelai::where('user_id', $invitation->user_id)->first();
                     if ($mempelai) {
                         $mempelai->update([
@@ -1008,6 +1132,7 @@ class MidtransController extends Controller
                     'response_payload' => json_encode([
                         'transaction_time' => $request->input('transaction_time'),
                         'expiry_time' => $request->input('expiry_time'),
+                        'fraud_status' => $request->input('fraud_status'),
                         'payment_details' => $paymentDetails,
                     ]),
                     'signature_valid' => true,

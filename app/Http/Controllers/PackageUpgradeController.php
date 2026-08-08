@@ -375,27 +375,31 @@ class PackageUpgradeController extends Controller
         }
 
         $paymentMethod = $this->paymentMethodResolver->activeMethod();
+        $pendingInvoice = $this->pendingUpgradeForUserAndTarget($user, $targetPackage);
 
         if ($paymentMethod === PaymentMethodResolver::MANUAL) {
-            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action) {
-                $invoice = $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
+            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action, $pendingInvoice) {
+                $invoice = $pendingInvoice
+                    ?: $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
 
-                PaymentLog::create([
-                    'user_id' => $user->id,
-                    'invitation_id' => $invoice->id,
-                    'order_id' => $invoice->kode_pemesanan,
-                    'event_type' => 'token_request',
-                    'transaction_status' => 'pending',
-                    'payment_type' => $paymentMethod,
-                    'gross_amount' => $invoice->package_price_snapshot,
-                    'request_payload' => json_encode(['package_id' => $targetPackage->id]),
-                    'response_payload' => json_encode([
-                        'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
-                    ]),
-                    'ip_address' => $request->ip(),
-                    'user_agent' => $request->userAgent(),
-                    'notes' => 'Invoice manual upgrade paket dibuat.',
-                ]);
+                if (! $pendingInvoice) {
+                    PaymentLog::create([
+                        'user_id' => $user->id,
+                        'invitation_id' => $invoice->id,
+                        'order_id' => $invoice->kode_pemesanan,
+                        'event_type' => 'token_request',
+                        'transaction_status' => 'pending',
+                        'payment_type' => $paymentMethod,
+                        'gross_amount' => $invoice->package_price_snapshot,
+                        'request_payload' => json_encode(['package_id' => $targetPackage->id]),
+                        'response_payload' => json_encode([
+                            'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
+                        ]),
+                        'ip_address' => $request->ip(),
+                        'user_agent' => $request->userAgent(),
+                        'notes' => 'Invoice manual upgrade paket dibuat.',
+                    ]);
+                }
 
                 return response()->json($this->packageUpgradeResponse(
                     $packageBefore,
@@ -408,8 +412,9 @@ class PackageUpgradeController extends Controller
                         'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
                         'subscription_status' => $subscriptionStatus,
                         'action' => $action,
+                        'reused' => (bool) $pendingInvoice,
                     ]
-                ), 201);
+                ), $pendingInvoice ? 200 : 201);
             });
         }
 
@@ -423,9 +428,29 @@ class PackageUpgradeController extends Controller
         }
 
         try {
-            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action) {
-                $invoice = $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
-                $orderId = $invoice->kode_pemesanan;
+            return DB::transaction(function () use ($request, $user, $packageBefore, $targetPackage, $paymentMethod, $subscriptionStatus, $action, $pendingInvoice) {
+                if ($pendingInvoice && $existingTransaction = $this->activePackageUpgradeTransactionFor($pendingInvoice)) {
+                    return response()->json($this->packageUpgradeResponse(
+                        $packageBefore,
+                        $targetPackage,
+                        PaymentMethodResolver::MIDTRANS,
+                        $pendingInvoice->payment_status,
+                        [
+                            'invoice_id' => $pendingInvoice->id,
+                            'invoice_code' => $pendingInvoice->kode_pemesanan,
+                            'order_id' => $existingTransaction['order_id'],
+                            'snap_token' => $existingTransaction['snap_token'],
+                            'expires_at' => $existingTransaction['expires_at'],
+                            'subscription_status' => $subscriptionStatus,
+                            'action' => $action,
+                            'reused' => true,
+                        ]
+                    ), 200);
+                }
+
+                $invoice = $pendingInvoice
+                    ?: $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
+                $orderId = $invoice->order_id ?: $this->midtransSafeOrderId($invoice->kode_pemesanan);
                 $grossAmount = (float) $targetPackage->price;
                 $snapToken = $this->createMidtransSnapToken($user, $invoice, $targetPackage, $orderId, $grossAmount);
                 $expiresAt = now()->addHours((int) config('midtrans.token_expiry_hours', 24));
@@ -467,8 +492,9 @@ class PackageUpgradeController extends Controller
                         'expires_at' => $expiresAt->toIso8601String(),
                         'subscription_status' => $subscriptionStatus,
                         'action' => $action,
+                        'reused' => (bool) $pendingInvoice,
                     ]
-                ), 201);
+                ), $pendingInvoice ? 200 : 201);
             });
         } catch (\RuntimeException $e) {
             Log::error('Package upgrade Midtrans transaction failed', [
@@ -479,8 +505,10 @@ class PackageUpgradeController extends Controller
 
             return response()->json([
                 'success' => false,
-                'message' => $e->getMessage(),
-            ], 503);
+                'code' => 'PAYMENT_CREATION_FAILED',
+                'payment_status' => 'transaction_not_created',
+                'message' => 'Pembayaran belum dapat dibuat. Silakan coba kembali.',
+            ], 502);
         }
     }
 
@@ -570,7 +598,7 @@ class PackageUpgradeController extends Controller
                 ], 404);
             }
 
-            $newInvoiceNumber = '#UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $newPackage->id;
+            $newInvoiceNumber = $this->newPackageUpgradeOrderId($user, $newPackage);
 
             $createData = [
                 'user_id' => $user->id,
@@ -903,7 +931,7 @@ class PackageUpgradeController extends Controller
         return Invitation::create([
             'user_id' => $user->id,
             'paket_undangan_id' => $targetPackage->id,
-            'kode_pemesanan' => '#UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $targetPackage->id,
+            'kode_pemesanan' => $this->newPackageUpgradeOrderId($user, $targetPackage),
             'status' => $baseInvitation?->status ?? 'pending',
             'payment_status' => 'pending',
             'payment_method' => $paymentMethod,
@@ -968,6 +996,59 @@ class PackageUpgradeController extends Controller
             : new MidtransService($user->id);
 
         return $midtrans->createTransaction($params);
+    }
+
+    private function newPackageUpgradeOrderId(User $user, PaketUndangan $package): string
+    {
+        return 'UPG-' . now()->format('YmdHis') . '-' . $user->id . '-' . $package->id;
+    }
+
+    private function activePackageUpgradeTransactionFor(Invitation $invoice): ?array
+    {
+        if (! $invoice->order_id) {
+            return null;
+        }
+
+        $log = PaymentLog::query()
+            ->where('invitation_id', $invoice->id)
+            ->where('order_id', $invoice->order_id)
+            ->where('event_type', 'token_request')
+            ->latest('id')
+            ->first();
+
+        if (! $log || in_array($log->transaction_status, ['capture', 'settlement', 'deny', 'cancel', 'expire', 'refund'], true)) {
+            return null;
+        }
+
+        $payload = json_decode((string) $log->response_payload, true);
+        $snapToken = is_array($payload) ? trim((string) ($payload['snap_token'] ?? '')) : '';
+        if ($snapToken === '') {
+            return null;
+        }
+
+        $expiresAt = ! empty($payload['expires_at'])
+            ? Carbon::parse($payload['expires_at'])
+            : $log->created_at->copy()->addHours((int) config('midtrans.token_expiry_hours', 24));
+
+        if ($expiresAt->isPast()) {
+            return null;
+        }
+
+        return [
+            'order_id' => $log->order_id,
+            'snap_token' => $snapToken,
+            'expires_at' => $expiresAt->toIso8601String(),
+        ];
+    }
+
+    private function midtransSafeOrderId(string $orderId): string
+    {
+        $safeOrderId = preg_replace('/[^A-Za-z0-9_-]/', '', $orderId) ?? '';
+        $safeOrderId = trim($safeOrderId, '-_');
+
+        return $safeOrderId !== ''
+            ? $safeOrderId
+            : 'UPG-' . now()->format('YmdHis');
     }
 
     private function invoicePayload(Invitation $invoice): array

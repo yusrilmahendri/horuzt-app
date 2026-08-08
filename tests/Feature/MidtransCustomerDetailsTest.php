@@ -52,6 +52,8 @@ class MidtransCustomerDetailsTest extends TestCase
                     && ($params['customer_details']['last_name'] ?? null) === 'Digital User'
                     && ($params['customer_details']['email'] ?? null) === 'midtrans-user@example.test'
                     && ($params['customer_details']['phone'] ?? null) === '08123456789'
+                    && str_starts_with((string) ($params['transaction_details']['order_id'] ?? ''), 'MIDTRANS-NAME-')
+                    && ! str_contains((string) ($params['transaction_details']['order_id'] ?? ''), '#')
                     && ! str_contains(json_encode($params), 'Guest');
             }))
             ->andReturn('snap-token-test');
@@ -72,9 +74,38 @@ class MidtransCustomerDetailsTest extends TestCase
             ->assertJsonPath('data.snap_token', 'snap-token-test');
 
         $payload = json_decode(PaymentLog::firstOrFail()->request_payload, true);
+        $this->assertSame($payload['transaction_details']['order_id'], $invitation->fresh()->order_id);
+        $this->assertStringNotContainsString('#', $payload['transaction_details']['order_id']);
         $this->assertSame('Sena', $payload['customer_details']['first_name']);
         $this->assertSame('Digital User', $payload['customer_details']['last_name']);
         $this->assertStringNotContainsString('Guest', json_encode($payload));
+    }
+
+    public function test_midtrans_create_snap_token_returns_creation_failed_when_gateway_rejects_before_transaction_created(): void
+    {
+        $user = $this->verifiedUser('Gateway Error User', 'gateway-error@example.test');
+        $invitation = $this->invitationFor($user);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->andThrow(new \RuntimeException('Midtrans validation error: order_id invalid'));
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invitation_id' => $invitation->id,
+            'amount' => (float) $invitation->paketUndangan->price,
+        ])
+            ->assertStatus(502)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'PAYMENT_CREATION_FAILED')
+            ->assertJsonPath('payment_status', 'transaction_not_created')
+            ->assertJsonPath('message', 'Pembayaran belum dapat dibuat. Silakan coba kembali.');
+
+        $this->assertNull($invitation->fresh()->order_id);
+        $this->assertDatabaseCount('payment_logs', 0);
     }
 
     public function test_midtrans_requires_complete_profile_name_before_creating_invoice(): void
@@ -371,6 +402,46 @@ class MidtransCustomerDetailsTest extends TestCase
 
         $this->assertSame('failed', $invitation->fresh()->payment_status);
         Notification::assertSentTo($user, MidtransPaymentStatusNotification::class, fn ($notification) => $notification->status() === 'expired');
+    }
+
+    public function test_midtrans_webhook_settlement_with_amount_mismatch_does_not_activate_invoice(): void
+    {
+        Notification::fake();
+        $user = $this->verifiedUser('Amount Mismatch User', 'amount-mismatch@example.test');
+        $invitation = $this->invitationFor($user);
+        $invitation->update(['order_id' => 'AMOUNT-MISMATCH-ORDER']);
+
+        $this->postJson('/api/v1/midtrans/webhook', $this->webhookPayload($invitation, [
+            'transaction_status' => 'settlement',
+            'transaction_id' => 'trx-amount-mismatch',
+            'payment_type' => 'qris',
+            'gross_amount' => '1.00',
+        ]))
+            ->assertStatus(422)
+            ->assertJsonPath('code', 'PAYMENT_AMOUNT_MISMATCH');
+
+        $this->assertSame('pending', $invitation->fresh()->payment_status);
+        $this->assertNull($invitation->fresh()->payment_confirmed_at);
+        Notification::assertNothingSent();
+    }
+
+    public function test_midtrans_webhook_capture_with_fraud_challenge_does_not_activate_invoice(): void
+    {
+        Notification::fake();
+        $user = $this->verifiedUser('Fraud Challenge User', 'fraud-challenge@example.test');
+        $invitation = $this->invitationFor($user);
+        $invitation->update(['order_id' => 'FRAUD-CHALLENGE-ORDER']);
+
+        $this->postJson('/api/v1/midtrans/webhook', $this->webhookPayload($invitation, [
+            'transaction_status' => 'capture',
+            'transaction_id' => 'trx-fraud-challenge',
+            'fraud_status' => 'challenge',
+            'payment_type' => 'credit_card',
+        ]))->assertOk();
+
+        $this->assertSame('pending', $invitation->fresh()->payment_status);
+        $this->assertNull($invitation->fresh()->payment_confirmed_at);
+        Notification::assertNothingSent();
     }
 
     public function test_midtrans_webhook_pending_after_settlement_does_not_downgrade_or_email_pending(): void

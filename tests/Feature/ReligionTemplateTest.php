@@ -146,6 +146,116 @@ class ReligionTemplateTest extends TestCase
             ->assertJsonPath('data.resolved_content.closing_text', 'Penutup universal');
     }
 
+    public function test_user_religion_content_update_preserves_explicit_empty_greetings(): void
+    {
+        $user = $this->createUser('empty-greeting-user@example.test');
+        Sanctum::actingAs($user);
+
+        ReligionTemplate::create([
+            'religion_key' => 'islam',
+            'religion_name' => 'Islam',
+            'opening_greeting' => 'Default Islam',
+            'closing_greeting' => 'Default Penutup Islam',
+            'whatsapp_message' => 'Default WA {{guest_name}}',
+            'active' => true,
+        ]);
+
+        Setting::create([
+            'user_id' => $user->id,
+            'religion_code' => 'islam',
+            'religion_opening_greeting' => 'Pembuka awal',
+            'religion_closing_greeting' => 'Penutup awal',
+        ]);
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'opening_greeting' => 'Pembuka custom',
+            'closing_greeting' => 'Penutup custom',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', 'Pembuka custom')
+            ->assertJsonPath('data.resolved.closing_greeting', 'Penutup custom');
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'opening_greeting' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.custom.opening_greeting', '')
+            ->assertJsonPath('data.custom.closing_greeting', 'Penutup custom')
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', 'Penutup custom');
+
+        $this->assertSame('', Setting::where('user_id', $user->id)->value('religion_opening_greeting'));
+        $this->assertSame('Penutup custom', Setting::where('user_id', $user->id)->value('religion_closing_greeting'));
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'closing_greeting' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', '');
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'opening_greeting' => 'Pembuka baru',
+            'closing_greeting' => 'Penutup baru',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', 'Pembuka baru')
+            ->assertJsonPath('data.resolved.closing_greeting', 'Penutup baru');
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'opening_greeting' => null,
+            'closing_greeting' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.custom.opening_greeting', '')
+            ->assertJsonPath('data.custom.closing_greeting', '')
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', '');
+
+        $this->getJson('/api/v1/user/religion-content')
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', '');
+
+        $this->putJson('/api/v1/user/religion-content', [
+            'whatsapp_message' => 'Custom WA {{guest_name}}',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', '')
+            ->assertJsonPath('data.resolved.whatsapp_message', 'Custom WA {{guest_name}}');
+
+        $this->getJson('/api/v1/user/religion-content')
+            ->assertOk()
+            ->assertJsonPath('data.resolved.opening_greeting', '')
+            ->assertJsonPath('data.resolved.closing_greeting', '');
+    }
+
+    public function test_admin_religion_template_update_preserves_null_and_omitted_fields(): void
+    {
+        $admin = $this->createUser('empty-greeting-admin@example.test');
+        Sanctum::actingAs($admin);
+
+        $template = ReligionTemplate::create([
+            'religion_key' => 'islam',
+            'religion_name' => 'Islam',
+            'opening_greeting' => 'Admin pembuka',
+            'closing_greeting' => 'Admin penutup',
+            'active' => true,
+        ]);
+
+        $this->putJson('/api/v1/admin/religion-templates/'.$template->id, [
+            'opening_greeting' => null,
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.opening_greeting', null)
+            ->assertJsonPath('data.closing_greeting', 'Admin penutup');
+
+        $template->refresh();
+        $this->assertNull($template->opening_greeting);
+        $this->assertSame('Admin penutup', $template->closing_greeting);
+    }
+
     private function createUser(string $email): User
     {
         return User::create([
@@ -189,6 +299,23 @@ class ReligionTemplateTest extends TestCase
             $table->unsignedInteger('version')->default(1);
             $table->unsignedBigInteger('created_by')->nullable();
             $table->unsignedBigInteger('updated_by')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('pernikahans', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('salam_pembuka')->nullable();
+            $table->string('salam_wa_atas')->nullable();
+            $table->string('salam_wa_bawah')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('qoutes', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('user_id');
+            $table->string('name')->nullable();
+            $table->text('qoute')->nullable();
             $table->timestamps();
         });
     }
