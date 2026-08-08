@@ -97,7 +97,7 @@ class MidtransController extends Controller
             $this->expireStaleMidtransTransactions($invitation);
 
             $orderId = $this->orderIdForNewMidtransTransaction($invitation);
-            $grossAmount = $validated['amount'];
+            $grossAmount = $this->invoicePaymentAmount($invitation);
 
             // Always send a usable email to Midtrans so payment notifications can be delivered.
             $userDomain = $invitation->user->settingOne->domain ?? '-';
@@ -125,7 +125,7 @@ class MidtransController extends Controller
                 $invitation->paketUndangan->code ?? null
             ) ?? 'unknown';
 
-            $itemDetails = $validated['item_details'] ?? [[
+            $itemDetails = [[
                 'id' => 'paket-' . $invitation->paket_undangan_id,
                 'name' => $packageLabel,
                 'price' => $grossAmount,
@@ -388,6 +388,19 @@ class MidtransController extends Controller
         $actualAmount = round((float) $grossAmount, 2);
 
         return abs($expectedAmount - $actualAmount) < 0.01;
+    }
+
+    private function invoicePaymentAmount(Invitation $invitation): float
+    {
+        $snapshot = is_array($invitation->package_features_snapshot)
+            ? $invitation->package_features_snapshot
+            : [];
+
+        $amount = $snapshot['payable_amount']
+            ?? $invitation->package_price_snapshot
+            ?? $invitation->paketUndangan?->price;
+
+        return round((float) $amount, 2);
     }
 
     private function buildCustomerDetails($user, Invitation $invitation, mixed $requestCustomerDetails = []): array

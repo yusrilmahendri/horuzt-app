@@ -29,7 +29,7 @@ class CreateSnapTokenRequest extends FormRequest
                 }),
             ],
             'amount' => [
-                'required',
+                'sometimes',
                 'numeric',
                 'min:10000',
                 'max:100000000',
@@ -55,7 +55,14 @@ class CreateSnapTokenRequest extends FormRequest
 
                 if ($invitation) {
                     $package = $invitation->paketUndangan;
-                    if ($package && $this->amount != $package->price) {
+                    $snapshot = is_array($invitation->package_features_snapshot)
+                        ? $invitation->package_features_snapshot
+                        : [];
+                    $snapshotAmount = $snapshot['payable_amount']
+                        ?? $invitation->getAttribute('package_price_snapshot');
+                    $expectedAmount = $snapshotAmount !== null ? $snapshotAmount : $package?->price;
+
+                    if ($this->has('amount') && $expectedAmount !== null && abs(round((float) $this->amount, 2) - round((float) $expectedAmount, 2)) >= 0.01) {
                         $validator->errors()->add('amount', 'Nominal pembayaran tidak sesuai dengan harga paket.');
                     }
                 }

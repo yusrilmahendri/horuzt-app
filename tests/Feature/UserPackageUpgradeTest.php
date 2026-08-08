@@ -82,7 +82,11 @@ class UserPackageUpgradeTest extends TestCase
             ->assertJsonPath('package_before.id', $starter->id)
             ->assertJsonPath('package_after.id', $pro->id)
             ->assertJsonPath('payment_method', 'manual')
-            ->assertJsonPath('payment_status', 'pending');
+            ->assertJsonPath('payment_status', 'pending')
+            ->assertJsonPath('original_price', 150000)
+            ->assertJsonPath('discount_percentage', 40)
+            ->assertJsonPath('discount_amount', 60000)
+            ->assertJsonPath('amount', 90000);
 
         $this->assertDatabaseHas('invitations', [
             'user_id' => $user->id,
@@ -90,9 +94,24 @@ class UserPackageUpgradeTest extends TestCase
             'payment_method' => 'manual',
             'payment_status' => 'pending',
         ]);
+
+        $invoice = Invitation::where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->firstOrFail();
+        $this->assertSame('90000.00', $invoice->package_price_snapshot);
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.pending_invoice.id', $invoice->id)
+            ->assertJsonPath('data.pending_invoice.payment_method', 'manual')
+            ->assertJsonPath('data.pending_invoice.provider', 'manual')
+            ->assertJsonPath('data.pending_invoice.resume.type', 'manual_payment')
+            ->assertJsonPath('data.pending_invoice.resume.available', true)
+            ->assertJsonPath('data.pending_invoice.resume.endpoint', '/api/v1/user/payment-config')
+            ->assertJsonPath('data.pending_invoice.manual_payment.account_number', '1234567890');
     }
 
-    public function test_active_user_can_downgrade_and_same_package_is_current(): void
+    public function test_active_user_cannot_downgrade_and_same_package_is_current(): void
     {
         [$starter, $pro] = $this->packages();
         $admin = $this->admin();
@@ -104,8 +123,10 @@ class UserPackageUpgradeTest extends TestCase
 
         $this->postJson('/api/v1/user/package-upgrade', [
             'package_id' => $starter->id,
-        ])->assertCreated()
-            ->assertJsonPath('success', true)
+        ])->assertUnprocessable()
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'PACKAGE_DOWNGRADE_NOT_ALLOWED')
+            ->assertJsonPath('message', 'Downgrade paket tidak tersedia.')
             ->assertJsonPath('package_before.id', $pro->id)
             ->assertJsonPath('package_after.id', $starter->id)
             ->assertJsonPath('action', 'downgrade');
@@ -113,6 +134,7 @@ class UserPackageUpgradeTest extends TestCase
         $this->postJson('/api/v1/user/package-upgrade', [
             'package_id' => $pro->id,
         ])->assertStatus(422)
+            ->assertJsonPath('code', 'PACKAGE_UPGRADE_NOT_REQUIRED')
             ->assertJsonPath('message', 'Paket sedang aktif.');
     }
 
@@ -214,7 +236,11 @@ class UserPackageUpgradeTest extends TestCase
             'package_id' => $pro->id,
         ])->assertCreated()
             ->assertJsonPath('payment_method', 'midtrans')
-            ->assertJsonPath('snap_token', 'snap-token-upgrade');
+            ->assertJsonPath('snap_token', 'snap-token-upgrade')
+            ->assertJsonPath('original_price', 150000)
+            ->assertJsonPath('discount_percentage', 40)
+            ->assertJsonPath('discount_amount', 60000)
+            ->assertJsonPath('amount', 90000);
 
         $orderId = $response->json('order_id');
         $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
@@ -319,7 +345,15 @@ class UserPackageUpgradeTest extends TestCase
             ->assertJsonPath('data.has_pending_invoice', true)
             ->assertJsonPath('data.payment_requirement', 'upgrade_payment')
             ->assertJsonPath('data.pending_invoice.id', $invoice->id)
-            ->assertJsonPath('data.pending_invoice.package.code', 'pro-custom');
+            ->assertJsonPath('data.pending_invoice.package.code', 'pro-custom')
+            ->assertJsonPath('data.pending_invoice.payment_method', 'midtrans')
+            ->assertJsonPath('data.pending_invoice.provider', 'midtrans')
+            ->assertJsonPath('data.pending_invoice.midtrans.order_id', $orderId)
+            ->assertJsonPath('data.pending_invoice.midtrans.snap_token', 'snap-token-expired-upgrade')
+            ->assertJsonPath('data.pending_invoice.resume.type', 'midtrans_snap')
+            ->assertJsonPath('data.pending_invoice.resume.available', true)
+            ->assertJsonPath('data.pending_invoice.resume.reuses_existing_order', true)
+            ->assertJsonPath('data.pending_invoice.resume.payload.invitation_id', $invoice->id);
 
         $this->postJson('/api/v1/midtrans/webhook', $this->midtransWebhookPayload($invoice, 'settlement'))
             ->assertOk();

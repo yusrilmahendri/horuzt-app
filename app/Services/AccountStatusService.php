@@ -4,7 +4,9 @@ namespace App\Services;
 
 use App\Models\Invitation;
 use App\Models\PaketUndangan;
+use App\Models\PaymentLog;
 use App\Models\User;
+use Carbon\Carbon;
 
 class AccountStatusService
 {
@@ -214,6 +216,13 @@ class AccountStatusService
         $packageCode = $invoice->paketUndangan?->code
             ?? $snapshot['code']
             ?? PaketUndangan::tierCode($snapshot['name_paket'] ?? $snapshot['jenis_paket'] ?? null);
+        $paymentMethod = $this->normalizePaymentMethod($invoice->payment_method);
+        $midtransTransaction = $paymentMethod === 'midtrans'
+            ? $this->activeMidtransTransactionFor($invoice)
+            : null;
+        $manualPayment = $paymentMethod === 'manual'
+            ? app(PaymentMethodResolver::class)->manualPaymentPayload()
+            : null;
 
         return [
             'id' => $invoice->id,
@@ -221,10 +230,18 @@ class AccountStatusService
             'kode_pemesanan' => $invoice->kode_pemesanan,
             'order_id' => $invoice->order_id,
             'payment_status' => $this->normalizePaymentStatus($invoice->payment_status ?? $invoice->status),
-            'payment_method' => $invoice->payment_method,
+            'payment_method' => $paymentMethod,
+            'provider' => $paymentMethod,
+            'payment_provider' => $paymentMethod,
+            'is_payable' => $this->normalizePaymentStatus($invoice->payment_status ?? $invoice->status) === 'pending',
             'amount' => $invoice->package_price_snapshot,
+            ...$this->pricingResponseFields($invoice),
+            'pricing' => $this->pricingPayload($invoice),
             'invoice_type' => $snapshot['invoice_type'] ?? null,
             'change_type' => $snapshot['change_type'] ?? null,
+            'resume' => $this->resumePayload($invoice, $paymentMethod, $midtransTransaction, $manualPayment),
+            'midtrans' => $midtransTransaction,
+            'manual_payment' => $manualPayment,
             'package' => $this->packagePayload(
                 $invoice->paketUndangan,
                 $packageCode,
@@ -233,6 +250,120 @@ class AccountStatusService
                     $snapshot['name_paket'] ?? $invoice->paketUndangan?->name_paket
                 )
             ),
+        ];
+    }
+
+    private function normalizePaymentMethod(?string $method): ?string
+    {
+        if ($method === null || trim($method) === '') {
+            return null;
+        }
+
+        $normalized = strtolower(trim($method));
+
+        return match (true) {
+            str_contains($normalized, 'midtrans') => 'midtrans',
+            str_contains($normalized, 'manual') => 'manual',
+            default => $normalized,
+        };
+    }
+
+    private function resumePayload(
+        Invitation $invoice,
+        ?string $paymentMethod,
+        ?array $midtransTransaction,
+        ?array $manualPayment
+    ): array {
+        return match ($paymentMethod) {
+            'midtrans' => [
+                'type' => 'midtrans_snap',
+                'available' => $midtransTransaction !== null,
+                'endpoint' => '/api/v1/midtrans/create-snap-token',
+                'method' => 'POST',
+                'payload' => [
+                    'invitation_id' => $invoice->id,
+                    'amount' => (float) $invoice->package_price_snapshot,
+                ],
+                'reuses_existing_order' => $midtransTransaction !== null,
+            ],
+            'manual' => [
+                'type' => 'manual_payment',
+                'available' => $manualPayment !== null,
+                'endpoint' => '/api/v1/user/payment-config',
+                'method' => 'GET',
+            ],
+            null => [
+                'type' => 'select_payment_method',
+                'available' => false,
+                'endpoint' => '/api/v1/user/payment-config',
+                'method' => 'GET',
+            ],
+            default => [
+                'type' => 'external_redirect',
+                'available' => false,
+                'provider' => $paymentMethod,
+            ],
+        };
+    }
+
+    private function pricingPayload(Invitation $invoice): array
+    {
+        $snapshot = is_array($invoice->package_features_snapshot)
+            ? $invoice->package_features_snapshot
+            : [];
+
+        return app(PackageUpgradePricingService::class)
+            ->fromInvoiceSnapshot($snapshot, $invoice->package_price_snapshot);
+    }
+
+    private function pricingResponseFields(Invitation $invoice): array
+    {
+        $pricing = $this->pricingPayload($invoice);
+
+        return [
+            'original_price' => $pricing['original_price'],
+            'discount_percentage' => $pricing['discount_percentage'],
+            'discount_amount' => $pricing['discount_amount'],
+            'amount' => $pricing['amount'],
+        ];
+    }
+
+    private function activeMidtransTransactionFor(Invitation $invoice): ?array
+    {
+        if (! $invoice->order_id) {
+            return null;
+        }
+
+        $log = PaymentLog::query()
+            ->where('invitation_id', $invoice->id)
+            ->where('order_id', $invoice->order_id)
+            ->where('event_type', 'token_request')
+            ->latest('id')
+            ->first();
+
+        if (! $log || in_array(strtolower((string) $log->transaction_status), ['capture', 'settlement', 'deny', 'cancel', 'expire', 'refund'], true)) {
+            return null;
+        }
+
+        $payload = json_decode((string) $log->response_payload, true);
+        $snapToken = is_array($payload) ? trim((string) ($payload['snap_token'] ?? '')) : '';
+        if ($snapToken === '') {
+            return null;
+        }
+
+        $expiresAt = ! empty($payload['expires_at'])
+            ? Carbon::parse($payload['expires_at'])
+            : $log->created_at->copy()->addHours((int) config('midtrans.token_expiry_hours', 24));
+
+        if ($expiresAt->isPast()) {
+            return null;
+        }
+
+        return [
+            'order_id' => $log->order_id,
+            'snap_token' => $snapToken,
+            'redirect_url' => null,
+            'expires_at' => $expiresAt->toIso8601String(),
         ];
     }
 

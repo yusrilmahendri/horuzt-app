@@ -113,14 +113,24 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertJsonPath('data.target_package', 'diamond')
             ->assertJsonPath('data.current_package.code', 'ruby')
             ->assertJsonPath('data.theme_slug', 'velvet-mauve')
+            ->assertJsonPath('data.original_price', 300000)
+            ->assertJsonPath('data.discount_percentage', 40)
+            ->assertJsonPath('data.discount_amount', 120000)
+            ->assertJsonPath('data.amount', 180000)
             ->assertJsonPath('data.redirect_url', '/dashboard/payment-pending');
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
         $invoice = Invitation::where('user_id', $user->id)
             ->where('payment_status', 'pending')
             ->firstOrFail();
+        $this->assertSame('180000.00', $invoice->package_price_snapshot);
         $this->assertMatchesRegularExpression('/^UPG-\d{14}-\d+-\d+$/', $invoice->kode_pemesanan);
         $this->assertFalse(str_starts_with($invoice->kode_pemesanan, '#'));
+        $this->assertSame('180000.00', $invoice->package_price_snapshot);
+        $this->assertEquals(300000.0, $invoice->package_features_snapshot['original_price']);
+        $this->assertSame(40, $invoice->package_features_snapshot['discount_percentage']);
+        $this->assertEquals(120000.0, $invoice->package_features_snapshot['discount_amount']);
+        $this->assertEquals(180000.0, $invoice->package_features_snapshot['payable_amount']);
         $this->assertDatabaseHas('invitations', [
             'user_id' => $user->id,
             'payment_status' => 'pending',
@@ -140,7 +150,11 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.target_package', 'sapphire')
             ->assertJsonPath('data.payment_status', 'pending')
-            ->assertJsonPath('data.theme_slug', 'blue-sapphire');
+            ->assertJsonPath('data.theme_slug', 'blue-sapphire')
+            ->assertJsonPath('data.original_price', 200000)
+            ->assertJsonPath('data.discount_percentage', 40)
+            ->assertJsonPath('data.discount_amount', 80000)
+            ->assertJsonPath('data.amount', 120000);
 
         $this->assertDatabaseHas('invitations', [
             'user_id' => $user->id,
@@ -161,7 +175,11 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertCreated()
             ->assertJsonPath('data.target_package', 'diamond')
             ->assertJsonPath('data.payment_status', 'pending')
-            ->assertJsonPath('data.current_package.code', 'sapphire');
+            ->assertJsonPath('data.current_package.code', 'sapphire')
+            ->assertJsonPath('data.original_price', 300000)
+            ->assertJsonPath('data.discount_percentage', 40)
+            ->assertJsonPath('data.discount_amount', 120000)
+            ->assertJsonPath('data.amount', 180000);
     }
 
     public function test_user_diamond_tidak_dibuatkan_invoice_untuk_tema_diamond(): void
@@ -174,9 +192,91 @@ class ThemeUpgradeModuleTest extends TestCase
             'theme_slug' => 'velvet-mauve',
         ])
             ->assertUnprocessable()
+            ->assertJsonPath('code', 'PACKAGE_UPGRADE_NOT_REQUIRED')
             ->assertJsonPath('message', 'Paket Anda sudah mencakup tema ini.');
 
         $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
+    }
+
+    public function test_user_sapphire_tidak_bisa_downgrade_ke_ruby(): void
+    {
+        $user = $this->createUserWithPackage('sapphire');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'ruby',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'PACKAGE_DOWNGRADE_NOT_ALLOWED')
+            ->assertJsonPath('message', 'Downgrade paket tidak tersedia.');
+
+        $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
+    }
+
+    public function test_user_diamond_tidak_bisa_downgrade_ke_sapphire_atau_ruby(): void
+    {
+        $user = $this->createUserWithPackage('diamond');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'sapphire',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'PACKAGE_DOWNGRADE_NOT_ALLOWED')
+            ->assertJsonPath('message', 'Downgrade paket tidak tersedia.');
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'ruby',
+        ])
+            ->assertUnprocessable()
+            ->assertJsonPath('code', 'PACKAGE_DOWNGRADE_NOT_ALLOWED')
+            ->assertJsonPath('message', 'Downgrade paket tidak tersedia.');
+
+        $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
+    }
+
+    public function test_midtrans_snap_token_upgrade_memakai_amount_diskon_dari_invoice_snapshot(): void
+    {
+        config([
+            'midtrans.server_key' => 'server-key-test',
+            'midtrans.client_key' => 'client-key-test',
+        ]);
+
+        $user = $this->createUserWithPackage('ruby');
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/packages/upgrade', [
+            'target_package' => 'diamond',
+            'theme_slug' => 'velvet-mauve',
+        ])->assertCreated();
+
+        $invoice = Invitation::where('user_id', $user->id)
+            ->where('payment_status', 'pending')
+            ->firstOrFail();
+        $this->assertSame('180000.00', $invoice->package_price_snapshot);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->with(Mockery::on(fn (array $params): bool => (float) ($params['transaction_details']['gross_amount'] ?? 0) === 180000.0
+                && (float) ($params['item_details'][0]['price'] ?? 0) === 180000.0))
+            ->andReturn('snap-token-discounted-upgrade');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invitation_id' => $invoice->id,
+            'amount' => 300000,
+        ])
+            ->assertUnprocessable()
+            ->assertJsonValidationErrors('amount');
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invitation_id' => $invoice->id,
+            'amount' => 180000,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('data.gross_amount', 180000)
+            ->assertJsonPath('data.snap_token', 'snap-token-discounted-upgrade');
     }
 
     public function test_invoice_upgrade_pending_target_sama_tidak_duplicate(): void
@@ -190,6 +290,9 @@ class ThemeUpgradeModuleTest extends TestCase
         ])
             ->assertCreated()
             ->json('data.invoice_id');
+        $invoice = Invitation::findOrFail($first);
+        $invoiceCode = $invoice->kode_pemesanan;
+        $amount = $invoice->package_price_snapshot;
 
         $this->postJson('/api/v1/packages/upgrade', [
             'target_package' => 'diamond',
@@ -197,9 +300,14 @@ class ThemeUpgradeModuleTest extends TestCase
         ])
             ->assertOk()
             ->assertJsonPath('data.invoice_id', $first)
-            ->assertJsonPath('data.payment_status', 'pending');
+            ->assertJsonPath('data.invoice_code', $invoiceCode)
+            ->assertJsonPath('data.payment_status', 'pending')
+            ->assertJsonPath('data.amount', 180000);
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
+        $invoice->refresh();
+        $this->assertSame($invoiceCode, $invoice->kode_pemesanan);
+        $this->assertSame($amount, $invoice->package_price_snapshot);
     }
 
     public function test_legacy_package_upgrade_midtrans_is_idempotent_and_uses_safe_order_id(): void
@@ -219,7 +327,9 @@ class ThemeUpgradeModuleTest extends TestCase
                 $orderId = (string) ($params['transaction_details']['order_id'] ?? '');
 
                 return preg_match('/^UPG-\d{14}-\d+-\d+$/', $orderId) === 1
-                    && ! str_contains($orderId, '#');
+                    && ! str_contains($orderId, '#')
+                    && (float) ($params['transaction_details']['gross_amount'] ?? 0) === 180000.0
+                    && (float) ($params['item_details'][0]['price'] ?? 0) === 180000.0;
             }))
             ->andReturn('upgrade-snap-token');
         $this->app->instance(MidtransService::class, $midtrans);
@@ -231,6 +341,10 @@ class ThemeUpgradeModuleTest extends TestCase
         ])
             ->assertCreated()
             ->assertJsonPath('snap_token', 'upgrade-snap-token')
+            ->assertJsonPath('original_price', 300000)
+            ->assertJsonPath('discount_percentage', 40)
+            ->assertJsonPath('discount_amount', 120000)
+            ->assertJsonPath('amount', 180000)
             ->assertJsonPath('reused', false);
 
         $orderId = $first->json('order_id');
@@ -241,6 +355,7 @@ class ThemeUpgradeModuleTest extends TestCase
             ->assertOk()
             ->assertJsonPath('snap_token', 'upgrade-snap-token')
             ->assertJsonPath('order_id', $orderId)
+            ->assertJsonPath('amount', 180000)
             ->assertJsonPath('reused', true);
 
         $this->assertSame(2, Invitation::where('user_id', $user->id)->count());
@@ -456,6 +571,7 @@ class ThemeUpgradeModuleTest extends TestCase
         Role::firstOrCreate(['name' => 'user', 'guard_name' => 'web']);
 
         $user = User::factory()->create([
+            'name' => 'Sena User',
             'email' => fake()->unique()->safeEmail(),
             'email_verified_at' => now(),
             'verification_channel' => 'email',

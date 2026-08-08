@@ -11,6 +11,7 @@ use App\Models\PaymentLog;
 use App\Services\AccountStatusService;
 use App\Services\MidtransService;
 use App\Services\PackageThemeAccessService;
+use App\Services\PackageUpgradePricingService;
 use App\Services\PaymentMethodResolver;
 use Carbon\Carbon;
 use Illuminate\Http\JsonResponse;
@@ -25,7 +26,8 @@ class PackageUpgradeController extends Controller
     public function __construct(
         private PackageThemeAccessService $themeAccess,
         private AccountStatusService $accountStatus,
-        private PaymentMethodResolver $paymentMethodResolver
+        private PaymentMethodResolver $paymentMethodResolver,
+        private PackageUpgradePricingService $upgradePricing
     )
     {
         $this->middleware('auth:sanctum');
@@ -364,8 +366,15 @@ class PackageUpgradeController extends Controller
         $packageBefore = $currentPackage ?? $lastPackage;
 
         if (! $canSelect) {
+            $errorCode = match ($action) {
+                'downgrade' => 'PACKAGE_DOWNGRADE_NOT_ALLOWED',
+                'current' => 'PACKAGE_UPGRADE_NOT_REQUIRED',
+                default => 'PACKAGE_SELECTION_NOT_ALLOWED',
+            };
+
             return response()->json([
                 'success' => false,
+                'code' => $errorCode,
                 'message' => $disabledReason ?? 'Paket sedang aktif.',
                 'package_before' => $packageBefore ? $this->publicPackagePayload($packageBefore) : null,
                 'package_after' => $this->publicPackagePayload($targetPackage),
@@ -413,6 +422,7 @@ class PackageUpgradeController extends Controller
                         'subscription_status' => $subscriptionStatus,
                         'action' => $action,
                         'reused' => (bool) $pendingInvoice,
+                        ...$this->pricingResponseFields($invoice),
                     ]
                 ), $pendingInvoice ? 200 : 201);
             });
@@ -444,6 +454,7 @@ class PackageUpgradeController extends Controller
                             'subscription_status' => $subscriptionStatus,
                             'action' => $action,
                             'reused' => true,
+                            ...$this->pricingResponseFields($pendingInvoice),
                         ]
                     ), 200);
                 }
@@ -451,7 +462,7 @@ class PackageUpgradeController extends Controller
                 $invoice = $pendingInvoice
                     ?: $this->createPackageUpgradeInvoice($user, $packageBefore, $targetPackage, $paymentMethod, $action);
                 $orderId = $invoice->order_id ?: $this->midtransSafeOrderId($invoice->kode_pemesanan);
-                $grossAmount = (float) $targetPackage->price;
+                $grossAmount = (float) $invoice->package_price_snapshot;
                 $snapToken = $this->createMidtransSnapToken($user, $invoice, $targetPackage, $orderId, $grossAmount);
                 $expiresAt = now()->addHours((int) config('midtrans.token_expiry_hours', 24));
 
@@ -493,6 +504,7 @@ class PackageUpgradeController extends Controller
                         'subscription_status' => $subscriptionStatus,
                         'action' => $action,
                         'reused' => (bool) $pendingInvoice,
+                        ...$this->pricingResponseFields($invoice),
                     ]
                 ), $pendingInvoice ? 200 : 201);
             });
@@ -569,8 +581,13 @@ class PackageUpgradeController extends Controller
             }
 
             if (! $this->themeAccess->isHigherPackage($newPackage, $currentPackage)) {
+                $isDowngrade = $this->themeAccess->packageRank($newPackage) < $this->themeAccess->packageRank($currentPackage);
+
                 return response()->json([
-                    'message' => $theme ? 'Paket Anda sudah mencakup tema ini.' : 'Paket tujuan harus lebih tinggi dari paket aktif saat ini.',
+                    'code' => $isDowngrade ? 'PACKAGE_DOWNGRADE_NOT_ALLOWED' : 'PACKAGE_UPGRADE_NOT_REQUIRED',
+                    'message' => $isDowngrade
+                        ? 'Downgrade paket tidak tersedia.'
+                        : ($theme ? 'Paket Anda sudah mencakup tema ini.' : 'Paket tujuan harus lebih tinggi dari paket aktif saat ini.'),
                     'data' => [
                         'current_package' => $this->packagePayload($currentPackage),
                         'target_package' => $this->packagePayload($newPackage),
@@ -599,6 +616,7 @@ class PackageUpgradeController extends Controller
             }
 
             $newInvoiceNumber = $this->newPackageUpgradeOrderId($user, $newPackage);
+            $pricing = $this->upgradePricing->calculate($newPackage, 'upgrade');
 
             $createData = [
                 'user_id' => $user->id,
@@ -608,10 +626,14 @@ class PackageUpgradeController extends Controller
                 'payment_status' => 'pending',
                 'domain_expires_at' => null,
                 'payment_confirmed_at' => null,
-                'package_price_snapshot' => $newPackage->price,
+                'package_price_snapshot' => $pricing['payable_amount'],
                 'package_duration_snapshot' => $newPackage->masa_aktif,
                 'package_features_snapshot' => [
                     'invoice_type' => 'package_upgrade',
+                    'original_price' => $pricing['original_price'],
+                    'discount_percentage' => $pricing['discount_percentage'],
+                    'discount_amount' => $pricing['discount_amount'],
+                    'payable_amount' => $pricing['payable_amount'],
                     'code' => $newPackage->code,
                     'jenis_paket' => PaketUndangan::jenisPaketFromCode($newPackage->code, $newPackage->jenis_paket),
                     'name_paket' => PaketUndangan::displayLabelFromCode($newPackage->code, $newPackage->name_paket),
@@ -722,6 +744,8 @@ class PackageUpgradeController extends Controller
             'theme_slug' => $invoice->package_features_snapshot['theme_slug'] ?? null,
             'payment_status' => $invoice->payment_status,
             'amount' => (float) ($invoice->package_price_snapshot ?? 0),
+            ...$this->pricingResponseFields($invoice),
+            'pricing' => $this->pricingPayload($invoice),
             'redirect_url' => '/dashboard/payment-pending',
             'invoice' => $this->invoicePayload($invoice),
         ];
@@ -810,7 +834,7 @@ class PackageUpgradeController extends Controller
         }
 
         if ($order < $currentOrder) {
-            return [true, 'downgrade', null];
+            return [false, 'downgrade', 'Downgrade paket tidak tersedia.'];
         }
 
         return [true, 'upgrade', null];
@@ -927,6 +951,7 @@ class PackageUpgradeController extends Controller
     ): Invitation {
         $baseInvitation = $this->activeSubscriptionFor($user)
             ?? $this->lastPaidSubscriptionFor($user);
+        $pricing = $this->upgradePricing->calculate($targetPackage, $changeType);
 
         return Invitation::create([
             'user_id' => $user->id,
@@ -937,13 +962,17 @@ class PackageUpgradeController extends Controller
             'payment_method' => $paymentMethod,
             'domain_expires_at' => null,
             'payment_confirmed_at' => null,
-            'package_price_snapshot' => $targetPackage->price,
+            'package_price_snapshot' => $pricing['payable_amount'],
             'package_duration_snapshot' => $targetPackage->masa_aktif,
             'package_features_snapshot' => [
                 'invoice_type' => 'package_upgrade',
                 'package_id' => $targetPackage->id,
                 'target_package_id' => $targetPackage->id,
                 'change_type' => $changeType,
+                'original_price' => $pricing['original_price'],
+                'discount_percentage' => $pricing['discount_percentage'],
+                'discount_amount' => $pricing['discount_amount'],
+                'payable_amount' => $pricing['payable_amount'],
                 'package_slug' => $this->packageSlug($targetPackage),
                 'name_paket' => $this->packageName($targetPackage),
                 'features' => $this->packageFeatures($targetPackage),
@@ -1061,6 +1090,7 @@ class PackageUpgradeController extends Controller
             'status' => $invoice->payment_status,
             'payment_status' => $invoice->payment_status,
             'amount' => $invoice->package_price_snapshot,
+            'pricing' => $this->pricingPayload($invoice),
             'package_id' => $invoice->paket_undangan_id,
             'package_code' => $invoice->paketUndangan?->code,
             'package_name' => PaketUndangan::displayLabelFromCode(
@@ -1068,6 +1098,27 @@ class PackageUpgradeController extends Controller
                 $invoice->paketUndangan?->name_paket
             ),
             'created_at' => $invoice->created_at,
+        ];
+    }
+
+    private function pricingPayload(Invitation $invoice): array
+    {
+        $snapshot = is_array($invoice->package_features_snapshot)
+            ? $invoice->package_features_snapshot
+            : [];
+
+        return $this->upgradePricing->fromInvoiceSnapshot($snapshot, $invoice->package_price_snapshot);
+    }
+
+    private function pricingResponseFields(Invitation $invoice): array
+    {
+        $pricing = $this->pricingPayload($invoice);
+
+        return [
+            'original_price' => $pricing['original_price'],
+            'discount_percentage' => $pricing['discount_percentage'],
+            'discount_amount' => $pricing['discount_amount'],
+            'amount' => $pricing['amount'],
         ];
     }
 }
