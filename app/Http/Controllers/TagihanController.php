@@ -5,7 +5,6 @@ namespace App\Http\Controllers;
 use App\Models\Invitation;
 use App\Models\Mempelai;
 use App\Models\PaymentLog;
-use App\Models\Setting;
 use App\Models\User;
 use App\Services\PaymentMethodResolver;
 use Illuminate\Http\JsonResponse;
@@ -63,9 +62,7 @@ class TagihanController extends Controller
 
     /**
      * Create a new invoice (tagihan) when user confirms manual payment.
-     * Sets payment_status to 'pending' and domain_expires_at to the admin-configured
-     * trial_masa_aktif value from the settings table (defaults to 3 days if not set).
-     * This gives pending users a preview window while awaiting admin payment confirmation.
+     * Sets payment_status to pending without granting active package time.
      */
     public function store(Request $request): JsonResponse
     {
@@ -134,12 +131,6 @@ class TagihanController extends Controller
                 ], 409);
             }
 
-            // Read trial duration from admin-configurable settings, fallback to 3 days
-            $trialConfig = Setting::whereNotNull('trial_masa_aktif')
-                ->where('trial_masa_aktif', '>', 0)
-                ->first();
-            $trialDays = $trialConfig ? (int) $trialConfig->trial_masa_aktif : 3;
-
             // Check if invoice already exists for this invitation (pending)
             if ($invitation->payment_status === 'pending') {
                 return response()->json([
@@ -151,7 +142,6 @@ class TagihanController extends Controller
                         'payment_method' => PaymentMethodResolver::MANUAL,
                         'status' => 'pending',
                         'domain_expires_at' => $invitation->domain_expires_at?->format('Y-m-d H:i:s'),
-                        'trial_days' => $trialDays,
                         'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
                     ]
                 ], 200);
@@ -161,7 +151,7 @@ class TagihanController extends Controller
             $invitation->update([
                 'payment_status' => 'pending',
                 'payment_method' => PaymentMethodResolver::MANUAL,
-                'domain_expires_at' => now()->addDays($trialDays),
+                'domain_expires_at' => null,
             ]);
 
             // Update mempelai to Menunggu Konfirmasi
@@ -181,8 +171,7 @@ class TagihanController extends Controller
                     'total' => $invitation->package_price_snapshot,
                     'payment_method' => PaymentMethodResolver::MANUAL,
                     'status' => 'pending',
-                    'domain_expires_at' => $invitation->domain_expires_at->format('Y-m-d H:i:s'),
-                    'trial_days' => $trialDays,
+                    'domain_expires_at' => $invitation->fresh()->domain_expires_at?->format('Y-m-d H:i:s'),
                     'manual_payment' => $this->paymentMethodResolver->manualPaymentPayload(),
                 ]
             ], 201);

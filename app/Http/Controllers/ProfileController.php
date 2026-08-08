@@ -271,6 +271,14 @@ class ProfileController extends Controller
         }
 
         $invitation = $user->invitationOne;
+        $paymentStatus = strtolower((string) $invitation->payment_status);
+        $isPaid = in_array($paymentStatus, ['paid', 'confirmed'], true)
+            || $invitation->payment_confirmed_at !== null;
+
+        if (! $isPaid || ! $invitation->isDomainActive()) {
+            return null;
+        }
+
         $package = $invitation->paketUndangan;
 
         // Use code as source of truth for package naming.
@@ -323,12 +331,13 @@ class ProfileController extends Controller
 
         $setting = $user->settingOne;
         $invitation = $user->invitationOne;
+        $isActive = $invitation->isDomainActive();
 
         return [
             'domain' => $setting->domain,
-            'is_active' => $invitation->isDomainActive(),
-            'expires_at' => $invitation->domain_expires_at,
-            'days_until_expiry' => $invitation->getDaysUntilExpiry(),
+            'is_active' => $isActive,
+            'expires_at' => $isActive ? $invitation->domain_expires_at : null,
+            'days_until_expiry' => $isActive ? $invitation->getDaysUntilExpiry() : null,
             'payment_confirmed_at' => $invitation->payment_confirmed_at,
         ];
     }

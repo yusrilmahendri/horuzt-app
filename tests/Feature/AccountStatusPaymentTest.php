@@ -85,9 +85,16 @@ class AccountStatusPaymentTest extends TestCase
             ->assertJsonPath('data.pending_invoice.invoice_code', '#INV-PENDING')
             ->assertJsonPath('data.pending_invoice.payment_status', 'pending')
             ->assertJsonPath('data.pending_invoice.package.code', 'ruby')
+            ->assertJsonPath('data.current_package', null)
+            ->assertJsonPath('data.active_package', null)
+            ->assertJsonPath('data.selected_package.code', 'ruby')
+            ->assertJsonPath('data.active_until', null)
+            ->assertJsonPath('data.remaining_days', null)
             ->assertJsonPath('data.kode_pemesanan', '#INV-PENDING')
-            ->assertJsonPath('data.package_name', 'Paket Ruby')
-            ->assertJsonPath('data.package_code', 'ruby')
+            ->assertJsonPath('data.package_name', null)
+            ->assertJsonPath('data.package_code', null)
+            ->assertJsonPath('data.selected_package_name', 'Paket Ruby')
+            ->assertJsonPath('data.selected_package_code', 'ruby')
             ->assertJsonPath('data.feature_access.input_undangan', false)
             ->assertJsonPath('data.is_payment_confirmed', false);
     }

@@ -4,6 +4,7 @@ namespace Tests\Feature;
 
 use App\Contracts\WhatsAppGateway;
 use App\Models\AccountVerificationToken;
+use App\Models\Invitation;
 use App\Models\PaketUndangan;
 use App\Models\User;
 use App\Notifications\CustomResetPasswordNotification;
@@ -105,6 +106,69 @@ class AccountVerificationTest extends TestCase
         ])->assertOk();
 
         $this->assertSame('Nama Paket', $user->fresh()->name);
+    }
+
+    public function test_diamond_selection_before_payment_is_not_active_after_email_verification(): void
+    {
+        $this->postJson('/api/v1/register', [
+            'name' => 'Pending Diamond',
+            'email' => 'pending-diamond@example.test',
+            'password' => 'password123',
+            'password_confirmation' => 'password123',
+            'phone' => '081234567890',
+        ])->assertCreated();
+
+        $user = User::whereEmail('pending-diamond@example.test')->firstOrFail();
+        $diamond = PaketUndangan::create([
+            'code' => 'diamond',
+            'jenis_paket' => 'Paket Diamond',
+            'name_paket' => 'Paket Diamond',
+            'price' => 300000,
+            'masa_aktif' => 30,
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/one-step', [
+            'email' => 'pending-diamond@example.test',
+            'password' => 'password123',
+            'phone' => '081234567890',
+            'paket_undangan_id' => $diamond->id,
+            'domain' => 'pending-diamond',
+        ])->assertOk();
+
+        $invitation = Invitation::where('user_id', $user->id)->firstOrFail();
+        $this->assertSame('pending', $invitation->payment_status);
+        $this->assertFalse($invitation->is_trial);
+        $this->assertNull($invitation->domain_expires_at);
+        $this->assertFalse($invitation->isDomainActive());
+
+        $this->token($user, '123456');
+        $this->postJson('/api/v1/auth/verification/verify', ['channel' => 'email', 'code' => '123456'])
+            ->assertOk()
+            ->assertJsonPath('data.is_verified', true)
+            ->assertJsonPath('data.account_status', 'pending_payment')
+            ->assertJsonPath('data.next_step', 'payment-pending');
+
+        $this->getJson('/api/profile/status')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'pending_payment')
+            ->assertJsonPath('data.subscription_status', 'pending_payment')
+            ->assertJsonPath('data.payment_requirement', 'initial_payment')
+            ->assertJsonPath('data.current_package', null)
+            ->assertJsonPath('data.active_package', null)
+            ->assertJsonPath('data.selected_package.code', 'diamond')
+            ->assertJsonPath('data.pending_invoice.package.code', 'diamond')
+            ->assertJsonPath('data.active_until', null)
+            ->assertJsonPath('data.remaining_days', null)
+            ->assertJsonPath('data.feature_access.input_undangan', false);
+
+        $this->getJson('/api/profile')
+            ->assertOk()
+            ->assertJsonPath('data.account_status', 'pending_payment')
+            ->assertJsonPath('data.package_info', null)
+            ->assertJsonPath('data.domain_info.is_active', false)
+            ->assertJsonPath('data.domain_info.expires_at', null);
     }
 
     public function test_email_code_is_sent_without_being_exposed(): void

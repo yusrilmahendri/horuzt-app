@@ -35,13 +35,13 @@ class AccountStatusService
         $hasPendingInvoice = $pendingInvoice !== null && $pendingPaymentStatus === 'pending';
         $selectedInvoiceIsPending = $hasInvoice && $paymentStatus === 'pending';
         $activeUntil = $invitation?->domain_expires_at;
+        $hasActiveEntitlement = $invitation !== null
+            && (in_array($paymentStatus, ['paid', 'confirmed'], true) || $invitation->payment_confirmed_at !== null);
         $isExpired = $hasInvoice && (
             $paymentStatus === 'expired'
-            || ($activeUntil ? now()->greaterThan($activeUntil) : false)
+            || ($hasActiveEntitlement && $activeUntil ? now()->greaterThan($activeUntil) : false)
         );
-        $isPaymentConfirmed = $invitation
-            ? (in_array($paymentStatus, ['paid', 'confirmed'], true) || $invitation->payment_confirmed_at !== null)
-            : false;
+        $isPaymentConfirmed = $hasActiveEntitlement;
 
         $accountStatus = match (true) {
             ! $isVerified => self::STATUS_UNVERIFIED,
@@ -62,6 +62,10 @@ class AccountStatusService
         );
 
         $canUseFeatures = $accountStatus === self::STATUS_ACTIVE;
+        $currentPackage = $canUseFeatures
+            ? $this->packagePayload($package, $packageCode, $packageName)
+            : null;
+        $selectedPackage = $this->packagePayload($package, $packageCode, $packageName);
 
         return [
             'name' => $user->name,
@@ -76,14 +80,20 @@ class AccountStatusService
             'kode_pemesanan' => $invitation?->kode_pemesanan ?? $user->kode_pemesanan,
             'payment_requirement' => $this->paymentRequirement($accountStatus, $pendingInvoice),
             'pending_invoice' => $this->invoicePayload($pendingInvoice),
-            'current_package' => $this->packagePayload($package, $packageCode, $packageName),
-            'package_name' => $packageName,
-            'package_code' => $packageCode,
-            'active_until' => $activeUntil,
-            'active_until_formatted' => $this->formatDate($activeUntil),
-            'expired_at_formatted' => $this->formatDate($activeUntil),
-            'tanggal_expired_formatted' => $this->formatDate($activeUntil),
-            'remaining_days' => $activeUntil ? max(0, now()->diffInDays($activeUntil, false)) : null,
+            'payment_options' => $this->paymentOptionsPayload($accountStatus, $pendingInvoice),
+            'current_package' => $currentPackage,
+            'active_package' => $currentPackage,
+            'selected_package' => $canUseFeatures ? null : $selectedPackage,
+            'target_package' => $canUseFeatures ? null : $selectedPackage,
+            'package_name' => $canUseFeatures ? $packageName : null,
+            'package_code' => $canUseFeatures ? $packageCode : null,
+            'selected_package_name' => $canUseFeatures ? null : $packageName,
+            'selected_package_code' => $canUseFeatures ? null : $packageCode,
+            'active_until' => $canUseFeatures ? $activeUntil : null,
+            'active_until_formatted' => $canUseFeatures ? $this->formatDate($activeUntil) : null,
+            'expired_at_formatted' => $canUseFeatures ? $this->formatDate($activeUntil) : null,
+            'tanggal_expired_formatted' => $canUseFeatures ? $this->formatDate($activeUntil) : null,
+            'remaining_days' => $canUseFeatures && $activeUntil ? max(0, now()->diffInDays($activeUntil, false)) : null,
             'is_payment_confirmed' => $isPaymentConfirmed,
             'is_expired' => $isExpired,
             'is_profile_complete' => $isProfileComplete,
@@ -242,6 +252,7 @@ class AccountStatusService
             'resume' => $this->resumePayload($invoice, $paymentMethod, $midtransTransaction, $manualPayment),
             'midtrans' => $midtransTransaction,
             'manual_payment' => $manualPayment,
+            'payment_options' => $paymentMethod ? null : app(PaymentMethodResolver::class)->activePayload(),
             'package' => $this->packagePayload(
                 $invoice->paketUndangan,
                 $packageCode,
@@ -251,6 +262,19 @@ class AccountStatusService
                 )
             ),
         ];
+    }
+
+    private function paymentOptionsPayload(string $accountStatus, ?Invitation $pendingInvoice): ?array
+    {
+        if (! in_array($accountStatus, [self::STATUS_PAYMENT_SELECTION, self::STATUS_PENDING_PAYMENT], true)) {
+            return null;
+        }
+
+        if ($pendingInvoice && $this->normalizePaymentMethod($pendingInvoice->payment_method)) {
+            return null;
+        }
+
+        return app(PaymentMethodResolver::class)->activePayload();
     }
 
     private function normalizePaymentMethod(?string $method): ?string

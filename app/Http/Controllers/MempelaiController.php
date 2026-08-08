@@ -279,8 +279,11 @@ class MempelaiController extends Controller
                 $masaAktif = $invoice->package_duration_snapshot
                     ?? ($invoice->paketUndangan->masa_aktif ?? 30);
                 $activeDays = (int) $masaAktif;
-                $domainExpiresAt = ($invoice->domain_expires_at && $invoice->domain_expires_at->isFuture())
-                    ? $invoice->domain_expires_at
+                $snapshot = is_array($invoice->package_features_snapshot)
+                    ? $invoice->package_features_snapshot
+                    : [];
+                $domainExpiresAt = isset($snapshot['upgrade_initiated_at']) && $invoice->domain_expires_at && $invoice->domain_expires_at->isFuture()
+                    ? $invoice->domain_expires_at->copy()->addDays($activeDays)
                     : $paymentConfirmedAt->copy()->addDays($activeDays);
 
                 // Update Mempelai payment status
