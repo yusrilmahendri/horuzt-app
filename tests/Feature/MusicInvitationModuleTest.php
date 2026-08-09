@@ -71,6 +71,122 @@ class MusicInvitationModuleTest extends TestCase
             ->assertJsonPath('resolved_music_url', $selected->url);
     }
 
+    public function test_music_catalog_defaults_to_first_page_with_ten_items(): void
+    {
+        $tracks = $this->tracks(15);
+
+        $payload = $this->getJson('/api/music/tracks')
+            ->assertOk()
+            ->assertJsonCount(10, 'data')
+            ->assertJsonCount(10, 'catalog')
+            ->assertJsonCount(10, 'catalog_sections.admin_catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.total', 15)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 10)
+            ->json();
+
+        $this->assertSame($tracks[0]->id, $payload['data'][0]['id']);
+        $this->assertSame($tracks[9]->id, $payload['data'][9]['id']);
+    }
+
+    public function test_music_catalog_page_two_returns_next_items(): void
+    {
+        $tracks = $this->tracks(15);
+
+        $payload = $this->getJson('/api/music/tracks?page=2&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(5, 'data')
+            ->assertJsonPath('meta.current_page', 2)
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.total', 15)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.from', 11)
+            ->assertJsonPath('meta.to', 15)
+            ->json();
+
+        $this->assertSame($tracks[10]->id, $payload['data'][0]['id']);
+        $this->assertSame($tracks[14]->id, $payload['data'][4]['id']);
+    }
+
+    public function test_music_catalog_allows_twenty_items_per_page(): void
+    {
+        $this->tracks(25);
+
+        $this->getJson('/api/music/tracks?per_page=20')
+            ->assertOk()
+            ->assertJsonCount(20, 'data')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 20)
+            ->assertJsonPath('meta.total', 25)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 20);
+    }
+
+    public function test_music_catalog_sanitizes_unsupported_per_page(): void
+    {
+        $this->tracks(60);
+
+        $this->getJson('/api/music/tracks?per_page=999')
+            ->assertOk()
+            ->assertJsonCount(10, 'data')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.total', 60)
+            ->assertJsonPath('meta.last_page', 6);
+    }
+
+    public function test_music_catalog_last_page_meta_is_correct(): void
+    {
+        $tracks = $this->tracks(37);
+
+        $payload = $this->getJson('/api/music/tracks?page=4&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(7, 'data')
+            ->assertJsonPath('meta.current_page', 4)
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.total', 37)
+            ->assertJsonPath('meta.last_page', 4)
+            ->assertJsonPath('meta.from', 31)
+            ->assertJsonPath('meta.to', 37)
+            ->json();
+
+        $this->assertSame($tracks[30]->id, $payload['data'][0]['id']);
+        $this->assertSame($tracks[36]->id, $payload['data'][6]['id']);
+    }
+
+    public function test_music_options_pagination_does_not_change_selected_music_on_other_page(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $tracks = $this->tracks(15);
+        $selected = $tracks[12];
+
+        Setting::create([
+            'user_id' => $user->id,
+            'music_track_id' => $selected->id,
+            'music_source_type' => 'admin_catalog',
+        ]);
+
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/music-options?page=1&per_page=10')
+            ->assertOk()
+            ->assertJsonCount(10, 'catalog')
+            ->assertJsonPath('selected_music_id', $selected->id)
+            ->assertJsonPath('selected_catalog_id', $selected->id)
+            ->assertJsonPath('selected_music.id', $selected->id)
+            ->assertJsonPath('music_source_type', 'admin_catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 10)
+            ->json();
+
+        $this->assertFalse(collect($payload['catalog'])->contains('id', $selected->id));
+        $this->assertSame($selected->id, Setting::where('user_id', $user->id)->firstOrFail()->music_track_id);
+    }
+
     public function test_diamond_and_platinum_users_can_upload_custom_music(): void
     {
         $this->track('Default Song', true);
@@ -503,6 +619,16 @@ class MusicInvitationModuleTest extends TestCase
             'sort_order' => $sortOrder,
             'source' => 'sena_digital',
         ]);
+    }
+
+    /**
+     * @return array<int,\App\Models\MusicTrack>
+     */
+    private function tracks(int $count): array
+    {
+        return collect(range(1, $count))
+            ->map(fn (int $index) => $this->track(sprintf('Catalog Song %02d', $index), $index === 1, $index))
+            ->all();
     }
 
     private function externalTrack(string $title, int $sortOrder = 0)

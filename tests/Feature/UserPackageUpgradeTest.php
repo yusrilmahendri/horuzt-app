@@ -58,10 +58,109 @@ class UserPackageUpgradeTest extends TestCase
             ->assertJsonPath('0.action', 'current')
             ->assertJsonPath('0.rank', 1)
             ->assertJsonPath('0.can_upgrade', false)
+            ->assertJsonPath('0.is_last_package', false)
             ->assertJsonPath('1.name', 'Pro Custom')
             ->assertJsonPath('1.action', 'upgrade')
             ->assertJsonPath('1.can_upgrade', true)
+            ->assertJsonPath('1.is_last_package', true)
+            ->assertJsonPath('1.original_price', 150000)
+            ->assertJsonPath('1.discount_percentage', 40)
+            ->assertJsonPath('1.discount_amount', 60000)
+            ->assertJsonPath('1.upgrade_price', 90000)
+            ->assertJsonPath('1.payable_amount', 90000)
+            ->assertJsonPath('1.pricing.original_price', 150000)
+            ->assertJsonPath('1.pricing.discount_percentage', 40)
+            ->assertJsonPath('1.pricing.discount_amount', 60000)
+            ->assertJsonPath('1.pricing.payable_amount', 90000)
             ->assertJsonPath('1.features.halaman_buku', 100);
+
+        $payload = $this->getJson('/api/v1/user/packages')->json();
+        $this->assertArrayNotHasKey('pricing', $payload[0]);
+        $this->assertArrayNotHasKey('upgrade_price', $payload[0]);
+    }
+
+    public function test_active_sapphire_package_list_quotes_diamond_upgrade_only(): void
+    {
+        [$ruby, $sapphire, $diamond] = $this->tierPackages();
+        $user = $this->user();
+        $this->paidInvitation($user, $sapphire);
+
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/packages')
+            ->assertOk()
+            ->assertJsonPath('0.action', 'downgrade')
+            ->assertJsonPath('1.action', 'current')
+            ->assertJsonPath('1.is_current', true)
+            ->assertJsonPath('1.is_last_package', false)
+            ->assertJsonPath('2.action', 'upgrade')
+            ->assertJsonPath('2.can_upgrade', true)
+            ->assertJsonPath('2.is_current', false)
+            ->assertJsonPath('2.is_last_package', true)
+            ->assertJsonPath('2.original_price', 15000)
+            ->assertJsonPath('2.discount_percentage', 40)
+            ->assertJsonPath('2.discount_amount', 6000)
+            ->assertJsonPath('2.upgrade_price', 9000)
+            ->assertJsonPath('2.payable_amount', 9000)
+            ->assertJsonPath('2.pricing.original_price', 15000)
+            ->assertJsonPath('2.pricing.discount_percentage', 40)
+            ->assertJsonPath('2.pricing.discount_amount', 6000)
+            ->assertJsonPath('2.pricing.payable_amount', 9000)
+            ->json();
+
+        $this->assertSame($ruby->id, $payload[0]['id']);
+        $this->assertSame($sapphire->id, $payload[1]['id']);
+        $this->assertSame($diamond->id, $payload[2]['id']);
+        $this->assertArrayNotHasKey('pricing', $payload[0]);
+        $this->assertArrayNotHasKey('upgrade_price', $payload[0]);
+        $this->assertArrayNotHasKey('pricing', $payload[1]);
+        $this->assertArrayNotHasKey('upgrade_price', $payload[1]);
+
+        $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
+    }
+
+    public function test_sapphire_to_diamond_midtrans_invoice_uses_quoted_upgrade_price(): void
+    {
+        [, $sapphire, $diamond] = $this->tierPackages();
+        $user = $this->user();
+        $this->paidInvitation($user, $sapphire);
+
+        $midtrans = \Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->with(\Mockery::on(function (array $params): bool {
+                return ($params['transaction_details']['gross_amount'] ?? null) === 9000.0
+                    && ($params['item_details'][0]['price'] ?? null) === 9000.0;
+            }))
+            ->andReturn('snap-token-diamond-upgrade');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $orderId = $this->postJson('/api/v1/user/package-upgrade', [
+            'package_id' => $diamond->id,
+        ])->assertCreated()
+            ->assertJsonPath('payment_method', 'midtrans')
+            ->assertJsonPath('payment_status', 'pending')
+            ->assertJsonPath('snap_token', 'snap-token-diamond-upgrade')
+            ->assertJsonPath('original_price', 15000)
+            ->assertJsonPath('discount_percentage', 40)
+            ->assertJsonPath('discount_amount', 6000)
+            ->assertJsonPath('upgrade_price', 9000)
+            ->assertJsonPath('payable_amount', 9000)
+            ->assertJsonPath('amount', 9000)
+            ->json('order_id');
+
+        $invoice = Invitation::where('order_id', $orderId)->firstOrFail();
+
+        $this->assertSame('9000.00', $invoice->package_price_snapshot);
+        $this->assertSame(9000.0, (float) $invoice->package_features_snapshot['payable_amount']);
+        $this->assertSame($diamond->id, $invoice->paket_undangan_id);
+        $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
+        $this->assertDatabaseHas('payment_logs', [
+            'order_id' => $orderId,
+            'gross_amount' => 9000,
+        ]);
     }
 
     public function test_user_can_create_manual_package_upgrade_invoice(): void
@@ -161,10 +260,11 @@ class UserPackageUpgradeTest extends TestCase
             ->assertJsonPath('0.action', 'subscribe')
             ->assertJsonPath('1.id', $pro->id)
             ->assertJsonPath('1.is_current', false)
-            ->assertJsonPath('1.is_last_package', true)
+            ->assertJsonPath('1.is_last_package', false)
             ->assertJsonPath('1.can_select', true)
             ->assertJsonPath('1.action', 'renew')
             ->assertJsonPath('2.id', $enterprise->id)
+            ->assertJsonPath('2.is_last_package', true)
             ->assertJsonPath('2.can_select', true);
     }
 
@@ -435,6 +535,33 @@ class UserPackageUpgradeTest extends TestCase
                 'masa_aktif' => 60,
                 'halaman_buku' => 100,
                 'kirim_wa' => true,
+            ]),
+        ];
+    }
+
+    private function tierPackages(): array
+    {
+        return [
+            PaketUndangan::create([
+                'code' => 'ruby',
+                'jenis_paket' => 'Paket Ruby',
+                'name_paket' => 'Paket Ruby',
+                'price' => 10000,
+                'masa_aktif' => 30,
+            ]),
+            PaketUndangan::create([
+                'code' => 'sapphire',
+                'jenis_paket' => 'Paket Sapphire',
+                'name_paket' => 'Paket Sapphire',
+                'price' => 12000,
+                'masa_aktif' => 30,
+            ]),
+            PaketUndangan::create([
+                'code' => 'diamond',
+                'jenis_paket' => 'Paket Diamond',
+                'name_paket' => 'Paket Diamond',
+                'price' => 15000,
+                'masa_aktif' => 30,
             ]),
         ];
     }

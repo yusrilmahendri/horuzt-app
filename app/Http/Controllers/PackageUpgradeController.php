@@ -297,11 +297,14 @@ class PackageUpgradeController extends Controller
         $lastPackage = $this->lastPackageFor($user);
         $currentOrder = $currentPackage ? $this->packageOrderValue($currentPackage) : null;
         $subscriptionStatus = $currentPackage ? 'active' : ($lastPackage ? 'expired' : 'none');
+        $highestPackageOrder = $this->orderedPackages()
+            ->map(fn (PaketUndangan $package) => $this->packageOrderValue($package))
+            ->max();
 
-        $packages = $this->orderedPackages()->map(function (PaketUndangan $package) use ($user, $currentPackage, $lastPackage, $currentOrder, $subscriptionStatus) {
+        $packages = $this->orderedPackages()->map(function (PaketUndangan $package) use ($user, $currentPackage, $currentOrder, $subscriptionStatus, $highestPackageOrder) {
             $order = $this->packageOrderValue($package);
             $isCurrent = $currentPackage && (int) $currentPackage->id === (int) $package->id;
-            $isLastPackage = $lastPackage && (int) $lastPackage->id === (int) $package->id;
+            $isLastPackage = $highestPackageOrder !== null && $order === $highestPackageOrder;
             [$canSelect, $action, $disabledReason] = $this->packageSelectionState(
                 $user,
                 $package,
@@ -309,6 +312,7 @@ class PackageUpgradeController extends Controller
                 $currentOrder,
                 $subscriptionStatus
             );
+            $canUpgrade = $subscriptionStatus === 'active' && $currentOrder !== null && $order > $currentOrder;
 
             return [
                 'id' => $package->id,
@@ -325,8 +329,9 @@ class PackageUpgradeController extends Controller
                 'can_select' => $canSelect,
                 'action' => $action,
                 'disabled_reason' => $disabledReason,
-                'can_upgrade' => $subscriptionStatus === 'active' && $currentOrder !== null && $order > $currentOrder,
+                'can_upgrade' => $canUpgrade,
                 'can_downgrade' => $subscriptionStatus === 'active' && $currentOrder !== null && $order < $currentOrder,
+                ...$this->packageListPricingFields($package, $action, $canUpgrade),
             ];
         })->values();
 
@@ -1121,6 +1126,29 @@ class PackageUpgradeController extends Controller
             'payable_amount' => $pricing['payable_amount'],
             'upgrade_price' => $pricing['payable_amount'],
             'amount' => $pricing['amount'],
+        ];
+    }
+
+    private function packageListPricingFields(PaketUndangan $package, string $action, bool $canUpgrade): array
+    {
+        if ($action !== 'upgrade' || ! $canUpgrade) {
+            return [];
+        }
+
+        $pricing = $this->upgradePricing->calculate($package, 'upgrade');
+
+        return [
+            'original_price' => $pricing['original_price'],
+            'discount_percentage' => $pricing['discount_percentage'],
+            'discount_amount' => $pricing['discount_amount'],
+            'upgrade_price' => $pricing['payable_amount'],
+            'payable_amount' => $pricing['payable_amount'],
+            'pricing' => [
+                'original_price' => $pricing['original_price'],
+                'discount_percentage' => $pricing['discount_percentage'],
+                'discount_amount' => $pricing['discount_amount'],
+                'payable_amount' => $pricing['payable_amount'],
+            ],
         ];
     }
 }

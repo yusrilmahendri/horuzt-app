@@ -15,6 +15,8 @@ use Illuminate\Support\Facades\Schema;
 class MusicTrackController extends Controller
 {
     private const ADMIN_CATALOG_ROLES = ['admin', 'Admin', 'super-admin', 'super_admin', 'administrator'];
+    private const DEFAULT_PER_PAGE = 10;
+    private const ALLOWED_PER_PAGE = [10, 20, 30, 50];
 
     protected MusicResolverService $resolver;
     protected ExternalMusicCatalogService $externalCatalogService;
@@ -32,7 +34,8 @@ class MusicTrackController extends Controller
     public function index(Request $request)
     {
         $isAdminRequest = $this->isAdminCatalogRequest($request);
-        $tracks = $this->adminCatalogPayload($isAdminRequest);
+        $adminCatalog = $this->paginatedAdminCatalogPayload($request, $isAdminRequest);
+        $tracks = $adminCatalog['data'];
         $globalCatalog = $this->globalCatalogPayload();
         $catalogSections = [
             'user_uploads' => [],
@@ -45,6 +48,11 @@ class MusicTrackController extends Controller
             'data' => $tracks,
             'catalog' => $tracks,
             'catalog_sections' => $catalogSections,
+            'meta' => $adminCatalog['meta'],
+            'catalog_meta' => $adminCatalog['meta'],
+            'catalog_sections_meta' => [
+                'admin_catalog' => $adminCatalog['meta'],
+            ],
         ], 200);
     }
 
@@ -344,13 +352,13 @@ class MusicTrackController extends Controller
         }
     }
 
-    /**
-     * @return array<int,array<string,mixed>>
-     */
-    private function adminCatalogPayload(bool $includeInactive = false): array
+    private function paginatedAdminCatalogPayload(Request $request, bool $includeInactive = false): array
     {
         if (! Schema::hasTable('music_tracks')) {
-            return [];
+            return [
+                'data' => [],
+                'meta' => $this->emptyPaginationMeta($request),
+            ];
         }
 
         $query = MusicTrack::query();
@@ -359,12 +367,59 @@ class MusicTrackController extends Controller
             $query->where('is_active', true);
         }
 
-        return $query->orderBy('sort_order', 'asc')
+        $perPage = $this->perPage($request);
+        $page = $this->page($request);
+
+        $paginator = $query->orderBy('sort_order', 'asc')
             ->orderBy('created_at', 'desc')
-            ->get()
-            ->map(fn (MusicTrack $track) => $this->trackPayload($track))
-            ->values()
-            ->all();
+            ->orderBy('id', 'desc')
+            ->paginate($perPage, ['*'], 'page', $page);
+
+        return [
+            'data' => $paginator->getCollection()
+                ->map(fn (MusicTrack $track) => $this->trackPayload($track))
+                ->values()
+                ->all(),
+            'meta' => $this->paginationMeta($paginator),
+        ];
+    }
+
+    private function perPage(Request $request): int
+    {
+        $perPage = (int) $request->query('per_page', self::DEFAULT_PER_PAGE);
+
+        return in_array($perPage, self::ALLOWED_PER_PAGE, true)
+            ? $perPage
+            : self::DEFAULT_PER_PAGE;
+    }
+
+    private function page(Request $request): int
+    {
+        return max(1, (int) $request->query('page', 1));
+    }
+
+    private function paginationMeta($paginator): array
+    {
+        return [
+            'current_page' => $paginator->currentPage(),
+            'per_page' => $paginator->perPage(),
+            'total' => $paginator->total(),
+            'last_page' => $paginator->lastPage(),
+            'from' => $paginator->firstItem(),
+            'to' => $paginator->lastItem(),
+        ];
+    }
+
+    private function emptyPaginationMeta(Request $request): array
+    {
+        return [
+            'current_page' => $this->page($request),
+            'per_page' => $this->perPage($request),
+            'total' => 0,
+            'last_page' => 1,
+            'from' => null,
+            'to' => null,
+        ];
     }
 
     private function isAdminCatalogRequest(Request $request): bool
