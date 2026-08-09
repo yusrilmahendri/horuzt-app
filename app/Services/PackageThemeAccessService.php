@@ -468,9 +468,9 @@ class PackageThemeAccessService
             'bebas_pilih_tema' => $isTrial ? false : (bool) $package->bebas_pilih_tema,
         ];
 
-        if ($this->isUpgradeTarget($package, $currentPackage)) {
-            $payload['upgrade_pricing'] = $this->upgradePricingPayload($package);
-        }
+        $payload['upgrade_pricing'] = $this->hasUpgradePricing($package)
+            ? $this->upgradePricingPayload($package)
+            : null;
 
         return $payload;
     }
@@ -574,11 +574,10 @@ class PackageThemeAccessService
             ->all();
     }
 
-    private function isUpgradeTarget(PaketUndangan $package, ?PaketUndangan $currentPackage): bool
+    private function hasUpgradePricing(PaketUndangan $package): bool
     {
-        return $currentPackage !== null
-            && (int) $package->id !== (int) $currentPackage->id
-            && $this->isHigherPackage($package, $currentPackage);
+        return $this->resolvePackageTier($package) !== 'trial'
+            && (float) $package->price > 0;
     }
 
     private function upgradePricingPayload(PaketUndangan $package): array

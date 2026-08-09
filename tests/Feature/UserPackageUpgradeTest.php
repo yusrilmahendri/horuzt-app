@@ -119,7 +119,7 @@ class UserPackageUpgradeTest extends TestCase
         $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
     }
 
-    public function test_paket_undangan_endpoint_quotes_sapphire_to_diamond_upgrade_only(): void
+    public function test_paket_undangan_endpoint_returns_upgrade_pricing_metadata_for_paid_packages(): void
     {
         PaketUndangan::create([
             'code' => 'trial',
@@ -128,16 +128,29 @@ class UserPackageUpgradeTest extends TestCase
             'price' => 0,
             'masa_aktif' => 3,
         ]);
-        [, $sapphire, $diamond] = $this->tierPackages();
+        [$ruby, $sapphire, $diamond] = $this->tierPackages();
         $user = $this->user();
         $this->paidInvitation($user, $sapphire);
 
-        Sanctum::actingAs($user);
-
         $payload = $this->getJson('/api/v1/paket-undangan')
             ->assertOk()
+            ->assertJsonPath('data.0.code', 'trial')
+            ->assertJsonPath('data.0.price', '0.00')
+            ->assertJsonPath('data.0.upgrade_pricing', null)
+            ->assertJsonPath('data.1.code', 'ruby')
+            ->assertJsonPath('data.1.price', '10000.00')
+            ->assertJsonPath('data.1.upgrade_pricing.original_price', 10000)
+            ->assertJsonPath('data.1.upgrade_pricing.discount_percentage', 40)
+            ->assertJsonPath('data.1.upgrade_pricing.discount_amount', 4000)
+            ->assertJsonPath('data.1.upgrade_pricing.payable_amount', 6000)
             ->assertJsonPath('data.2.code', 'sapphire')
+            ->assertJsonPath('data.2.price', '12000.00')
+            ->assertJsonPath('data.2.upgrade_pricing.original_price', 12000)
+            ->assertJsonPath('data.2.upgrade_pricing.discount_percentage', 40)
+            ->assertJsonPath('data.2.upgrade_pricing.discount_amount', 4800)
+            ->assertJsonPath('data.2.upgrade_pricing.payable_amount', 7200)
             ->assertJsonPath('data.3.code', 'diamond')
+            ->assertJsonPath('data.3.price', '15000.00')
             ->assertJsonPath('data.3.upgrade_pricing.original_price', 15000)
             ->assertJsonPath('data.3.upgrade_pricing.discount_percentage', 40)
             ->assertJsonPath('data.3.upgrade_pricing.discount_amount', 6000)
@@ -146,11 +159,10 @@ class UserPackageUpgradeTest extends TestCase
 
         $packages = collect($payload);
 
-        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'trial'));
-        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'ruby'));
-        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'sapphire'));
+        $this->assertSame($ruby->id, $packages->firstWhere('code', 'ruby')['id']);
         $this->assertSame($diamond->id, $packages->firstWhere('code', 'diamond')['id']);
         $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
+        $this->assertSame(1, Invitation::where('user_id', $user->id)->count());
     }
 
     public function test_sapphire_to_diamond_midtrans_invoice_uses_quoted_upgrade_price(): void
