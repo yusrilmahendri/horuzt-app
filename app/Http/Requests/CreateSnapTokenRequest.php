@@ -10,15 +10,6 @@ use Illuminate\Validation\Rule;
 
 class CreateSnapTokenRequest extends FormRequest
 {
-    protected function prepareForValidation(): void
-    {
-        if (! $this->has('invitation_id') && $this->has('invoice_id')) {
-            $this->merge([
-                'invitation_id' => $this->input('invoice_id'),
-            ]);
-        }
-    }
-
     public function authorize(): bool
     {
         return Auth::check();
@@ -30,8 +21,15 @@ class CreateSnapTokenRequest extends FormRequest
         $userId = Auth::id();
 
         return [
+            'invoice_id' => [
+                'required_without:invitation_id',
+                'integer',
+                Rule::exists('invitations', 'id')->where(function ($query) use ($userId) {
+                    $query->where('user_id', $userId);
+                }),
+            ],
             'invitation_id' => [
-                'required',
+                'required_without:invoice_id',
                 'integer',
                 Rule::exists('invitations', 'id')->where(function ($query) use ($userId) {
                     $query->where('user_id', $userId);
@@ -59,8 +57,8 @@ class CreateSnapTokenRequest extends FormRequest
     public function withValidator($validator)
     {
         $validator->after(function ($validator) {
-            if ($this->has('invitation_id')) {
-                $invitation = Invitation::find($this->invitation_id);
+            if ($this->has('invoice_id') || $this->has('invitation_id')) {
+                $invitation = Invitation::find($this->invoiceIdentifier());
 
                 if ($invitation) {
                     $package = $invitation->paketUndangan;
@@ -82,11 +80,19 @@ class CreateSnapTokenRequest extends FormRequest
     public function messages(): array
     {
         return [
+            'invoice_id.required_without' => 'Invoice wajib dipilih.',
+            'invoice_id.exists' => 'Invoice tidak valid atau bukan milik Anda.',
             'invitation_id.required' => 'Invoice wajib dipilih.',
+            'invitation_id.required_without' => 'Invoice wajib dipilih.',
             'invitation_id.exists' => 'Invoice tidak valid atau bukan milik Anda.',
             'amount.required' => 'Nominal pembayaran wajib diisi.',
             'amount.min' => 'Minimal pembayaran adalah Rp 10.000.',
             'amount.max' => 'Maksimal pembayaran adalah Rp 100.000.000.',
         ];
+    }
+
+    public function invoiceIdentifier(): mixed
+    {
+        return $this->input('invoice_id') ?? $this->input('invitation_id');
     }
 }

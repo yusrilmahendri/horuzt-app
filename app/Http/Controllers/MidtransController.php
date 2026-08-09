@@ -38,6 +38,7 @@ class MidtransController extends Controller
             }
 
             $validated = $request->validated();
+            $invoiceId = $request->invoiceIdentifier();
             $activePaymentMethod = $this->paymentMethodResolver->activeMethod();
 
             if ($activePaymentMethod !== PaymentMethodResolver::MIDTRANS) {
@@ -58,7 +59,7 @@ class MidtransController extends Controller
                 ], 409);
             }
 
-            $invitation = Invitation::with(['paketUndangan', 'user.settingOne'])->findOrFail($validated['invitation_id']);
+            $invitation = Invitation::with(['paketUndangan', 'user.settingOne'])->findOrFail($invoiceId);
             if ($this->profileNameMissing($user)) {
                 return $this->profileIncompleteResponse();
             }
@@ -98,6 +99,20 @@ class MidtransController extends Controller
 
             $orderId = $this->orderIdForNewMidtransTransaction($invitation);
             $grossAmount = $this->invoicePaymentAmount($invitation);
+
+            Log::info('Midtrans snap token invoice resolved', [
+                'request_invoice_id' => $request->input('invoice_id'),
+                'request_invitation_id' => $request->input('invitation_id'),
+                'resolved_invoice_id' => $invitation->id,
+                'resolved_invitation_id' => $invitation->id,
+                'authenticated_user_id' => $user->id,
+                'invoice_user_id' => $invitation->user_id,
+                'payment_status' => $invitation->payment_status,
+                'package_price_snapshot' => $invitation->package_price_snapshot,
+                'order_id_before_create' => $invitation->order_id,
+                'payment_method' => $invitation->payment_method,
+                'gross_amount' => $grossAmount,
+            ]);
 
             // Always send a usable email to Midtrans so payment notifications can be delivered.
             $userDomain = $invitation->user->settingOne->domain ?? '-';
