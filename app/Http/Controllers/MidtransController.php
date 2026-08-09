@@ -191,6 +191,7 @@ class MidtransController extends Controller
                     'snap_token' => $snapToken,
                     'order_id' => $orderId,
                     'gross_amount' => $grossAmount,
+                    'invoice_id' => $invitation->id,
                     'invitation_id' => $invitation->id,
                     'reused' => false,
                     'redirect_url' => null,

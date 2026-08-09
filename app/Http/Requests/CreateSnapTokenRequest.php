@@ -10,6 +10,15 @@ use Illuminate\Validation\Rule;
 
 class CreateSnapTokenRequest extends FormRequest
 {
+    protected function prepareForValidation(): void
+    {
+        if (! $this->has('invitation_id') && $this->has('invoice_id')) {
+            $this->merge([
+                'invitation_id' => $this->input('invoice_id'),
+            ]);
+        }
+    }
+
     public function authorize(): bool
     {
         return Auth::check();

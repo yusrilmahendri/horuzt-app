@@ -149,6 +149,116 @@ class PaymentMethodFlowTest extends TestCase
         ]);
     }
 
+    public function test_midtrans_create_snap_token_accepts_invoice_id_for_pending_invoice_without_order_id(): void
+    {
+        $user = $this->user();
+        $invitation = $this->invitationFor($user);
+        $this->assertNull($invitation->order_id);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')
+            ->once()
+            ->with(Mockery::on(function (array $params) use ($invitation): bool {
+                return ($params['transaction_details']['gross_amount'] ?? null) === (float) $invitation->package_price_snapshot
+                    && ! empty($params['transaction_details']['order_id'] ?? null);
+            }))
+            ->andReturn('snap-token-from-invoice-id');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $response = $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invoice_id' => $invitation->id,
+        ])
+            ->assertCreated()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.invoice_id', $invitation->id)
+            ->assertJsonPath('data.invitation_id', $invitation->id)
+            ->assertJsonPath('data.snap_token', 'snap-token-from-invoice-id')
+            ->assertJsonPath('data.gross_amount', 100000)
+            ->assertJsonPath('data.reused', false);
+
+        $this->assertNotNull($response->json('data.order_id'));
+        $this->assertSame($response->json('data.order_id'), $invitation->fresh()->order_id);
+        $this->assertSame('midtrans', $invitation->fresh()->payment_method);
+        $this->assertDatabaseCount('payment_logs', 1);
+    }
+
+    public function test_midtrans_create_snap_token_reuses_existing_transaction_with_invoice_id(): void
+    {
+        $user = $this->user();
+        $invitation = $this->invitationFor($user);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldReceive('createTransaction')->once()->andReturn('snap-token-reuse-invoice-id');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $first = $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invoice_id' => $invitation->id,
+        ])->assertCreated();
+
+        $orderId = $first->json('data.order_id');
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invoice_id' => $invitation->id,
+        ])
+            ->assertOk()
+            ->assertJsonPath('success', true)
+            ->assertJsonPath('data.reused', true)
+            ->assertJsonPath('data.invoice_id', $invitation->id)
+            ->assertJsonPath('data.invitation_id', $invitation->id)
+            ->assertJsonPath('data.order_id', $orderId)
+            ->assertJsonPath('data.snap_token', 'snap-token-reuse-invoice-id');
+
+        $this->assertDatabaseCount('payment_logs', 1);
+    }
+
+    public function test_midtrans_create_snap_token_still_requires_invoice_identifier(): void
+    {
+        $user = $this->user();
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldNotReceive('createTransaction');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('invitation_id')
+            ->assertJsonPath('errors.invitation_id.0', 'Invoice wajib dipilih.');
+    }
+
+    public function test_midtrans_create_snap_token_rejects_paid_invoice_with_invoice_id(): void
+    {
+        $user = $this->user();
+        $invitation = $this->invitationFor($user);
+        $invitation->update([
+            'payment_status' => 'paid',
+            'payment_confirmed_at' => now(),
+            'order_id' => 'PAID-INVOICE-ID-ORDER',
+        ]);
+
+        $midtrans = Mockery::mock(MidtransService::class);
+        $midtrans->shouldNotReceive('createTransaction');
+        $this->app->instance(MidtransService::class, $midtrans);
+
+        Sanctum::actingAs($user);
+
+        $this->postJson('/api/v1/midtrans/create-snap-token', [
+            'invoice_id' => $invitation->id,
+        ])
+            ->assertStatus(409)
+            ->assertJsonPath('success', false)
+            ->assertJsonPath('code', 'PAYMENT_ALREADY_PAID')
+            ->assertJsonPath('data.invoice_id', $invitation->id)
+            ->assertJsonPath('data.order_id', 'PAID-INVOICE-ID-ORDER');
+
+        $this->assertDatabaseCount('payment_logs', 0);
+    }
+
     public function test_old_admin_active_payment_choice_does_not_override_complete_manual_config(): void
     {
         $admin = $this->admin();
