@@ -119,6 +119,40 @@ class UserPackageUpgradeTest extends TestCase
         $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
     }
 
+    public function test_paket_undangan_endpoint_quotes_sapphire_to_diamond_upgrade_only(): void
+    {
+        PaketUndangan::create([
+            'code' => 'trial',
+            'jenis_paket' => 'Paket Trial',
+            'name_paket' => 'Paket Trial',
+            'price' => 0,
+            'masa_aktif' => 3,
+        ]);
+        [, $sapphire, $diamond] = $this->tierPackages();
+        $user = $this->user();
+        $this->paidInvitation($user, $sapphire);
+
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/paket-undangan')
+            ->assertOk()
+            ->assertJsonPath('data.2.code', 'sapphire')
+            ->assertJsonPath('data.3.code', 'diamond')
+            ->assertJsonPath('data.3.upgrade_pricing.original_price', 15000)
+            ->assertJsonPath('data.3.upgrade_pricing.discount_percentage', 40)
+            ->assertJsonPath('data.3.upgrade_pricing.discount_amount', 6000)
+            ->assertJsonPath('data.3.upgrade_pricing.payable_amount', 9000)
+            ->json('data');
+
+        $packages = collect($payload);
+
+        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'trial'));
+        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'ruby'));
+        $this->assertArrayNotHasKey('upgrade_pricing', $packages->firstWhere('code', 'sapphire'));
+        $this->assertSame($diamond->id, $packages->firstWhere('code', 'diamond')['id']);
+        $this->assertSame($sapphire->id, Invitation::where('user_id', $user->id)->where('payment_status', 'paid')->firstOrFail()->paket_undangan_id);
+    }
+
     public function test_sapphire_to_diamond_midtrans_invoice_uses_quoted_upgrade_price(): void
     {
         [, $sapphire, $diamond] = $this->tierPackages();
@@ -691,6 +725,41 @@ class UserPackageUpgradeTest extends TestCase
             $table->boolean('bebas_pilih_tema')->default(false);
             $table->boolean('kirim_hadiah')->default(false);
             $table->boolean('import_data')->default(false);
+            $table->timestamps();
+        });
+
+        Schema::create('category_themas', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('slug')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->string('type')->default('website');
+            $table->integer('sort_order')->default(0);
+            $table->timestamps();
+        });
+
+        Schema::create('jenis_themas', function (Blueprint $table) {
+            $table->id();
+            $table->unsignedBigInteger('category_id')->nullable();
+            $table->string('name');
+            $table->string('slug')->nullable();
+            $table->decimal('price', 10, 2)->default(0);
+            $table->string('preview')->nullable();
+            $table->string('preview_image')->nullable();
+            $table->string('thumbnail_image')->nullable();
+            $table->string('image')->nullable();
+            $table->string('demo_url')->nullable();
+            $table->string('url_thema')->nullable();
+            $table->boolean('is_active')->default(true);
+            $table->text('description')->nullable();
+            $table->integer('sort_order')->default(0);
+            $table->json('features')->nullable();
+            $table->timestamps();
+        });
+
+        Schema::create('paket_undangan_category_thema', function (Blueprint $table) {
+            $table->unsignedBigInteger('paket_undangan_id');
+            $table->unsignedBigInteger('category_thema_id');
             $table->timestamps();
         });
 

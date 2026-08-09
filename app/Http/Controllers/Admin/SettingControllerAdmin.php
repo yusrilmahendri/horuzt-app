@@ -142,15 +142,17 @@ class SettingControllerAdmin extends Controller
         }
     }
 
-    public function indexPaket()
+    public function indexPaket(Request $request)
     {
         $pakets = PaketUndangan::with(['accessibleCategories' => function ($query) {
             $query->website()->ordered();
         }])->get();
+        $user = $request->user() ?: Auth::guard('sanctum')->user();
+        $currentPackage = $user ? $this->packageThemeAccess->packageForUser($user) : null;
 
         return response()->json([
             'message' => 'Data paket undangan yang tersedia saat ini.!',
-            'data'    => $this->packageThemeAccess->packageCollectionPayload($pakets),
+            'data'    => $this->packageThemeAccess->packageCollectionPayload($pakets, $currentPackage),
         ], 200);
     }
 

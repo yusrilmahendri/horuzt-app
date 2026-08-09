@@ -14,6 +14,11 @@ use Illuminate\Support\Facades\Schema;
 
 class PackageThemeAccessService
 {
+    public function __construct(
+        private PackageUpgradePricingService $upgradePricing
+    ) {
+    }
+
     /**
      * Cumulative website category access by package tier.
      * Higher tiers inherit all categories from lower tiers.
@@ -418,13 +423,13 @@ class PackageThemeAccessService
             ->get();
     }
 
-    public function packagePayload(PaketUndangan $package): array
+    public function packagePayload(PaketUndangan $package, ?PaketUndangan $currentPackage = null): array
     {
         $tier = $this->resolvePackageTier($package);
         $themes = $this->accessibleThemesForPackage($package);
         $isTrial = $tier === 'trial';
 
-        return [
+        $payload = [
             'id' => $package->id,
             'code' => $tier,
             'name' => PaketUndangan::displayLabelFromCode($tier, $package->getRawOriginal('name_paket') ?? $package->name_paket),
@@ -462,6 +467,12 @@ class PackageThemeAccessService
             'import_data' => (bool) $package->import_data,
             'bebas_pilih_tema' => $isTrial ? false : (bool) $package->bebas_pilih_tema,
         ];
+
+        if ($this->isUpgradeTarget($package, $currentPackage)) {
+            $payload['upgrade_pricing'] = $this->upgradePricingPayload($package);
+        }
+
+        return $payload;
     }
 
     public function packageSummaryPayload(?PaketUndangan $package): ?array
@@ -554,13 +565,32 @@ class PackageThemeAccessService
         ];
     }
 
-    public function packageCollectionPayload(iterable $packages): array
+    public function packageCollectionPayload(iterable $packages, ?PaketUndangan $currentPackage = null): array
     {
         return collect($packages)
             ->sortBy(fn (PaketUndangan $package) => $this->packageRank($package))
-            ->map(fn (PaketUndangan $package) => $this->packagePayload($package))
+            ->map(fn (PaketUndangan $package) => $this->packagePayload($package, $currentPackage))
             ->values()
             ->all();
+    }
+
+    private function isUpgradeTarget(PaketUndangan $package, ?PaketUndangan $currentPackage): bool
+    {
+        return $currentPackage !== null
+            && (int) $package->id !== (int) $currentPackage->id
+            && $this->isHigherPackage($package, $currentPackage);
+    }
+
+    private function upgradePricingPayload(PaketUndangan $package): array
+    {
+        $pricing = $this->upgradePricing->calculate($package, 'upgrade');
+
+        return [
+            'original_price' => $pricing['original_price'],
+            'discount_percentage' => $pricing['discount_percentage'],
+            'discount_amount' => $pricing['discount_amount'],
+            'payable_amount' => $pricing['payable_amount'],
+        ];
     }
 
     private function baseCategoryQueryForPackage(PaketUndangan $package)
