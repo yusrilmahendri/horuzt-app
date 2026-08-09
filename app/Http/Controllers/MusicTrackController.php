@@ -16,7 +16,8 @@ class MusicTrackController extends Controller
 {
     private const ADMIN_CATALOG_ROLES = ['admin', 'Admin', 'super-admin', 'super_admin', 'administrator'];
     private const DEFAULT_PER_PAGE = 10;
-    private const ALLOWED_PER_PAGE = [10, 20, 30, 50];
+    private const MUSIC_OPTIONS_DEFAULT_PER_PAGE = 5;
+    private const ALLOWED_PER_PAGE = [5, 10, 20, 30, 50];
 
     protected MusicResolverService $resolver;
     protected ExternalMusicCatalogService $externalCatalogService;
@@ -62,7 +63,25 @@ class MusicTrackController extends Controller
      */
     public function options(Request $request)
     {
-        $baseResponse = $this->index($request)->getData(true);
+        $isAdminRequest = $this->isAdminCatalogRequest($request);
+        $adminCatalog = $this->paginatedAdminCatalogPayload($request, $isAdminRequest, self::MUSIC_OPTIONS_DEFAULT_PER_PAGE);
+        $tracks = $adminCatalog['data'];
+        $globalCatalog = $this->globalCatalogPayload();
+        $baseResponse = [
+            'message' => 'Katalog musik berhasil diambil.',
+            'data' => $tracks,
+            'catalog' => $tracks,
+            'catalog_sections' => [
+                'user_uploads' => [],
+                'admin_catalog' => $tracks,
+                'global_catalog' => $globalCatalog,
+            ],
+            'meta' => $adminCatalog['meta'],
+            'catalog_meta' => $adminCatalog['meta'],
+            'catalog_sections_meta' => [
+                'admin_catalog' => $adminCatalog['meta'],
+            ],
+        ];
         $setting = Setting::where('user_id', Auth::id())->first();
         $state = $this->resolver->selectionState($setting, Auth::user());
 
@@ -352,12 +371,12 @@ class MusicTrackController extends Controller
         }
     }
 
-    private function paginatedAdminCatalogPayload(Request $request, bool $includeInactive = false): array
+    private function paginatedAdminCatalogPayload(Request $request, bool $includeInactive = false, int $defaultPerPage = self::DEFAULT_PER_PAGE): array
     {
         if (! Schema::hasTable('music_tracks')) {
             return [
                 'data' => [],
-                'meta' => $this->emptyPaginationMeta($request),
+                'meta' => $this->emptyPaginationMeta($request, $defaultPerPage),
             ];
         }
 
@@ -367,7 +386,7 @@ class MusicTrackController extends Controller
             $query->where('is_active', true);
         }
 
-        $perPage = $this->perPage($request);
+        $perPage = $this->perPage($request, $defaultPerPage);
         $page = $this->page($request);
 
         $paginator = $query->orderBy('sort_order', 'asc')
@@ -384,13 +403,13 @@ class MusicTrackController extends Controller
         ];
     }
 
-    private function perPage(Request $request): int
+    private function perPage(Request $request, int $defaultPerPage = self::DEFAULT_PER_PAGE): int
     {
-        $perPage = (int) $request->query('per_page', self::DEFAULT_PER_PAGE);
+        $perPage = (int) $request->query('per_page', $defaultPerPage);
 
         return in_array($perPage, self::ALLOWED_PER_PAGE, true)
             ? $perPage
-            : self::DEFAULT_PER_PAGE;
+            : $defaultPerPage;
     }
 
     private function page(Request $request): int
@@ -410,11 +429,11 @@ class MusicTrackController extends Controller
         ];
     }
 
-    private function emptyPaginationMeta(Request $request): array
+    private function emptyPaginationMeta(Request $request, int $defaultPerPage = self::DEFAULT_PER_PAGE): array
     {
         return [
             'current_page' => $this->page($request),
-            'per_page' => $this->perPage($request),
+            'per_page' => $this->perPage($request, $defaultPerPage),
             'total' => 0,
             'last_page' => 1,
             'from' => null,

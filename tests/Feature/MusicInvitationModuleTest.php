@@ -92,6 +92,135 @@ class MusicInvitationModuleTest extends TestCase
         $this->assertSame($tracks[9]->id, $payload['data'][9]['id']);
     }
 
+    public function test_music_options_defaults_to_first_page_with_five_items(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $tracks = $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/music-options')
+            ->assertOk()
+            ->assertJsonCount(5, 'catalog')
+            ->assertJsonCount(5, 'catalog_sections.admin_catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 3)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 5)
+            ->json();
+
+        $this->assertSame($tracks[0]->id, $payload['catalog'][0]['id']);
+        $this->assertSame($tracks[4]->id, $payload['catalog'][4]['id']);
+    }
+
+    public function test_music_options_page_one_with_five_items(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $tracks = $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/music-options?page=1&per_page=5')
+            ->assertOk()
+            ->assertJsonCount(5, 'catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 3)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 5)
+            ->json();
+
+        $this->assertSame($tracks[0]->id, $payload['catalog'][0]['id']);
+        $this->assertSame($tracks[4]->id, $payload['catalog'][4]['id']);
+    }
+
+    public function test_music_options_page_two_with_five_items(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $tracks = $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/music-options?page=2&per_page=5')
+            ->assertOk()
+            ->assertJsonCount(5, 'catalog')
+            ->assertJsonPath('meta.current_page', 2)
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 3)
+            ->assertJsonPath('meta.from', 6)
+            ->assertJsonPath('meta.to', 10)
+            ->json();
+
+        $this->assertSame($tracks[5]->id, $payload['catalog'][0]['id']);
+        $this->assertSame($tracks[9]->id, $payload['catalog'][4]['id']);
+    }
+
+    public function test_music_options_page_three_with_five_items(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $tracks = $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $payload = $this->getJson('/api/v1/user/music-options?page=3&per_page=5')
+            ->assertOk()
+            ->assertJsonCount(4, 'catalog')
+            ->assertJsonPath('meta.current_page', 3)
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 3)
+            ->assertJsonPath('meta.from', 11)
+            ->assertJsonPath('meta.to', 14)
+            ->json();
+
+        $this->assertSame($tracks[10]->id, $payload['catalog'][0]['id']);
+        $this->assertSame($tracks[13]->id, $payload['catalog'][3]['id']);
+    }
+
+    public function test_music_options_allows_ten_and_twenty_items_per_page(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/user/music-options?per_page=10')
+            ->assertOk()
+            ->assertJsonCount(10, 'catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 2)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 10);
+
+        $this->getJson('/api/v1/user/music-options?per_page=20')
+            ->assertOk()
+            ->assertJsonCount(14, 'catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 20)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 1)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 14);
+    }
+
+    public function test_music_options_sanitizes_unsupported_per_page_to_five(): void
+    {
+        $user = $this->userWithPackage('ruby');
+        $this->tracks(14);
+        Sanctum::actingAs($user);
+
+        $this->getJson('/api/v1/user/music-options?per_page=999')
+            ->assertOk()
+            ->assertJsonCount(5, 'catalog')
+            ->assertJsonPath('meta.current_page', 1)
+            ->assertJsonPath('meta.per_page', 5)
+            ->assertJsonPath('meta.total', 14)
+            ->assertJsonPath('meta.last_page', 3)
+            ->assertJsonPath('meta.from', 1)
+            ->assertJsonPath('meta.to', 5);
+    }
+
     public function test_music_catalog_page_two_returns_next_items(): void
     {
         $tracks = $this->tracks(15);
@@ -172,15 +301,15 @@ class MusicInvitationModuleTest extends TestCase
 
         Sanctum::actingAs($user);
 
-        $payload = $this->getJson('/api/v1/user/music-options?page=1&per_page=10')
+        $payload = $this->getJson('/api/v1/user/music-options?page=1&per_page=5')
             ->assertOk()
-            ->assertJsonCount(10, 'catalog')
+            ->assertJsonCount(5, 'catalog')
             ->assertJsonPath('selected_music_id', $selected->id)
             ->assertJsonPath('selected_catalog_id', $selected->id)
             ->assertJsonPath('selected_music.id', $selected->id)
             ->assertJsonPath('music_source_type', 'admin_catalog')
             ->assertJsonPath('meta.current_page', 1)
-            ->assertJsonPath('meta.per_page', 10)
+            ->assertJsonPath('meta.per_page', 5)
             ->json();
 
         $this->assertFalse(collect($payload['catalog'])->contains('id', $selected->id));
