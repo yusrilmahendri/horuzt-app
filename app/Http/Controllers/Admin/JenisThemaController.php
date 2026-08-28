@@ -11,6 +11,7 @@ use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
 use Intervention\Image\Facades\Image;
 
@@ -161,26 +162,63 @@ class JenisThemaController extends Controller
     public function update(Request $request, $id)
     {
         try {
-            $request->validate([
-                'category_id' => 'required|integer|exists:category_themas,id',
-                'name' => 'required|string|max:255',
-                'price' => 'required|numeric|min:0',
-                'preview' => 'required|string|max:500',
-                'url_thema' => 'required|url|max:500',
-                'is_active' => 'boolean',
-                'description' => 'nullable|string|max:1000',
-                'demo_url' => 'nullable|url|max:500',
-                'sort_order' => 'integer|min:0',
-                'features' => 'nullable|array',
-                'features.*' => 'string|max:255'
-            ]);
+            $jenisThema = JenisThemas::findOrFail($id);
+            $previewFile = $request->file('preview');
+
+            $validated = $previewFile
+                ? $request->validate([
+                    'preview' => ['required', 'file', 'image', 'mimes:jpg,jpeg,png,webp', 'max:5120'],
+                    'category_id' => 'sometimes|integer|exists:category_themas,id',
+                    'name' => 'sometimes|string|max:255',
+                    'price' => 'sometimes|numeric|min:0',
+                    'url_thema' => 'sometimes|url|max:500',
+                    'is_active' => 'sometimes|boolean',
+                    'description' => 'nullable|string|max:1000',
+                    'demo_url' => 'nullable|url|max:500',
+                    'sort_order' => 'sometimes|integer|min:0',
+                    'features' => 'nullable|array',
+                    'features.*' => 'string|max:255',
+                ])
+                : $request->validate([
+                    'category_id' => 'required|integer|exists:category_themas,id',
+                    'name' => 'required|string|max:255',
+                    'price' => 'required|numeric|min:0',
+                    'preview' => 'required|string|max:500',
+                    'url_thema' => 'required|url|max:500',
+                    'is_active' => 'boolean',
+                    'description' => 'nullable|string|max:1000',
+                    'demo_url' => 'nullable|url|max:500',
+                    'sort_order' => 'integer|min:0',
+                    'features' => 'nullable|array',
+                    'features.*' => 'string|max:255',
+                ]);
 
             DB::beginTransaction();
 
-            $jenisThema = JenisThemas::findOrFail($id);
-            
-            $data = $request->validated();
-            if (!isset($data['is_active'])) {
+            $data = $validated;
+            unset($data['preview']);
+
+            if ($previewFile) {
+                $previewUrl = $this->storeThemePreviewImage($previewFile, $jenisThema);
+                $data['preview'] = $previewUrl;
+                $data['preview_image'] = $previewUrl;
+                $data['image'] = $previewUrl;
+                $data['thumbnail_image'] = $previewUrl;
+
+                Log::info('[THEME_PREVIEW_UPLOAD]', [
+                    'id' => $jenisThema->id,
+                    'slug' => $jenisThema->slug,
+                    'original_name' => $previewFile->getClientOriginalName(),
+                    'size' => $previewFile->getSize(),
+                    'url' => $previewUrl,
+                ]);
+            } elseif (array_key_exists('preview', $validated)) {
+                $data['preview'] = $validated['preview'];
+            }
+
+            if ($request->has('is_active')) {
+                $data['is_active'] = $request->boolean('is_active');
+            } elseif (! $previewFile && ! isset($data['is_active'])) {
                 $data['is_active'] = $request->boolean('is_active', $jenisThema->is_active);
             }
 
@@ -188,14 +226,17 @@ class JenisThemaController extends Controller
 
             DB::commit();
 
+            $jenisThema->refresh()->load('category');
+
             return response()->json([
                 'status' => true,
-                'message' => 'Theme updated successfully',
-                'data' => $jenisThema->load('category')
+                'message' => $previewFile ? 'Preview tema berhasil diperbarui.' : 'Theme updated successfully',
+                'data' => $this->adminThemePayload($jenisThema),
             ], 200);
 
+        } catch (\Illuminate\Validation\ValidationException $e) {
+            throw $e;
         } catch (\Illuminate\Database\Eloquent\ModelNotFoundException $e) {
-            DB::rollBack();
             return response()->json([
                 'status' => false,
                 'message' => 'Theme not found.'
@@ -205,7 +246,7 @@ class JenisThemaController extends Controller
             Log::error('Jenis theme update failed', [
                 'id' => $id,
                 'error' => $e->getMessage(),
-                'data' => $request->all()
+                'data' => $request->except(['preview']),
             ]);
 
             return response()->json([
@@ -461,6 +502,29 @@ class JenisThemaController extends Controller
             'is_connected' => $theme->slug !== null && $theme->category !== null,
             'status_terhubung' => $theme->slug !== null && $theme->category !== null,
         ]);
+    }
+
+    /**
+     * Store a theme preview image on the public disk and return an absolute URL.
+     */
+    private function storeThemePreviewImage(\Illuminate\Http\UploadedFile $file, JenisThemas $theme): string
+    {
+        $safeSlug = Str::slug($theme->slug ?: $theme->name ?: 'theme-preview') ?: 'theme-preview';
+        $extension = strtolower($file->getClientOriginalExtension() ?: $file->extension() ?: 'jpg');
+        if (! in_array($extension, ['jpg', 'jpeg', 'png', 'webp'], true)) {
+            $extension = 'jpg';
+        }
+
+        $fileName = $safeSlug.'-'.now()->format('YmdHis').'-'.Str::lower(Str::random(6)).'.'.$extension;
+        $path = $file->storeAs('theme-images/previews', $fileName, 'public');
+        Storage::disk('public')->setVisibility($path, 'public');
+
+        $url = Storage::disk('public')->url($path);
+        if (! Str::startsWith($url, ['http://', 'https://'])) {
+            $url = rtrim((string) config('app.url'), '/').'/'.ltrim($url, '/');
+        }
+
+        return $url;
     }
 
     /**

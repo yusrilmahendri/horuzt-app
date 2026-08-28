@@ -283,6 +283,89 @@ class AdminWebsiteCategoryConnectionTest extends TestCase
         ]);
     }
 
+    public function test_admin_can_update_theme_preview_through_existing_themes_update_endpoint(): void
+    {
+        Storage::fake('public');
+        Sanctum::actingAs($this->adminUser());
+
+        $champagne = JenisThemas::where('slug', 'champagne-rose')->firstOrFail();
+        $garden = JenisThemas::where('slug', 'garden-whisper')->firstOrFail();
+        $gardenPreview = $garden->getRawOriginal('preview_image');
+        $gardenName = $garden->name;
+
+        $this->post("/api/admin/themes/{$champagne->id}", [
+            '_method' => 'PUT',
+            'preview' => UploadedFile::fake()->image('cover.jpg', 400, 300),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertOk()
+            ->assertJsonPath('status', true)
+            ->assertJsonPath('data.id', $champagne->id)
+            ->assertJsonPath('data.slug', 'champagne-rose')
+            ->assertJsonPath('data.name', 'Champagne Rose')
+            ->assertJsonPath('data.preview', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/champagne-rose-'))
+            ->assertJsonPath('data.preview_image', fn ($url) => is_string($url) && str_contains($url, '/storage/theme-images/previews/champagne-rose-'));
+
+        $champagne->refresh();
+        $garden->refresh();
+
+        $storedUrl = $champagne->getRawOriginal('preview_image');
+        $storedPath = ltrim((string) parse_url($storedUrl, PHP_URL_PATH), '/');
+        $storedPath = preg_replace('#^storage/#', '', $storedPath);
+
+        $this->assertSame('Champagne Rose', $champagne->name);
+        $this->assertStringStartsWith(config('app.url').'/storage/theme-images/previews/champagne-rose-', $storedUrl);
+        $this->assertSame($storedUrl, $champagne->getRawOriginal('preview'));
+        $this->assertSame($storedUrl, $champagne->getRawOriginal('image'));
+        $this->assertSame($storedUrl, $champagne->getRawOriginal('thumbnail_image'));
+        Storage::disk('public')->assertExists($storedPath);
+
+        $this->assertSame($gardenPreview, $garden->getRawOriginal('preview_image'));
+        $this->assertSame($gardenName, $garden->name);
+    }
+
+    public function test_admin_garden_whisper_preview_update_does_not_change_champagne_rose(): void
+    {
+        Storage::fake('public');
+        Sanctum::actingAs($this->adminUser());
+
+        $garden = JenisThemas::where('slug', 'garden-whisper')->firstOrFail();
+        $champagne = JenisThemas::where('slug', 'champagne-rose')->firstOrFail();
+        $champagnePreview = $champagne->getRawOriginal('preview_image');
+
+        $this->post("/api/admin/themes/{$garden->id}", [
+            '_method' => 'PUT',
+            'preview' => UploadedFile::fake()->image('garden.jpg', 400, 300),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertOk()
+            ->assertJsonPath('data.id', $garden->id)
+            ->assertJsonPath('data.slug', 'garden-whisper');
+
+        $garden->refresh();
+        $champagne->refresh();
+
+        $this->assertStringContainsString('garden-whisper-', (string) $garden->getRawOriginal('preview_image'));
+        $this->assertSame($champagnePreview, $champagne->getRawOriginal('preview_image'));
+    }
+
+    public function test_admin_theme_preview_upload_validation_returns_json(): void
+    {
+        Sanctum::actingAs($this->adminUser());
+        $theme = JenisThemas::where('slug', 'champagne-rose')->firstOrFail();
+
+        $this->post("/api/admin/themes/{$theme->id}", [
+            '_method' => 'PUT',
+            'preview' => UploadedFile::fake()->create('preview.gif', 100, 'image/gif'),
+        ], [
+            'Accept' => 'application/json',
+        ])
+            ->assertStatus(422)
+            ->assertJsonValidationErrors('preview');
+    }
+
     public function test_diamond_user_can_select_champagne_rose_and_diamond_garden(): void
     {
         $user = $this->userWithPackage('diamond');
